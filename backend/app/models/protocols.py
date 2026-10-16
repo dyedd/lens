@@ -45,11 +45,6 @@ class ChannelStatus(str, Enum):
     DISABLED = "disabled"
 
 
-class ModelSource(str, Enum):
-    MANUAL = "manual"
-    SYNCED = "synced"
-
-
 class ChannelModelSyncStatus(str, Enum):
     UPDATED = "updated"
     UNCHANGED = "unchanged"

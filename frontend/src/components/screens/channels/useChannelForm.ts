@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useRegexRules } from "@/hooks/useRegexRules";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site } from "@/lib/api/sites";
 import {
@@ -43,8 +42,6 @@ function validateChannelForm(
   form: FormState,
   duplicatedConfigCount: number,
   locale: Locale,
-  /** Ids in the loaded rule library, or null before it loads. */
-  libraryRuleIds: Set<string> | null,
 ) {
   const credentials = applyApiKeyDrafts(form).credentials;
   if (!form.name.trim()) {
@@ -95,20 +92,6 @@ function validateChannelForm(
     );
     return false;
   }
-  if (
-    libraryRuleIds &&
-    [
-      ...form.model_sync_include_rule_ids,
-      ...form.model_sync_exclude_rule_ids,
-    ].some((id) => !libraryRuleIds.has(id))
-  ) {
-    toast.error(
-      locale === "zh-CN"
-        ? "同步筛选引用了已删除的规则，请先移除"
-        : "Remove the deleted rules from the sync filters first",
-    );
-    return false;
-  }
   if (invalidProtocolBaseUrlCount(form)) {
     toast.error(
       locale === "zh-CN"
@@ -155,7 +138,6 @@ function useUnsavedChannelGuard(
 
 /** Owns the channel editor form and its local mutations. */
 export function useChannelForm(locale: Locale) {
-  const regexRules = useRegexRules();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
@@ -206,14 +188,7 @@ export function useChannelForm(locale: Locale) {
     setEditingSiteId(null);
   }
   function validateSiteForm() {
-    return validateChannelForm(
-      form,
-      duplicatedProtocolConfigKeys.size,
-      locale,
-      regexRules.isLoaded
-        ? new Set(regexRules.rules.map((rule) => rule.id))
-        : null,
-    );
+    return validateChannelForm(form, duplicatedProtocolConfigKeys.size, locale);
   }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
     if (!protocols.length) {
@@ -246,12 +221,25 @@ export function useChannelForm(locale: Locale) {
         // Group keys delete every same-name model in this config; per-member
         // keys (from an expanded row) delete just that credential's copy.
         const isGroupKey = isAggregateModelGroupKey(key);
+        const removed = new Set(
+          config.models
+            .filter((model) =>
+              isGroupKey
+                ? aggregateModelGroupKey(config, model.model_name) === key
+                : protocolConfigModelKey(config, model) === key,
+            )
+            .map((model) => `${model.credential_id}:${model.model_name}`),
+        );
         return {
           ...config,
           models: config.models.filter((model) =>
             isGroupKey
               ? aggregateModelGroupKey(config, model.model_name) !== key
               : protocolConfigModelKey(config, model) !== key,
+          ),
+          sync_targets: config.sync_targets.filter(
+            (target) =>
+              !removed.has(`${target.credential_id}:${target.model_name}`),
           ),
         };
       }),
@@ -327,21 +315,6 @@ export function useChannelForm(locale: Locale) {
     }));
   }
 
-  /** Keeps models an upstream stopped listing by handing them to the admin. */
-  function keepAggregateModels(keys: string[]) {
-    const selected = new Set(keys);
-    setForm((current) => ({
-      ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => ({
-        ...config,
-        models: config.models.map((model) =>
-          selected.has(aggregateModelGroupKey(config, model.model_name))
-            ? { ...model, source: "manual", upstream_missing: false }
-            : model,
-        ),
-      })),
-    }));
-  }
   function addBinding(modelNames: string, protocols: ProtocolKind[]) {
     const names = parseModelNames(modelNames);
     if (!names.length || !protocols.length) return false;
@@ -352,12 +325,32 @@ export function useChannelForm(locale: Locale) {
           ? config.credential_ids
           : current.credentials.map((item) => item.id);
         const newModels = names.flatMap((name) =>
-          buildModels(config, credentialIds, name, protocols, "manual"),
+          buildModels(config, credentialIds, name, protocols),
         );
         if (!newModels.length) return config;
+        const existingTargets = new Set(
+          config.sync_targets.map(
+            (target) =>
+              `${target.credential_id}:${target.protocol}:${target.model_name}`,
+          ),
+        );
+        const sync_targets = [...config.sync_targets];
+        for (const model of newModels) {
+          for (const protocol of model.protocols) {
+            const targetKey = `${model.credential_id}:${protocol}:${model.model_name}`;
+            if (existingTargets.has(targetKey)) continue;
+            existingTargets.add(targetKey);
+            sync_targets.push({
+              credential_id: model.credential_id,
+              protocol,
+              model_name: model.model_name,
+            });
+          }
+        }
         return {
           ...config,
           models: [...config.models, ...newModels],
+          sync_targets,
         };
       }),
     }));
@@ -382,7 +375,6 @@ export function useChannelForm(locale: Locale) {
     updateModelContextWindow,
     removeAggregateModel,
     toggleAggregateEnabled,
-    keepAggregateModels,
     addBinding,
     addBaseUrl,
     updateBaseUrl,

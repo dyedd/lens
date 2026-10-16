@@ -93,7 +93,6 @@ def test_import_backup_accepts_exported_bundle(
 ) -> None:
     rule = create_regex_rule("GPT", "^gpt-")
     site_payload = valid_site_payload()
-    site_payload["model_sync_include_rule_ids"] = [rule["id"]]
     site_payload["credentials"][0].update(
         {
             "rate_source": "newapi",
@@ -101,7 +100,7 @@ def test_import_backup_accepts_exported_bundle(
             "rate_group": "vip",
         }
     )
-    site = create_site(site_payload)
+    create_site(site_payload)
     group = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
@@ -156,13 +155,11 @@ def test_import_backup_accepts_exported_bundle(
     assert restored_group["headers"] == [
         {"name": "X-Group", "action": "override", "value": "enabled", "match": None}
     ]
-    assert client.get("/api/admin/regex-rules", headers=admin_headers).json() == [
-        {
-            **rule,
-            "sites": [{"id": site["id"], "name": site["name"]}],
-            "groups": [{"id": group.json()["id"], "name": "backup-group"}],
-        }
-    ]
+    rules = client.get("/api/admin/regex-rules", headers=admin_headers).json()
+    assert next(item for item in rules if item["id"] == rule["id"]) == {
+        **rule,
+        "groups": [{"id": group.json()["id"], "name": "backup-group"}],
+    }
     settings = {
         item["key"]: item["value"]
         for item in client.get("/api/admin/settings", headers=admin_headers).json()

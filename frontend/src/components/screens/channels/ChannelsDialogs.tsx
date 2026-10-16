@@ -130,10 +130,6 @@ export function ChannelsDialogs({
           testing={modelTest.testingModel}
           onAddBinding={editor.addBinding}
           onOpenRemote={() => setRemoteOpen(true)}
-          onKeep={editor.keepAggregateModels}
-          syncEnabled={editor.form.model_sync_enabled}
-          syncing={save.syncingSiteId !== null}
-          onSyncNow={() => void save.syncEditorModels()}
           initialStatusFilter={modelsStatusFilter}
           isNested={isModelsNested}
         />

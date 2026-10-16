@@ -3,14 +3,48 @@
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.persistence.entities import ModelGroupEntity
+from app.persistence.entities import ModelGroupEntity, RegexRuleEntity
 from app.persistence.group_rule_codec import parse_match_models
 from app.persistence.regex_rule_references import load_rule_patterns, parse_rule_ids
+
+
+def default_group_match_pattern(group_name: str) -> str:
+    """生成新建模型组默认的名称前缀正则。"""
+    escaped_name = re.escape(group_name.strip()).replace(r"\-", "-")
+    return f"^{escaped_name}"
+
+
+async def create_default_group_match_rule(
+    session: AsyncSession, group_name: str
+) -> RegexRuleEntity:
+    """在共享规则库中创建模型组默认的名称前缀规则。"""
+    base_name = f"模型组匹配：{group_name.strip()}"
+    base_name = base_name[:60]
+    existing_names = {
+        name.casefold()
+        for name in (await session.execute(select(RegexRuleEntity.name))).scalars()
+    }
+    rule_name = base_name
+    suffix = 2
+    while rule_name.casefold() in existing_names:
+        suffix_text = f" ({suffix})"
+        rule_name = f"{base_name[: 60 - len(suffix_text)]}{suffix_text}"
+        suffix += 1
+    rule = RegexRuleEntity(
+        id=str(uuid.uuid4()),
+        name=rule_name,
+        pattern=default_group_match_pattern(group_name),
+        description="模型组创建时生成，可在设置的规则库中修改",
+    )
+    session.add(rule)
+    return rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,9 +77,9 @@ def build_group_match_rules(
     )
 
 
-def is_auto_joined(group_name: str, rules: GroupMatchRules, model_name: str) -> bool:
+def is_auto_joined(rules: GroupMatchRules, model_name: str) -> bool:
     """Return whether reconcile would put this model name back into the group."""
-    return rules.matches(model_name) or model_name.casefold() == group_name.casefold()
+    return rules.matches(model_name)
 
 
 async def load_match_rules(
