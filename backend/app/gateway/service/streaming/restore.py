@@ -36,8 +36,35 @@ def distill_stream_response_content(
         )
         if restored_message is not None:
             return dump_log_json(restored_message) or raw_content
+    if protocol == ProtocolKind.GEMINI:
+        payloads = parse_sse_payloads(raw_content)
+        compact_payload = _restore_gemini_stream_response(payloads)
+        if compact_payload is not None:
+            return dump_log_json(compact_payload) or raw_content
 
     return raw_content
+
+
+def _restore_gemini_stream_response(
+    payloads: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Collapse Gemini stream chunks into the last full candidate state."""
+    response: dict[str, Any] | None = None
+    for payload in payloads:
+        candidates = payload.get("candidates")
+        usage_metadata = payload.get("usageMetadata")
+        if not isinstance(candidates, list) and not isinstance(usage_metadata, dict):
+            continue
+        merged: dict[str, Any] = {
+            key: value for key, value in payload.items() if key != "usageMetadata"
+        }
+        if response is not None:
+            response.update(merged)
+        else:
+            response = merged
+        if isinstance(usage_metadata, dict):
+            response["usageMetadata"] = usage_metadata
+    return response
 
 
 def _restore_anthropic_stream_message(
