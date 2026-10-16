@@ -4,15 +4,10 @@ import {
   Check,
   CloudDownload,
   Funnel,
-  Pin,
   Plus,
-  RefreshCw,
 } from "lucide-react";
 import { type FormEventHandler, useMemo, useState } from "react";
-import {
-  BulkActionButton,
-  BulkActionsPopover,
-} from "@/components/ui/BulkActionsPopover";
+import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
@@ -75,10 +70,6 @@ type Props = {
   testing: boolean;
   onAddBinding: (names: string, protocols: ProtocolKind[]) => boolean;
   onOpenRemote: () => void;
-  onKeep: (keys: string[]) => void;
-  syncEnabled: boolean;
-  syncing: boolean;
-  onSyncNow: () => void;
   initialStatusFilter?: ModelStatusFilter;
   isNested?: boolean;
 };
@@ -110,10 +101,6 @@ function ChannelModelsBody({
   testing,
   onAddBinding,
   onOpenRemote,
-  onKeep,
-  syncEnabled,
-  syncing,
-  onSyncNow,
   initialStatusFilter = "all",
   isNested = false,
 }: Omit<Props, "open">) {
@@ -208,11 +195,6 @@ function ChannelModelsBody({
     setBulkDeleteOpen(false);
   }
 
-  function keepSelected() {
-    onKeep(selectedKeys);
-    selection.clear();
-  }
-
   return (
     <>
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSave}>
@@ -226,13 +208,11 @@ function ChannelModelsBody({
             {locale === "zh-CN"
               ? "自动传递客户端协议；选择具体协议可将请求转换为该协议。"
               : "Auto passes the client protocol through. Choose a protocol to convert requests to it."}
-            {syncEnabled ? (
-              <span className="block">
-                {locale === "zh-CN"
-                  ? "自动同步已开启：同步模型删除后会在下次同步时回来；停用模型可将其排除。上游已移除的模型已暂停调用，可保留或删除。"
-                  : "Auto-sync is on: deleted synced models return on the next sync, so disable them to exclude them. Models removed upstream are paused and can be kept or deleted."}
-              </span>
-            ) : null}
+            <span className="block">
+              {locale === "zh-CN"
+                ? "模型会按上游列表更新；删除模型后不会重新加入。上游已移除的模型会暂停调用。"
+                : "Models follow the upstream list. Deleted models stay out; models removed upstream are paused."}
+            </span>
           </DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -396,28 +376,8 @@ function ChannelModelsBody({
                 onChange={setBulkProtocols}
               />
             </div>
-            <BulkActionButton
-              icon={<Pin className="size-3.5" />}
-              label={locale === "zh-CN" ? "保留为手动模型" : "Keep as manual"}
-              onClick={keepSelected}
-            />
           </BulkActionsPopover>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {syncEnabled ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={syncing || saving}
-                onClick={onSyncNow}
-              >
-                <RefreshCw
-                  className={syncing ? "size-3.5 animate-spin" : "size-3.5"}
-                />
-                {locale === "zh-CN" ? "立即同步" : "Sync now"}
-              </Button>
-            ) : null}
             <Button
               type="button"
               size="sm"
@@ -437,7 +397,7 @@ function ChannelModelsBody({
               onClick={() => setNewOpen(true)}
             >
               <Plus className="size-3.5" />
-              {locale === "zh-CN" ? "手动添加模型" : "Add models manually"}
+              {locale === "zh-CN" ? "添加模型" : "Add models"}
             </Button>
           </div>
         </div>
@@ -499,8 +459,8 @@ function ChannelModelsBody({
         title={locale === "zh-CN" ? "删除模型" : "Delete models"}
         description={
           locale === "zh-CN"
-            ? `删除选中的 ${selectedCount} 个模型，保存后生效。${syncEnabled ? "上游仍提供的同步模型会在下次同步时重新加入。" : ""}`
-            : `${selectedCount} selected models will be removed after you save.${syncEnabled ? " Synced models still listed upstream return on the next sync." : ""}`
+            ? `删除选中的 ${selectedCount} 个模型及其同步目标，保存后生效。`
+            : `${selectedCount} selected models and their sync targets will be removed after you save.`
         }
         isDisabled={selectedCount === 0}
         onOpenChange={setBulkDeleteOpen}

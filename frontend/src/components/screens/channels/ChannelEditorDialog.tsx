@@ -5,7 +5,6 @@ import {
   type SetStateAction,
   useState,
 } from "react";
-import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
@@ -15,7 +14,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/Sheet";
-import { Switch } from "@/components/ui/Switch";
 import { ChannelAdvancedSection } from "./ChannelAdvancedSection";
 import { ChannelBasicInfoSection } from "./ChannelBasicInfoSection";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
@@ -47,130 +45,63 @@ function editorTitle(editingSiteId: string | null, locale: Locale) {
   return locale === "zh-CN" ? "新建渠道" : "Create channel";
 }
 
-/** Renders the model sync switch, filters, and model shortcuts. */
+/** Renders model shortcuts and the current model count. */
 function ChannelModelSection({
-  form,
   locale,
   modelCounts,
-  setForm,
   onFetchModels,
   onManageModels,
 }: Pick<
   ChannelEditorDialogProps,
-  | "form"
-  | "locale"
-  | "modelCounts"
-  | "setForm"
-  | "onFetchModels"
-  | "onManageModels"
+  "locale" | "modelCounts" | "onFetchModels" | "onManageModels"
 >) {
   const isZh = locale === "zh-CN";
   return (
-    <div className="min-w-0 space-y-1">
-      <div className="text-xs font-normal text-muted-foreground">
-        {isZh ? "模型同步" : "Model sync"}
-      </div>
-      <div className="space-y-2.5 rounded-md bg-muted/35 p-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xs font-medium">
-              {isZh ? "自动同步模型" : "Auto-sync models"}
-            </div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {isZh
-                ? "自动加入上游的新模型；上游移除的模型会标记为待处理。"
-                : "Add new upstream models automatically; mark removed models for review."}
-            </div>
+    <div className="min-w-0 space-y-2.5 rounded-md bg-muted/35 p-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-medium">
+            {isZh ? "模型同步" : "Model sync"}
           </div>
-          <Switch
-            size="sm"
-            checked={form.model_sync_enabled}
-            onCheckedChange={(checked) =>
-              setForm((current) => ({
-                ...current,
-                model_sync_enabled: checked,
-              }))
-            }
-            aria-label={isZh ? "自动同步模型" : "Auto-sync models"}
-          />
-        </div>
-        {form.model_sync_enabled ? (
-          <div className="space-y-1">
-            <div className="flex items-start gap-2">
-              <span className="w-14 shrink-0 text-xs leading-6 text-muted-foreground">
-                {isZh ? "只同步" : "Include"}
-              </span>
-              <RegexRulePicker
-                locale={locale}
-                label={
-                  isZh
-                    ? "仅同步符合规则的模型"
-                    : "Only sync models matching these rules"
-                }
-                value={form.model_sync_include_rule_ids}
-                onChange={(ruleIds) =>
-                  setForm((current) => ({
-                    ...current,
-                    model_sync_include_rule_ids: ruleIds,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="w-14 shrink-0 text-xs leading-6 text-muted-foreground">
-                {isZh ? "排除" : "Exclude"}
-              </span>
-              <RegexRulePicker
-                locale={locale}
-                label={
-                  isZh
-                    ? "排除符合规则的模型"
-                    : "Skip models matching these rules"
-                }
-                value={form.model_sync_exclude_rule_ids}
-                onChange={(ruleIds) =>
-                  setForm((current) => ({
-                    ...current,
-                    model_sync_exclude_rule_ids: ruleIds,
-                  }))
-                }
-              />
-            </div>
-          </div>
-        ) : null}
-        <div className="flex h-7 items-center justify-between gap-2">
-          <span className="truncate text-xs text-muted-foreground tabular-nums">
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
             {isZh
-              ? `${modelCounts.enabled} / ${modelCounts.total} 已启用`
-              : `${modelCounts.enabled} / ${modelCounts.total} active`}
-            {modelCounts.pending ? (
-              <span className="text-destructive">
-                {isZh
-                  ? ` · ${modelCounts.pending} 待处理`
-                  : ` · ${modelCounts.pending} needs review`}
-              </span>
-            ) : null}
-          </span>
-          <div className="flex shrink-0 items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={onFetchModels}
-            >
-              <CloudDownload />
-              {isZh ? "获取模型列表" : "Fetch model list"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={onManageModels}
-            >
-              <Settings2 />
-              {isZh ? "管理模型" : "Manage models"}
-            </Button>
+              ? "输入或获取的模型都会按上游列表持续同步。"
+              : "Entered and fetched models stay synchronized with the upstream catalog."}
           </div>
+        </div>
+      </div>
+      <div className="flex h-7 items-center justify-between gap-2">
+        <span className="truncate text-xs text-muted-foreground tabular-nums">
+          {isZh
+            ? `${modelCounts.enabled} / ${modelCounts.total} 已启用`
+            : `${modelCounts.enabled} / ${modelCounts.total} active`}
+          {modelCounts.pending ? (
+            <span className="text-destructive">
+              {isZh
+                ? ` · ${modelCounts.pending} 待处理`
+                : ` · ${modelCounts.pending} needs review`}
+            </span>
+          ) : null}
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={onFetchModels}
+          >
+            <CloudDownload />
+            {isZh ? "获取模型列表" : "Fetch model list"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={onManageModels}
+          >
+            <Settings2 />
+            {isZh ? "管理模型" : "Manage models"}
+          </Button>
         </div>
       </div>
     </div>
@@ -251,10 +182,8 @@ export function ChannelEditorDialog({
                 removeBaseUrl={removeBaseUrl}
               />
               <ChannelModelSection
-                form={form}
                 locale={locale}
                 modelCounts={modelCounts}
-                setForm={setForm}
                 onFetchModels={onFetchModels}
                 onManageModels={onManageModels}
               />

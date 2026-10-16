@@ -2,7 +2,6 @@ import {
   CloudDownload,
   MoreHorizontal,
   Pencil,
-  RefreshCw,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -63,8 +62,6 @@ type Props = {
   onManageModels: (site: Site) => void;
   onReviewPendingModels: (site: Site) => void;
   onFetchModels: (site: Site) => void;
-  syncingSiteId: string | null;
-  onSyncModels: (site: Site) => void;
   onToggleEnabled: (site: Site, enabled: boolean) => void;
   onDelete: (site: Site) => void;
 };
@@ -82,8 +79,6 @@ export function ChannelsTable({
   onManageModels,
   onReviewPendingModels,
   onFetchModels,
-  syncingSiteId,
-  onSyncModels,
   onToggleEnabled,
   onDelete,
 }: Props) {
@@ -295,17 +290,6 @@ export function ChannelsTable({
                           ? "获取模型列表"
                           : "Fetch model list"}
                       </DropdownMenuItem>
-                      {site.model_sync_enabled ? (
-                        <DropdownMenuItem
-                          disabled={!site.enabled || syncingSiteId === site.id}
-                          onSelect={() => onSyncModels(site)}
-                        >
-                          <RefreshCw className="size-3.5 stroke-1" />
-                          {locale === "zh-CN"
-                            ? "立即同步模型"
-                            : "Sync models now"}
-                        </DropdownMenuItem>
-                      ) : null}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => onDelete(site)}>
                         <Trash2 className="size-3.5 stroke-1" />

@@ -428,7 +428,6 @@ def _model(
     model_name: str,
     *,
     credential_id: str = "cred-a",
-    source: str = "synced",
     **fields: Any,
 ) -> dict[str, Any]:
     return {
@@ -436,16 +435,28 @@ def _model(
         "model_name": model_name,
         "enabled": True,
         "protocol": "openai_chat",
-        "source": source,
         **fields,
     }
 
 
+def _target(
+    model_name: str,
+    *,
+    credential_id: str = "cred-a",
+    protocol: str = "auto",
+) -> dict[str, str]:
+    return {
+        "credential_id": credential_id,
+        "protocol": protocol,
+        "model_name": model_name,
+    }
+
+
 def _sync_site_payload(**site_fields: Any) -> dict[str, Any]:
-    """Build a two-credential site whose upstream models sync automatically."""
+    """Build a two-credential site with explicit sync targets when supplied."""
+    sync_targets = site_fields.pop("sync_targets", [])
     return {
         "name": "Multi-key Site",
-        "model_sync_enabled": True,
         **site_fields,
         "base_urls": [{"id": "base-1", "url": "https://upstream.example/v1"}],
         "credentials": [
@@ -457,7 +468,8 @@ def _sync_site_payload(**site_fields: Any) -> dict[str, Any]:
                 "id": "pc-1",
                 "base_url_id": "base-1",
                 "protocols": ["openai_chat"],
-                "models": [_model("manual-only", source="manual")],
+                "models": [_model("manual-only")],
+                "sync_targets": sync_targets,
             }
         ],
     }
@@ -490,36 +502,34 @@ def _run_model_sync(client, admin_headers, **body: Any) -> dict[str, Any]:
     return response.json()
 
 
-def _stored_models(client, admin_headers) -> set[tuple[str, str, str, bool]]:
+def _stored_models(client, admin_headers) -> set[tuple[str, str, bool]]:
     site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     return {
         (
             model["credential_id"],
             model["model_name"],
-            model["source"],
             model["upstream_missing"],
         )
         for model in site["protocols"][0]["models"]
     }
 
 
-def test_channel_model_sync_adds_filtered_upstream_models_for_each_credential(
+def test_channel_model_sync_adds_selected_upstream_models_for_each_credential(
     client,
     admin_headers,
     monkeypatch,
-    create_regex_rule,
 ) -> None:
-    include_ids = [
-        create_regex_rule("GPT", "^gpt-")["id"],
-        create_regex_rule("o1", "^o1-")["id"],
-    ]
-    exclude_ids = [create_regex_rule("Preview", "-preview$")["id"]]
     _create_sync_site(
         client,
         admin_headers,
         _sync_site_payload(
-            model_sync_include_rule_ids=include_ids,
-            model_sync_exclude_rule_ids=exclude_ids,
+            sync_targets=[
+                *[
+                    _target(name, credential_id=credential)
+                    for credential in ("cred-a", "cred-b")
+                    for name in ("gpt-4o", "O1-mini")
+                ]
+            ],
         ),
     )
 
@@ -539,20 +549,29 @@ def test_channel_model_sync_adds_filtered_upstream_models_for_each_credential(
         ("cred-b", "updated", ("O1-mini", "gpt-4o")),
     }
     assert _stored_models(client, admin_headers) == {
-        ("cred-a", "manual-only", "manual", False),
-        ("cred-a", "gpt-4o", "synced", False),
-        ("cred-a", "O1-mini", "synced", False),
-        ("cred-b", "gpt-4o", "synced", False),
-        ("cred-b", "O1-mini", "synced", False),
+        ("cred-a", "manual-only", True),
+        ("cred-a", "gpt-4o", False),
+        ("cred-a", "O1-mini", False),
+        ("cred-b", "gpt-4o", False),
+        ("cred-b", "O1-mini", False),
     }
 
 
-def test_channel_model_sync_places_new_models_into_failover_groups(
+def test_channel_model_sync_leaves_new_models_for_explicit_group_placement(
     client,
     admin_headers,
     monkeypatch,
 ) -> None:
-    _create_sync_site(client, admin_headers, _sync_site_payload())
+    _create_sync_site(
+        client,
+        admin_headers,
+        _sync_site_payload(
+            sync_targets=[
+                _target("gpt-4o", credential_id=credential)
+                for credential in ("cred-a", "cred-b")
+            ]
+        ),
+    )
 
     async def fake_fetch(_channel: Any) -> list[str]:
         return ["gpt-4o"]
@@ -560,6 +579,19 @@ def test_channel_model_sync_places_new_models_into_failover_groups(
     _patch_upstream_models(monkeypatch, fake_fetch)
 
     _run_model_sync(client, admin_headers)
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert groups == []
+    result = _run_model_sync(client, admin_headers)
+    assert {item["model_name"] for item in result["groups"]["pending"]} == {
+        "gpt-4o",
+    }
+
+    placed = client.post(
+        "/api/admin/model-group-placements",
+        headers=admin_headers,
+        json={"model_names": ["gpt-4o"]},
+    )
+    assert placed.status_code == 200, placed.text
     groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
 
     assert {
@@ -571,9 +603,50 @@ def test_channel_model_sync_places_new_models_into_failover_groups(
         )
         for group in groups
     } == {
-        ("manual-only", "failover", ("manual-only",), ("cred-a",)),
-        ("gpt-4o", "failover", ("gpt-4o",), ("cred-a", "cred-b")),
+        ("gpt-4o", "failover", (), ("cred-a", "cred-b")),
     }
+    rules = {
+        rule["id"]: rule["pattern"]
+        for rule in client.get("/api/admin/regex-rules", headers=admin_headers).json()
+    }
+    for group in groups:
+        assert [rules[rule_id] for rule_id in group["match_rule_ids"]] == [
+            f"^{group['name']}"
+        ]
+
+
+def test_removing_unplaced_synced_model_removes_its_target(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    _create_sync_site(
+        client,
+        admin_headers,
+        _sync_site_payload(sync_targets=[_target("gpt-4o")]),
+    )
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return ["gpt-4o"]
+
+    _patch_upstream_models(monkeypatch, fake_fetch)
+    _run_model_sync(client, admin_headers)
+
+    removed = client.post(
+        "/api/admin/unplaced-model-removals",
+        headers=admin_headers,
+        json={"model_names": ["gpt-4o"]},
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json() == {"deleted": 1}
+
+    _run_model_sync(client, admin_headers)
+    assert all(
+        model["model_name"] != "gpt-4o"
+        for model in client.get("/api/admin/sites", headers=admin_headers).json()[0][
+            "protocols"
+        ][0]["models"]
+    )
 
 
 def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
@@ -581,10 +654,11 @@ def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
     admin_headers,
     monkeypatch,
 ) -> None:
-    payload = _sync_site_payload()
-    payload["protocols"][0]["models"].append(_model("gpt-old"))
+    payload = _sync_site_payload(
+        sync_targets=[_target("gpt-old", protocol="openai_chat")]
+    )
     _create_sync_site(client, admin_headers, payload)
-    upstream_models = ["gpt-new"]
+    upstream_models = ["gpt-new", "manual-only"]
 
     async def fake_fetch(_channel: Any) -> list[str]:
         return list(upstream_models)
@@ -599,14 +673,12 @@ def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
     assert {
         (item["credential_id"], tuple(item["missing"])) for item in flagged["items"]
     } == {("cred-a", ("gpt-old",)), ("cred-b", ())}
-    assert ("cred-a", "gpt-old", "synced", True) in flagged_models
-    assert ("cred-a", "manual-only", "manual", False) in flagged_models
+    assert ("cred-a", "gpt-old", True) in flagged_models
+    assert ("cred-a", "manual-only", False) in flagged_models
     assert {
         (item["credential_id"], tuple(item["restored"])) for item in restored["items"]
     } == {("cred-a", ("gpt-old",)), ("cred-b", ())}
-    assert ("cred-a", "gpt-old", "synced", False) in _stored_models(
-        client, admin_headers
-    )
+    assert ("cred-a", "gpt-old", False) in _stored_models(client, admin_headers)
 
 
 def test_channel_model_sync_retires_members_missing_past_the_grace_period(
@@ -617,24 +689,45 @@ def test_channel_model_sync_retires_members_missing_past_the_grace_period(
     import app.persistence.channel_store.write as site_write
     import app.persistence.repositories.group_reconcile as group_reconcile
 
-    payload = _sync_site_payload()
-    payload["protocols"][0]["models"].append(_model("gpt-old"))
+    payload = _sync_site_payload(
+        sync_targets=[
+            _target("gpt-old", protocol="openai_chat"),
+            _target("gpt-new", credential_id="cred-a"),
+            _target("gpt-new", credential_id="cred-b"),
+        ]
+    )
+    _create_group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "gpt-old"},
+    )
+    assert _create_group.status_code == 201, _create_group.text
+    _create_group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "gpt-new"},
+    )
+    assert _create_group.status_code == 201, _create_group.text
     site_id = _create_sync_site(client, admin_headers, payload)
 
+    upstream_models = ["gpt-new", "gpt-old", "manual-only"]
+
     async def fake_fetch(_channel: Any) -> list[str]:
-        return ["gpt-new"]
+        return list(upstream_models)
 
     _patch_upstream_models(monkeypatch, fake_fetch)
 
     flagged = _run_model_sync(client, admin_headers)
+    upstream_models[:] = ["gpt-new", "manual-only"]
     # A site save later in the grace period rebuilds the model rows; the miss
     # must still count from the sync that first saw it.
     first_miss = datetime.now(UTC).replace(tzinfo=None)
+    first_missing = _run_model_sync(client, admin_headers)
     monkeypatch.setattr(
         site_write, "_naive_utc_now", lambda: first_miss + timedelta(days=3)
     )
     payload["protocols"][0]["models"] = [
-        _model("manual-only", source="manual"),
+        _model("manual-only"),
         _model("gpt-old", upstream_missing=True),
         _model("gpt-new"),
         _model("gpt-new", credential_id="cred-b"),
@@ -660,17 +753,18 @@ def test_channel_model_sync_retires_members_missing_past_the_grace_period(
     assert set(changed(flagged, "added")) == {
         ("gpt-new", "cred-a", "gpt-new"),
         ("gpt-new", "cred-b", "gpt-new"),
+        ("gpt-old", "cred-a", "gpt-old"),
     }
-    assert [group["name"] for group in flagged["groups"]["created_groups"]] == [
-        "gpt-new"
-    ]
+    assert flagged["groups"]["created_groups"] == []
     assert changed(flagged, "retired") == []
+    assert changed(first_missing, "retired") == []
     assert changed(within_grace, "retired") == []
     assert changed(past_grace, "retired") == [("gpt-old", "cred-a", "gpt-old")]
     assert next(group for group in groups if group["name"] == "gpt-old")["items"] == []
     assert history.status_code == 200, history.text
     assert {run["id"] for run in history.json()} == {
         flagged["id"],
+        first_missing["id"],
         within_grace["id"],
         past_grace["id"],
     }
@@ -692,7 +786,12 @@ def test_channel_model_sync_leaves_models_untouched_when_a_catalog_fails(
     monkeypatch,
     failed_catalog: Any,
 ) -> None:
-    payload = _sync_site_payload()
+    payload = _sync_site_payload(
+        sync_targets=[
+            _target("gpt-old", protocol="openai_chat"),
+            _target("gpt-new", credential_id="cred-b"),
+        ]
+    )
     payload["protocols"][0]["models"].append(_model("gpt-old"))
     _create_sync_site(client, admin_headers, payload)
 
@@ -707,22 +806,29 @@ def test_channel_model_sync_leaves_models_untouched_when_a_catalog_fails(
 
     result = _run_model_sync(client, admin_headers)
 
+    expected_a_status = "failed" if isinstance(failed_catalog, Exception) else "updated"
     assert {(item["credential_id"], item["status"]) for item in result["items"]} == {
-        ("cred-a", "failed"),
+        ("cred-a", expected_a_status),
         ("cred-b", "updated"),
     }
+    if isinstance(failed_catalog, Exception):
+        expected_cred_a = {
+            ("cred-a", "manual-only", False),
+            ("cred-a", "gpt-old", False),
+        }
+    else:
+        expected_cred_a = {
+            ("cred-a", "manual-only", True),
+            ("cred-a", "gpt-old", True),
+        }
     assert {
         model for model in _stored_models(client, admin_headers) if model[0] == "cred-a"
-    } == {
-        ("cred-a", "manual-only", "manual", False),
-        ("cred-a", "gpt-old", "synced", False),
-    }
+    } == expected_cred_a
 
 
 @pytest.mark.parametrize(
     ("site_fields", "is_site_disabled", "sync_request"),
     [
-        pytest.param({"model_sync_enabled": False}, False, {}, id="sync-disabled"),
         pytest.param({}, True, {}, id="site-disabled"),
         pytest.param({}, False, {"site_ids": ["other-site"]}, id="not-requested"),
     ],
@@ -756,25 +862,25 @@ def test_channel_model_sync_skips_sites_outside_its_scope(
     assert result["items"] == []
 
 
-def test_site_save_keeps_upstream_missing_flag_only_on_synced_models(
+def test_site_save_preserves_upstream_missing_flag_for_all_models(
     client,
     admin_headers,
 ) -> None:
-    payload = _sync_site_payload()
+    payload = _sync_site_payload(sync_targets=[_target("gpt-gone")])
     payload["protocols"][0]["models"] = [
         _model("gpt-gone", upstream_missing=True),
-        _model("kept-by-admin", source="manual", upstream_missing=True),
+        _model("kept-by-admin", upstream_missing=True),
     ]
 
     _create_sync_site(client, admin_headers, payload)
 
     assert _stored_models(client, admin_headers) == {
-        ("cred-a", "gpt-gone", "synced", True),
-        ("cred-a", "kept-by-admin", "manual", False),
+        ("cred-a", "gpt-gone", True),
+        ("cred-a", "kept-by-admin", True),
     }
 
 
-def test_site_rejects_duplicate_models_across_sources(
+def test_site_rejects_duplicate_models(
     client,
     admin_headers,
 ) -> None:
@@ -786,16 +892,17 @@ def test_site_rejects_duplicate_models_across_sources(
     assert_error(response, 400, "Duplicate model in protocol config")
 
 
-def test_channel_model_sync_never_mixes_automatic_and_fixed_protocols(
+def test_channel_model_sync_only_materializes_selected_targets(
     client,
     admin_headers,
     monkeypatch,
 ) -> None:
-    payload = _sync_site_payload()
-    payload["protocols"][0]["models"] = [
-        _model("auto-model", source="manual", protocol="auto"),
-        _model("fixed-model", source="manual"),
-    ]
+    payload = _sync_site_payload(
+        sync_targets=[
+            _target("new-model", credential_id="cred-a"),
+            _target("new-model", credential_id="cred-b"),
+        ]
+    )
     _create_sync_site(client, admin_headers, payload)
 
     async def fake_fetch(_channel: Any) -> list[str]:
@@ -812,10 +919,7 @@ def test_channel_model_sync_never_mixes_automatic_and_fixed_protocols(
             (model["credential_id"], model["model_name"]), set()
         ).add(model["protocol"])
     assert protocols_by_model == {
-        ("cred-a", "auto-model"): {"auto"},
-        ("cred-a", "fixed-model"): {"openai_chat"},
+        ("cred-a", "manual-only"): {"openai_chat"},
         ("cred-a", "new-model"): {"auto"},
-        ("cred-b", "auto-model"): {"auto"},
-        ("cred-b", "fixed-model"): {"auto"},
         ("cred-b", "new-model"): {"auto"},
     }

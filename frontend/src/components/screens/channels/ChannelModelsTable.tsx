@@ -90,9 +90,6 @@ export function ChannelModelsTable({
           <TableHead className="w-[150px]">
             {locale === "zh-CN" ? "API Key" : "Keys"}
           </TableHead>
-          <TableHead className="w-[64px]">
-            {locale === "zh-CN" ? "来源" : "Source"}
-          </TableHead>
           <TableHead className="w-[180px]">
             {locale === "zh-CN" ? "转发协议" : "Forwarding"}
           </TableHead>
@@ -198,15 +195,6 @@ export function ChannelModelsTable({
                   showBaseUrl={hasMultipleBaseUrls}
                   locale={locale}
                 />
-              </TableCell>
-              <TableCell className="w-[64px] py-1.5 text-xs text-muted-foreground">
-                {model.source === "synced"
-                  ? locale === "zh-CN"
-                    ? "同步"
-                    : "Synced"
-                  : locale === "zh-CN"
-                    ? "手动"
-                    : "Manual"}
               </TableCell>
               <TableCell className="w-[180px] py-1.5">
                 <ProtocolDropdown
@@ -388,14 +376,6 @@ function ModelKeyBadges({
       ]),
     ).values(),
   ];
-  const sourceLabel = (source: AggregatedModel["source"]) =>
-    source === "synced"
-      ? locale === "zh-CN"
-        ? "同步"
-        : "Synced"
-      : locale === "zh-CN"
-        ? "手动"
-        : "Manual";
   return (
     <CredentialBadges
       keys={keys}
@@ -404,7 +384,6 @@ function ModelKeyBadges({
         [
           member.credentialTitle,
           showBaseUrl ? formatBaseUrlLabel(model.baseUrl) : "",
-          sourceLabel(member.source),
         ]
           .filter(Boolean)
           .join(" · "),
