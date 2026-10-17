@@ -68,19 +68,12 @@ export type SiteProtocolConfig = {
   protocols: ProtocolKind[];
   credential_ids: string[];
   models: SiteModel[];
-  sync_targets: SiteSyncTarget[];
 };
 export type SiteProtocolConfigInput = {
   id?: string | null;
   base_url_id: string;
   protocols: ProtocolKind[];
   models: SiteModelInput[];
-  sync_targets: SiteSyncTarget[];
-};
-export type SiteSyncTarget = {
-  credential_id: string;
-  protocol: ProtocolKind;
-  model_name: string;
 };
 export type Site = {
   id: string;
@@ -92,6 +85,12 @@ export type Site = {
   channel_proxy: string;
   headers: HeaderRule[];
   param_override: ParamOverrideRule[];
+  /** Library regex rules; sync onboards matching upstream models. */
+  model_sync_include_rule_ids: string[];
+  /** Library regex rules; sync never onboards matching upstream models. */
+  model_sync_exclude_rule_ids: string[];
+  /** Vendor prefixes like "openai" that alias "openai/gpt-5" to "gpt-5". */
+  model_name_prefixes: string[];
   base_urls: SiteBaseUrl[];
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];
@@ -130,6 +129,9 @@ export type SitePayload = {
   channel_proxy: string;
   headers: HeaderRule[];
   param_override: ParamOverrideRule[];
+  model_sync_include_rule_ids: string[];
+  model_sync_exclude_rule_ids: string[];
+  model_name_prefixes: string[];
   base_urls: SiteBaseUrlInput[];
   credentials: SiteCredentialInput[];
   protocols: SiteProtocolConfigInput[];

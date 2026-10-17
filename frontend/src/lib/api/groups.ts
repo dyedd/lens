@@ -69,9 +69,9 @@ export type ModelGroup = {
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
-  /** Channel model names that join by case-insensitive exact match. */
-  match_models: string[];
-  /** Library regex rule ids; models matching any of them join the group. */
+  /** How the group came to exist: created by hand or by automatic placement. */
+  origin: "manual" | "auto";
+  /** Library regex rules; when set they replace name matching for this group. */
   match_rule_ids: string[];
   new_member_position: ModelGroupNewMemberPosition;
   param_override: ParamOverrideRule[];
@@ -88,7 +88,7 @@ export type ModelGroup = {
   image_price_per_image: number;
   pricing_mode: "free" | "tokens" | "non_tokens";
   items: ModelGroupItem[];
-  /** Kept out of the group; rules and placement do not add them back. */
+  /** Kept out of the group; automatic joining does not add them back. */
   excluded_items: ModelGroupItem[];
 };
 export type ModelGroupCandidateSubitem = ModelGroupItemPayload & {
@@ -112,15 +112,10 @@ export type ModelGroupCandidateItem = {
 };
 export type ModelGroupCandidatesPayload = {
   items: ModelGroupItemPayload[];
-  /** Draft match rules; the backend reports which channel models they match. */
-  match_models: string[];
-  match_rule_ids: string[];
 };
 export type ModelGroupCandidatesResponse = {
   candidates: ModelGroupCandidateItem[];
   evaluated_items: ModelGroupItem[];
-  /** Channel model names the draft match rules select, evaluated server-side. */
-  matched_model_names: string[];
 };
 export type ModelGroupModelTestPayload = {
   channel_id: string;
@@ -149,7 +144,11 @@ export type UnplacedModel = {
   providers: UnplacedModelProvider[];
 };
 export type UnplacedModelsResponse = { items: UnplacedModel[] };
-export type ModelGroupPlacementRequest = { model_names: string[] | null };
+export type ModelGroupPlacementRequest = {
+  model_names: string[] | null;
+  /** When set, join the names into this existing execution group. */
+  group_id?: string;
+};
 export type ModelGroupMemberChange = {
   group_id: string;
   group_name: string;
@@ -174,8 +173,13 @@ export type ModelGroupReconcileReport = {
   /** Members whose model stayed missing upstream past the grace period. */
   retired: ModelGroupMemberChange[];
 };
-export type UnplacedModelRemovalRequest = { model_names: string[] };
+export type UnplacedModelRemovalRequest = {
+  model_names: string[];
+  /** Also reference exclude rules so sync never onboards them again. */
+  exclude?: boolean;
+};
 export type UnplacedModelRemovalResponse = {
   deleted: number;
+  excluded: number;
 };
 export type ModelGroupMergeRequest = { target_group_id: string };

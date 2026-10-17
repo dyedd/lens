@@ -16,13 +16,30 @@ from app.persistence.editable_settings import (
 )
 from app.persistence.entities import SettingEntity
 
+# Group rule fields written by backups before name-based joining.
+_LEGACY_GROUP_KEYS = ("match_models", "source_tags")
+
+
+def _drop_legacy_group_fields(data: object) -> object:
+    """Strip retired per-group rule fields so older backups still import."""
+    if not isinstance(data, dict):
+        return data
+    groups = data.get("groups")
+    if not isinstance(groups, list):
+        return data
+    for group in groups:
+        if isinstance(group, dict):
+            for key in _LEGACY_GROUP_KEYS:
+                group.pop(key, None)
+    return data
+
 
 class BackupExportImportMixin:
     @staticmethod
     def parse_dump(payload: bytes) -> ConfigBackupDump:
         """Parse and validate a serialized configuration backup."""
         try:
-            data = json.loads(payload)
+            data = _drop_legacy_group_fields(json.loads(payload))
             return ConfigBackupDump.model_validate(data)
         except ValueError as exc:
             raise ValueError("Invalid backup file") from exc

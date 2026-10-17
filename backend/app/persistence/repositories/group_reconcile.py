@@ -1,14 +1,16 @@
-"""Reconcile saved model group members with rules, placement, and upstream state.
+"""Reconcile saved model group members with names, placement, and upstream state.
 
-One pass runs the group stages of the model pipeline in order: rule members
-join or leave, unplaced models join a same-named group or get a new one, and
-members whose model stayed missing upstream past a grace period retire. Every
-member it adds is saved, so reads and routing never match rules themselves.
+One pass runs the group stages of the model pipeline in order: models join the
+group named after them, unplaced models join a same-named group or get a new
+one, and members whose model stayed missing upstream past a grace period
+retire. Every member it adds is saved, so reads and routing never infer
+membership from names themselves.
 """
 
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -30,22 +32,14 @@ from app.models.model_groups import (
     ModelGroupMemberChangeView,
     ModelGroupMemberSource,
     ModelGroupNewMemberPosition,
+    ModelGroupOrigin,
     ModelGroupReconcileReport,
     ModelGroupRefView,
 )
 from app.models.protocols import RoutingStrategy
 from app.persistence.entities import ModelGroupEntity, ModelGroupItemEntity
-from app.persistence.group_match_rules import (
-    GroupMatchRules,
-    build_group_match_rules,
-    create_default_group_match_rule,
-    load_group_match_rules,
-)
-from app.persistence.group_rule_codec import (
-    dump_match_models,
-    parse_match_models,
-)
-from app.persistence.regex_rule_references import dump_rule_ids
+from app.persistence.group_rule_codec import parse_fallback_group_ids
+from app.persistence.regex_rule_references import load_rule_patterns, parse_rule_ids
 
 from .group_placement import (
     GroupCoverage,
@@ -72,6 +66,14 @@ def _naive_utc_now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _matches_group(state: _GroupMemberState, names: list[str]) -> bool:
+    """Whether the group's rules, or its name, accept any of a model's aliases."""
+    if state.patterns:
+        return any(pattern.search(name) for pattern in state.patterns for name in names)
+    name_key = state.entity.name.casefold()
+    return any(name.casefold() == name_key for name in names)
+
+
 def _row_key(row: ModelGroupItemEntity) -> MemberKey:
     return row.channel_id, row.credential_id, row.model_name
 
@@ -89,7 +91,8 @@ def _exclusion_key(
 @dataclass(slots=True)
 class _GroupMemberState:
     entity: ModelGroupEntity
-    rules: GroupMatchRules
+    # Library rules; when set they replace name matching for this group.
+    patterns: tuple[re.Pattern[str], ...]
     # Members in route order; exclusions are kept apart and never reordered.
     members: list[ModelGroupItemEntity]
     excluded: list[ModelGroupItemEntity]
@@ -227,21 +230,26 @@ class GroupReconcileMixin:
         *,
         synced_targets: set[tuple[str, str]] | None = None,
         placement_names: set[str] | None = None,
+        into_group_id: str | None = None,
     ) -> ModelGroupReconcileReport:
-        """Save rule members, place uncovered models, and retire missing ones.
+        """Save name-matched members, place uncovered models, retire missing ones.
 
         ``synced_targets`` holds the ``(protocol_config_id, credential_id)``
         pairs a model sync just fetched; only their members can retire.
         ``placement_names`` limits which unplaced models may join or create a
-        group; every other stage still runs.
+        group; every other stage still runs. ``into_group_id`` sends those
+        names into one existing execution group instead of same-named ones.
         """
         channels = await self._channel_store.list_channels()
         async with self._session_factory() as session:
             run = await self._start_reconcile_run(session, channels)
-            self._sync_rule_members(run)
-            await self._place_uncovered_models(run, channels, placement_names)
+            self._join_matching_members(run)
+            await self._place_uncovered_models(
+                run, channels, placement_names, into_group_id
+            )
             if synced_targets:
                 self._retire_missing_members(run, synced_targets, _naive_utc_now())
+            await self._remove_empty_auto_groups(run)
             for row in run.deleted_rows:
                 await session.delete(row)
             for state in run.groups.values():
@@ -284,11 +292,22 @@ class GroupReconcileMixin:
             .scalars()
             .all()
         )
-        rules_by_group = await load_group_match_rules(session, entities)
+        rule_patterns = await load_rule_patterns(
+            session,
+            (
+                rule_id
+                for entity in entities
+                for rule_id in parse_rule_ids(entity.match_rule_ids_json)
+            ),
+        )
         groups = {
             entity.id: _GroupMemberState(
                 entity=entity,
-                rules=rules_by_group[entity.id],
+                patterns=tuple(
+                    rule_patterns[rule_id]
+                    for rule_id in parse_rule_ids(entity.match_rule_ids_json)
+                    if rule_id in rule_patterns
+                ),
                 members=[],
                 excluded=[],
             )
@@ -305,18 +324,24 @@ class GroupReconcileMixin:
         )
 
     @staticmethod
-    def _sync_rule_members(run: _ReconcileRun) -> None:
-        """Drop automatic members that lost their rule or target, add new matches."""
+    def _join_matching_members(run: _ReconcileRun) -> None:
+        """Join the members a group's rules (or its name) match, prune dead ones."""
         for state in run.groups.values():
             for row in list(state.members):
-                source = ModelGroupMemberSource(row.source)
-                if source not in _AUTO_SOURCES:
+                if ModelGroupMemberSource(row.source) not in _AUTO_SOURCES:
                     continue
-                lost_rule = (
-                    source == ModelGroupMemberSource.RULE
-                    and not state.rules.matches(row.model_name)
+                lookup = run.lookups.get(row.channel_id)
+                channel_model = (
+                    lookup.models_by_key.get((row.credential_id, row.model_name))
+                    if lookup is not None
+                    else None
                 )
-                lost_target = (
+                aliases = (
+                    list(channel_model.match_aliases) or [row.model_name]
+                    if channel_model is not None
+                    else [row.model_name]
+                )
+                dead_target = (
                     evaluate_model_group_item(
                         ModelGroupItemInput(
                             channel_id=row.channel_id,
@@ -327,19 +352,17 @@ class GroupReconcileMixin:
                     ).state
                     == ModelGroupItemState.INVALID
                 )
-                if lost_rule or lost_target:
+                if dead_target or not _matches_group(state, aliases):
                     run.report.removed.append(run.describe(state, row))
                     run.delete(state, row)
-            if state.rules.is_empty:
-                continue
             run.add(
                 state,
                 [
                     item
                     for item in run.ready_items
-                    if state.rules.matches(item.model_name)
+                    if _matches_group(state, item.match_aliases or [item.model_name])
                 ],
-                ModelGroupMemberSource.RULE,
+                ModelGroupMemberSource.PLACEMENT,
             )
 
     async def _place_uncovered_models(
@@ -347,8 +370,9 @@ class GroupReconcileMixin:
         run: _ReconcileRun,
         channels: list[ChannelConfig],
         placement_names: set[str] | None,
+        into_group_id: str | None = None,
     ) -> None:
-        """Place explicit requests; automatic sync leaves unknown models pending."""
+        """Join same-named groups and create own groups for conflict-free models."""
         route_groups = (
             (
                 await run.session.execute(
@@ -365,7 +389,7 @@ class GroupReconcileMixin:
                 id=state.entity.id,
                 name=state.entity.name,
                 is_route_group=False,
-                match_models=tuple(parse_match_models(state.entity.match_models_json)),
+                patterns=state.patterns,
                 model_names=state.model_names(),
             )
             for state in run.groups.values()
@@ -374,7 +398,7 @@ class GroupReconcileMixin:
                 id=entity.id,
                 name=entity.name,
                 is_route_group=True,
-                match_models=(),
+                patterns=(),
                 model_names=frozenset(),
             )
             for entity in route_groups
@@ -382,42 +406,55 @@ class GroupReconcileMixin:
         groups_by_name = {
             state.entity.name.casefold(): state for state in run.groups.values()
         }
+        target = run.groups.get(into_group_id) if into_group_id else None
+        item_name_keys = {
+            id(item): {
+                name.casefold() for name in (item.match_aliases or [item.model_name])
+            }
+            for item in run.ready_items
+        }
         for view in build_unplaced_models(coverage, channels):
             is_requested = placement_names is None or view.model_name in placement_names
-            same_named = groups_by_name.get(view.model_name.casefold())
-            items = [
-                item for item in run.ready_items if item.model_name == view.model_name
-            ]
-            if (
-                is_requested
-                and same_named is not None
-                and same_named.rules.matches(view.model_name)
-            ):
-                run.add(same_named, items, ModelGroupMemberSource.PLACEMENT)
-                continue
-            if (
-                placement_names is None
-                or not is_requested
-                or not is_placeable_as_new_group(view)
-            ):
+            if not is_requested:
                 run.report.pending.append(view)
                 continue
-            rule = await create_default_group_match_rule(run.session, view.model_name)
+            view_names = view.match_aliases or [view.model_name]
+            view_name_keys = {name.casefold() for name in view_names}
+            items = [
+                item
+                for item in run.ready_items
+                if item_name_keys[id(item)] & view_name_keys
+            ]
+            if target is not None:
+                run.add(target, items, ModelGroupMemberSource.PLACEMENT)
+                continue
+            same_named = next(
+                (
+                    groups_by_name[key]
+                    for key in view_name_keys
+                    if key in groups_by_name
+                ),
+                None,
+            )
+            # A group with rules decides membership alone, never by its name.
+            if same_named is not None and not same_named.patterns:
+                run.add(same_named, items, ModelGroupMemberSource.PLACEMENT)
+                continue
+            if not is_placeable_as_new_group(view):
+                run.report.pending.append(view)
+                continue
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=view.model_name,
                 strategy=RoutingStrategy.FAILOVER.value,
                 route_group_id="",
-                match_models_json=dump_match_models([]),
-                match_rule_ids_json=dump_rule_ids([rule.id]),
+                fallback_group_ids_json="[]",
                 new_member_position=ModelGroupNewMemberPosition.END.value,
+                origin=ModelGroupOrigin.AUTO.value,
             )
             run.session.add(entity)
             state = _GroupMemberState(
-                entity=entity,
-                rules=build_group_match_rules([], [rule.id], {}),
-                members=[],
-                excluded=[],
+                entity=entity, patterns=(), members=[], excluded=[]
             )
             run.groups[entity.id] = state
             groups_by_name[entity.name.casefold()] = state
@@ -425,8 +462,8 @@ class GroupReconcileMixin:
             run.report.created_groups.append(
                 ModelGroupRefView(id=entity.id, name=entity.name)
             )
-            # The new group matches its own name, so its members follow that rule.
-            run.add(state, items, ModelGroupMemberSource.RULE)
+            # The group is named after the model, so the new group takes it.
+            run.add(state, items, ModelGroupMemberSource.PLACEMENT)
 
     @staticmethod
     def _retire_missing_members(
@@ -462,3 +499,36 @@ class GroupReconcileMixin:
                     continue
                 run.report.retired.append(run.describe(state, row))
                 run.delete(state, row)
+
+    @staticmethod
+    async def _remove_empty_auto_groups(run: _ReconcileRun) -> None:
+        """Delete auto-created groups that lost every member and exclusion."""
+        referenced_ids: set[str] = set()
+        for state in run.groups.values():
+            # Groups created in this pass are unflushed, so the column
+            # defaults have not been applied to them yet.
+            fallback_json = state.entity.fallback_group_ids_json or "[]"
+            referenced_ids.update(parse_fallback_group_ids(fallback_json))
+        candidates = [
+            state
+            for state in run.groups.values()
+            if state.entity.origin == ModelGroupOrigin.AUTO.value
+            and not state.members
+            and not state.excluded
+            and state.entity.id not in referenced_ids
+        ]
+        if not candidates:
+            return
+        candidate_ids = {state.entity.id for state in candidates}
+        route_rows = await run.session.execute(
+            select(ModelGroupEntity.route_group_id).where(
+                ModelGroupEntity.route_group_id.in_(candidate_ids)
+            )
+        )
+        route_referenced = {row[0] for row in route_rows.all()}
+        for state in candidates:
+            if state.entity.id in route_referenced:
+                continue
+            run.groups.pop(state.entity.id, None)
+            await run.session.delete(state.entity)
+            run.has_writes = True

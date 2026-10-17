@@ -102,7 +102,7 @@ export function ModelAnalyticsCard(props: Props) {
   const tooltipFormatter = (value: unknown, name?: string | number) => (
     <div className="flex min-w-44 items-center justify-between gap-8">
       <span className="truncate text-muted-foreground">{name ?? ""}</span>
-      <span className="shrink-0 font-mono font-medium text-foreground tabular-nums">
+      <span className="shrink-0 font-medium text-foreground tabular-nums">
         {formatTooltipValue(value)}
       </span>
     </div>
@@ -156,7 +156,7 @@ export function ModelAnalyticsCard(props: Props) {
                       size="sm"
                       className={cn(
                         "h-8 w-full justify-start px-2 text-xs font-normal shadow-none",
-                        selected && "bg-accent/50",
+                        selected && "bg-accent",
                       )}
                       onClick={() => {
                         onRangeChange(option.value);
@@ -220,7 +220,7 @@ export function ModelAnalyticsCard(props: Props) {
                             <tspan
                               x={viewBox.cx}
                               y={viewBox.cy}
-                              className="brand-times-italic fill-foreground text-xl font-semibold tabular-nums"
+                              className="fill-foreground text-lg font-semibold tabular-nums"
                             >
                               {formatMetric(pieData.total)}
                             </tspan>
@@ -244,7 +244,7 @@ export function ModelAnalyticsCard(props: Props) {
                   </Pie>
                 </PieChart>
               </ChartContainer>
-              <div className="grid max-h-24 grid-cols-2 gap-x-3 gap-y-1 overflow-y-auto pr-1 text-[11px] text-muted-foreground">
+              <div className="grid max-h-24 grid-cols-2 gap-x-3 gap-y-1 overflow-y-auto pr-1 text-xs text-muted-foreground">
                 {pieData.data.map((item, index) => (
                   <Tooltip key={`${item.model}-${index}`}>
                     <TooltipTrigger asChild>

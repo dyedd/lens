@@ -1,12 +1,8 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/Label";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Select,
@@ -16,12 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
+import { useRegexRules } from "@/hooks/useRegexRules";
 import type { ModelGroup } from "@/lib/api/groups";
 import {
   formatContextWindow,
   parseContextWindowInput,
   parseModelNameContextWindow,
 } from "@/lib/contextWindow";
+import { compileRegexRulePattern } from "@/lib/regexRules";
 
 import type { FormState } from "./groupTypes";
 
@@ -32,6 +30,36 @@ interface ModelGroupSettingsProps {
   changeName: (name: string) => void;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
+}
+
+/**
+ * One editor row: a quiet label column beside its control.
+ *
+ * The label stacks above the control below `sm`, where the sheet is narrow.
+ */
+function SettingsRow({
+  children,
+  htmlFor,
+  label,
+  required = false,
+}: {
+  children: ReactNode;
+  htmlFor?: string;
+  label: string;
+  required?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3">
+      <Label
+        htmlFor={htmlFor}
+        required={required}
+        className="text-xs font-normal text-muted-foreground sm:w-[72px] sm:shrink-0 sm:pt-2"
+      >
+        {label}
+      </Label>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">{children}</div>
+    </div>
+  );
 }
 
 export function ModelGroupSettings({
@@ -47,6 +75,16 @@ export function ModelGroupSettings({
   const nameContextWindow = parseModelNameContextWindow(form.name);
   const isContextWindowInvalid =
     parseContextWindowInput(form.context_window) === undefined;
+  const joinRules = useRegexRules();
+  const joinPatterns = form.match_rule_ids.flatMap((ruleId) => {
+    const rule = joinRules.rules.find((item) => item.id === ruleId);
+    const pattern = rule ? compileRegexRulePattern(rule.pattern) : null;
+    return pattern ? [pattern] : [];
+  });
+  const isJoinNameMismatched =
+    joinPatterns.length > 0 &&
+    form.name.trim() !== "" &&
+    !joinPatterns.some((pattern) => pattern.test(form.name));
 
   function handleModeChange(mode: "direct" | "alias") {
     if (mode === "direct") {
@@ -58,77 +96,66 @@ export function ModelGroupSettings({
   }
 
   return (
-    <div className="flex shrink-0 flex-col gap-5">
-      <section className="grid gap-4">
-        <FieldGroup className="grid gap-4 sm:grid-cols-2">
-          <Field className="sm:col-span-2">
-            <FieldLabel htmlFor="group-name" required>
-              {isZh ? "模型组名称" : "Group name"}
-            </FieldLabel>
-            <Input
-              id="group-name"
-              required
-              className="font-mono"
-              placeholder={
-                isZh
-                  ? "输入对外模型名，如 gpt-4o"
-                  : "Public model name, e.g. gpt-4o"
-              }
-              value={form.name}
-              onChange={(event) => changeName(event.target.value)}
-            />
-          </Field>
+    <div className="flex shrink-0 flex-col gap-3">
+      <SettingsRow
+        htmlFor="group-name"
+        label={isZh ? "模型组名称" : "Group name"}
+        required
+      >
+        <Input
+          id="group-name"
+          required
+          className="font-mono placeholder:font-sans"
+          placeholder={
+            isZh
+              ? "输入对外模型名，如 gpt-4o"
+              : "Public model name, e.g. gpt-4o"
+          }
+          value={form.name}
+          onChange={(event) => changeName(event.target.value)}
+        />
+      </SettingsRow>
 
-          <Field className="sm:col-span-2 space-y-1.5">
-            <FieldLabel>{isZh ? "模型组类型" : "Group type"}</FieldLabel>
-            <SegmentedControl
-              value={groupMode}
-              onValueChange={handleModeChange}
-              options={[
-                {
-                  value: "direct",
-                  label: isZh ? "直接调度" : "Direct execution",
-                },
-                {
-                  value: "alias",
-                  label: isZh ? "别名" : "Alias",
-                },
-              ]}
-            />
-            <FieldDescription>
-              {groupMode === "direct"
-                ? isZh
-                  ? "直接管理渠道成员和分发策略。"
-                  : "Manage channel members and the distribution strategy directly."
-                : isZh
-                  ? "作为别名转发到目标模型组，共用它的渠道成员。"
-                  : "Forward requests to the target model group and share its channel members."}
-            </FieldDescription>
-          </Field>
+      <SettingsRow label={isZh ? "模型组类型" : "Group type"}>
+        <SegmentedControl
+          value={groupMode}
+          onValueChange={handleModeChange}
+          options={[
+            {
+              value: "direct",
+              label: isZh ? "直接调度" : "Direct execution",
+            },
+            { value: "alias", label: isZh ? "别名" : "Alias" },
+          ]}
+        />
+      </SettingsRow>
 
-          {groupMode === "alias" ? (
-            <Field className="sm:col-span-2">
-              <FieldLabel htmlFor="group-route-target" required>
-                {isZh ? "目标模型组" : "Target model group"}
-              </FieldLabel>
-              <Combobox
-                id="group-route-target"
-                className="w-full"
-                value={form.route_group_id}
-                onChange={(event) => changeRouteTarget(event.target.value)}
-              >
-                {routeTargetOptions.map((group) => (
-                  <ComboboxOption key={group.id} value={group.id}>
-                    {group.name}
-                  </ComboboxOption>
-                ))}
-              </Combobox>
-            </Field>
-          ) : (
-            <Field>
-              <FieldLabel htmlFor="group-strategy">
-                {isZh ? "分发策略" : "Routing strategy"}
-              </FieldLabel>
+      <div className="flex flex-col gap-3 border-t border-border/60 pt-3">
+        {groupMode === "alias" ? (
+          <SettingsRow
+            htmlFor="group-route-target"
+            label={isZh ? "目标模型组" : "Target model group"}
+            required
+          >
+            <Combobox
+              id="group-route-target"
+              className="w-full"
+              value={form.route_group_id}
+              onChange={(event) => changeRouteTarget(event.target.value)}
+            >
+              {routeTargetOptions.map((group) => (
+                <ComboboxOption key={group.id} value={group.id}>
+                  {group.name}
+                </ComboboxOption>
+              ))}
+            </Combobox>
+          </SettingsRow>
+        ) : (
+          <>
+            <SettingsRow
+              htmlFor="group-strategy"
+              label={isZh ? "分发策略" : "Routing strategy"}
+            >
               <Select
                 value={form.strategy}
                 onValueChange={(value) => {
@@ -136,7 +163,7 @@ export function ModelGroupSettings({
                     setForm((current) => ({ ...current, strategy: value }));
                 }}
               >
-                <SelectTrigger id="group-strategy">
+                <SelectTrigger id="group-strategy" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -150,17 +177,15 @@ export function ModelGroupSettings({
                   </SelectGroup>
                 </SelectContent>
               </Select>
-            </Field>
-          )}
+            </SettingsRow>
 
-          {groupMode === "direct" ? (
-            <Field>
-              <FieldLabel htmlFor="group-context-window">
-                {isZh ? "默认上下文" : "Default context"}
-              </FieldLabel>
+            <SettingsRow
+              htmlFor="group-context-window"
+              label={isZh ? "默认上下文" : "Default context"}
+            >
               <Input
                 id="group-context-window"
-                className="font-mono"
+                className="font-mono placeholder:font-sans"
                 inputMode="numeric"
                 aria-invalid={isContextWindowInvalid || undefined}
                 placeholder={
@@ -178,21 +203,54 @@ export function ModelGroupSettings({
                   }))
                 }
               />
-            </Field>
-          ) : null}
-          {groupMode === "direct" ? (
-            <FieldDescription className="sm:col-span-2 -mt-2">
-              {isContextWindowInvalid
-                ? isZh
-                  ? "上下文格式无效，示例：200K、1M、128000"
-                  : "Invalid context window. Examples: 200K, 1M, 128000"
-                : isZh
-                  ? "渠道模型未设置上下文时使用。请求超出某个渠道的上下文时会跳过该渠道，改用上下文更大的成员。"
-                  : "Used when a channel model has no context window. Requests longer than a channel's context skip it for a member with a larger one."}
-            </FieldDescription>
-          ) : null}
-        </FieldGroup>
-      </section>
+              <p className="text-xs text-muted-foreground">
+                {isContextWindowInvalid
+                  ? isZh
+                    ? "格式无效，示例：200K、1M、128000"
+                    : "Invalid format. Examples: 200K, 1M, 128000"
+                  : isZh
+                    ? "渠道模型未设置上下文时使用；请求超出某个渠道的上下文时会跳过它，改用上下文更大的成员。"
+                    : "Used when a channel model has no context window. Longer requests skip channels that are too small."}
+              </p>
+            </SettingsRow>
+
+            <SettingsRow label={isZh ? "匹配规则" : "Match rules"}>
+              <div className="flex min-h-8 flex-wrap items-center gap-2">
+                {form.match_rule_ids.length ? null : (
+                  <span className="text-xs text-muted-foreground">
+                    {isZh ? "按名称匹配" : "Matches by name"}
+                  </span>
+                )}
+                <RegexRulePicker
+                  label={isZh ? "匹配规则" : "Match rules"}
+                  locale={locale}
+                  value={form.match_rule_ids}
+                  onChange={(ruleIds) =>
+                    setForm((current) => ({
+                      ...current,
+                      match_rule_ids: ruleIds,
+                    }))
+                  }
+                />
+                {form.match_rule_ids.length ? (
+                  <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                    {isZh
+                      ? "覆盖同名匹配，只加入匹配规则的模型。"
+                      : "Replaces name matching; only matching models join."}
+                  </span>
+                ) : null}
+              </div>
+              {isJoinNameMismatched ? (
+                <p className="text-xs text-muted-foreground">
+                  {isZh
+                    ? `名称「${form.name}」不匹配所选规则，它自己的同名模型不会自动加入。`
+                    : `The name "${form.name}" matches no selected rule, so same-named models do not join.`}
+                </p>
+              ) : null}
+            </SettingsRow>
+          </>
+        )}
+      </div>
     </div>
   );
 }

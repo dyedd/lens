@@ -71,7 +71,7 @@ export function SettingsScreen() {
     <>
       <SettingsHeaderActions locale={locale} settings={settings} />
       <section className="mx-auto min-w-0 max-w-[1230px]">
-        <h1 className="mb-5 px-1 text-xl font-semibold tracking-normal text-foreground xl:text-2xl">
+        <h1 className="mb-5 px-1 text-sm font-semibold">
           {titleForLocale(locale, "设置", "Settings")}
         </h1>
         <Tabs

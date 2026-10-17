@@ -326,7 +326,7 @@ export function ModelPricesScreen() {
           <div className="relative min-w-[220px] flex-1 md:max-w-[320px]">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="bg-background pl-8"
+              className="pl-8"
               value={search}
               onChange={(event) => {
                 setSearch(event.target.value);
@@ -419,7 +419,7 @@ export function ModelPricesScreen() {
                             {group.name}
                           </span>
                           {group.manual_override ? (
-                            <LockKeyhole className="size-3 shrink-0 text-muted-foreground" />
+                            <LockKeyhole className="size-3.5 shrink-0 text-muted-foreground" />
                           ) : null}
                         </div>
                       </TableCell>

@@ -124,8 +124,8 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
             }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
-            className={`flex w-full flex-col items-center gap-1.5 rounded-md bg-muted/35 px-4 py-10 text-center outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait ${
-              isDragging ? "bg-muted ring-2 ring-ring" : ""
+            className={`flex w-full flex-col items-center gap-1.5 rounded-md bg-muted/35 px-4 py-10 text-center outline-none transition-colors hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-primary/40 disabled:cursor-wait ${
+              isDragging ? "bg-muted/50 ring-1 ring-primary" : ""
             }`}
           >
             {isPreviewing ? (
@@ -194,8 +194,8 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
+                    size="default"
+                    className="px-2 text-xs"
                     onClick={toggleAllSites}
                   >
                     {selectedCount === preview.sites.length

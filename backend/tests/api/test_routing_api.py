@@ -151,17 +151,10 @@ def test_site_save_places_channel_model_into_routable_failover_group(
 
     assert response.status_code == 200, response.text
     assert used_keys == ["Bearer placed-secret"]
-    assert (group["strategy"], group["match_models"]) == ("failover", [])
-    assert len(group["match_rule_ids"]) == 1
-    rules = client.get("/api/admin/regex-rules", headers=admin_headers).json()
-    assert (
-        next(
-            rule["pattern"]
-            for rule in rules
-            if rule["id"] == group["match_rule_ids"][0]
-        )
-        == "^gpt-4o"
-    )
+    assert group["strategy"] == "failover"
+    assert [(item["model_name"], item["source"]) for item in group["items"]] == [
+        ("gpt-4o", "placement")
+    ]
 
 
 @pytest.mark.parametrize(
@@ -187,33 +180,17 @@ def test_model_without_group_is_not_routed(
     assert used_keys == []
 
 
-@pytest.mark.parametrize(
-    "build_match_rules",
-    [
-        pytest.param(
-            lambda _create_rule: {"match_models": ["GPT-4O"]}, id="match-models"
-        ),
-        pytest.param(
-            lambda create_rule: {
-                "match_rule_ids": [create_rule("GPT-4", "^GPT-4")["id"]]
-            },
-            id="match-rule",
-        ),
-    ],
-)
-def test_model_group_rule_saves_and_routes_to_matching_channel_models(
+def test_model_group_joins_same_named_channel_model(
     client,
     admin_headers,
     monkeypatch,
     create_site,
     create_gateway_key,
-    create_regex_rule,
-    build_match_rules: Any,
 ) -> None:
     group_response = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
-        json={"name": "gpt-4o", **build_match_rules(create_regex_rule)},
+        json={"name": "gpt-4o"},
     )
     assert group_response.status_code == 201, group_response.text
     create_site(_site_with_key("Added Later", "later"))
@@ -228,7 +205,7 @@ def test_model_group_rule_saves_and_routes_to_matching_channel_models(
     assert response.status_code == 200, response.text
     assert used_keys == ["Bearer later-secret"]
     assert [(item["model_name"], item["source"]) for item in group["items"]] == [
-        ("gpt-4o", "rule")
+        ("gpt-4o", "placement")
     ]
 
 
@@ -356,7 +333,7 @@ def test_editor_save_keeps_rule_members_added_while_it_was_open(
     assert saved.json()["excluded_items"] == []
 
 
-def test_rule_members_join_at_the_group_insert_position(
+def test_named_members_join_at_the_group_insert_position(
     client,
     admin_headers,
     create_site,
@@ -381,4 +358,4 @@ def test_rule_members_join_at_the_group_insert_position(
     assert stored.json()["new_member_position"] == "start"
     assert [
         (item["credential_id"], item["source"]) for item in stored.json()["items"]
-    ] == [("second-cred", "rule"), ("first-cred", "rule")]
+    ] == [("second-cred", "placement"), ("first-cred", "placement")]

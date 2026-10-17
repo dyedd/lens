@@ -1,5 +1,6 @@
 import { CornerDownRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/Badge";
 import {
   Table,
   TableBody,
@@ -48,10 +49,10 @@ function isRunning(item: RequestLogItem) {
 
 function UsageChip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex h-5 items-center justify-between gap-1 rounded-md bg-muted/35 px-1.5 font-mono text-[11px] leading-none text-muted-foreground">
+    <Badge variant="secondary" className="gap-1 leading-none">
       <span>{label}</span>
       <span className="tabular-nums">{value}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -106,7 +107,7 @@ function ModelCell({ item, locale }: { item: RequestLogItem; locale: Locale }) {
           <div className="truncate font-medium leading-4">{display}</div>
           {upstream ? (
             <div className="flex min-w-0 items-center gap-1 font-mono leading-4 text-muted-foreground">
-              <CornerDownRight className="size-3 shrink-0 stroke-1" />
+              <CornerDownRight className="size-3.5 shrink-0 stroke-1" />
               <span className="min-w-0 truncate">{upstream}</span>
             </div>
           ) : null}
@@ -194,19 +195,19 @@ function CostCell({
         <div className="grid gap-1.5 text-xs">
           <div className="flex items-center justify-between gap-5">
             <span>{titleForLocale(locale, "输入", "Input")}</span>
-            <span className="font-mono tabular-nums">
+            <span className="tabular-nums">
               {formatMaybeMoney(item.input_cost_usd, pending)}
             </span>
           </div>
           <div className="flex items-center justify-between gap-5">
             <span>{titleForLocale(locale, "输出", "Output")}</span>
-            <span className="font-mono tabular-nums">
+            <span className="tabular-nums">
               {formatMaybeMoney(item.output_cost_usd, pending)}
             </span>
           </div>
           <div className="flex items-center justify-between gap-5 font-medium">
             <span>{titleForLocale(locale, "合计", "Total")}</span>
-            <span className="font-mono tabular-nums">{value}</span>
+            <span className="tabular-nums">{value}</span>
           </div>
         </div>
       </TooltipContent>
@@ -226,7 +227,7 @@ function LatencyCell({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex cursor-default whitespace-nowrap font-mono tabular-nums text-muted-foreground">
+        <span className="inline-flex cursor-default whitespace-nowrap tabular-nums text-muted-foreground">
           {formatMs(elapsedMs)}
         </span>
       </TooltipTrigger>
@@ -235,16 +236,14 @@ function LatencyCell({
           {item.billing_mode !== "non_tokens" ? (
             <div className="flex items-center justify-between gap-5">
               <span>{titleForLocale(locale, "首字", "First token")}</span>
-              <span className="font-mono tabular-nums">
+              <span className="tabular-nums">
                 {formatMs(item.first_token_latency_ms)}
               </span>
             </div>
           ) : null}
           <div className="flex items-center justify-between gap-5 font-medium">
             <span>{titleForLocale(locale, "总耗时", "Total")}</span>
-            <span className="font-mono tabular-nums">
-              {formatMs(elapsedMs)}
-            </span>
+            <span className="tabular-nums">{formatMs(elapsedMs)}</span>
           </div>
         </div>
       </TooltipContent>

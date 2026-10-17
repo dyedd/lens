@@ -48,6 +48,7 @@ export function ChannelsScreen() {
     form: editor.form,
     setForm: editor.setForm,
     locale,
+    onGroupPlacement: editor.setPendingGroupPlacement,
   });
   const modelTest = useChannelModelTest(editor.form, locale);
   const overviewModels = useAggregatedModels(editor.form, locale);

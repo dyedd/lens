@@ -103,7 +103,7 @@ export function LoginScreen() {
           </div>
           <Button
             type="submit"
-            className="mt-2 h-9 w-full rounded-md text-sm font-semibold shadow-none hover:bg-primary/90"
+            className="mt-2 h-9 w-full text-sm shadow-none hover:bg-primary/90"
             disabled={submitting}
           >
             {submitting ? t.signingIn : t.signIn}

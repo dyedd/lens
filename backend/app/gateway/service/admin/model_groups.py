@@ -116,7 +116,7 @@ async def create_model_group(
 async def update_model_group(
     group_id: str, payload: ModelGroupUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelGroupView:
-    """Update a model group, then reconcile members with its rules."""
+    """Update a model group, then reconcile its members."""
     await app_state.group_repo.update_group(group_id, payload)
     await run_model_group_reconcile(app_state)
     return await app_state.group_repo.get_group(group_id)
@@ -152,11 +152,15 @@ async def remove_unplaced_models(
     payload: UnplacedModelRemovalRequest, _: Any = Depends(get_current_admin)
 ) -> UnplacedModelRemovalResponse:
     """Remove unplaced model names from every channel offering them."""
-    return await app_state.group_repo.remove_unplaced_models(payload.model_names)
+    return await app_state.group_repo.remove_unplaced_models(
+        payload.model_names, exclude=payload.exclude
+    )
 
 
 async def place_models(
     payload: ModelGroupPlacementRequest, _: Any = Depends(get_current_admin)
 ) -> ModelGroupPlacementResponse:
-    """Create failover groups for unplaced models without near-name conflicts."""
-    return await app_state.group_repo.place_models(payload.model_names)
+    """Place unplaced models: create own groups or join the requested one."""
+    return await app_state.group_repo.place_models(
+        payload.model_names, group_id=payload.group_id
+    )

@@ -117,7 +117,7 @@ export function ScheduleEditor({
                 key={weekday.value}
                 type="button"
                 className={cn(
-                  "size-7 rounded-md text-[11px] transition-colors",
+                  "size-7 rounded-md text-xs transition-colors",
                   selected
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:text-foreground",

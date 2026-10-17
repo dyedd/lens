@@ -5,7 +5,6 @@ import type {
   Site,
   SiteCredential,
   SiteModelInput,
-  SiteSyncTarget,
 } from "@/lib/api/sites";
 import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { Locale } from "@/lib/I18nContext";
@@ -35,7 +34,6 @@ export type FormProtocolConfig = {
   credential_ids: string[];
   protocols: ProtocolKind[];
   models: FormModel[];
-  sync_targets: SiteSyncTarget[];
 };
 
 export type FormState = {
@@ -47,6 +45,12 @@ export type FormState = {
   protocolConfigs: FormProtocolConfig[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
+  /** Library regex rules that auto-onboard matching upstream models. */
+  model_sync_include_rule_ids: string[];
+  /** Library regex rules that keep matching upstream models out. */
+  model_sync_exclude_rule_ids: string[];
+  /** Vendor prefixes aliasing "openai/gpt-5" to "gpt-5"; last alias wins. */
+  model_name_prefixes: string[];
   headersJson: string;
   paramsJson: string;
 };
