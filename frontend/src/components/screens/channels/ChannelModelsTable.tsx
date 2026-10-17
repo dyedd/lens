@@ -285,7 +285,7 @@ export function ChannelModelsTable({
 
 /**
  * Edits a model's context window override inline. Empty falls back to the
- * upstream-reported or name-detected value shown as the placeholder.
+ * upstream-reported value shown as the placeholder.
  */
 function ContextWindowInput({
   model,
@@ -336,8 +336,8 @@ function ContextWindowInput({
           model.autoContextWindow !== null
         ? `${contextWindowSourceLabel(model.autoContextWindowSource, locale)} · ${model.autoContextWindow.toLocaleString()} tokens`
         : isZh
-          ? "未知时使用模型组默认上下文"
-          : "Unknown; the model group default applies";
+          ? "未配置：模型组内用组默认上下文，其余按请求和上游判断"
+          : "Unset: the group default applies in model groups, elsewhere routing is unfiltered";
 
   return (
     <Tooltip>
