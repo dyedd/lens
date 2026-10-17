@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Table,
@@ -14,6 +15,10 @@ import {
   TableRow,
 } from "@/components/ui/Table";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
+import {
+  formatContextWindow,
+  parseContextWindowInput,
+} from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelModels";
 import type { Locale, PickerModelItem } from "./channelTypes";
@@ -60,6 +65,9 @@ export function ChannelRemoteModelsDialog({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("new");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [contextDrafts, setContextDrafts] = useState<Record<string, string>>(
+    {},
+  );
   const onLoadRef = useRef(onLoad);
   onLoadRef.current = onLoad;
 
@@ -69,6 +77,7 @@ export function ChannelRemoteModelsDialog({
       setQuery("");
       setFilter("new");
       setSelected(new Set());
+      setContextDrafts({});
       return;
     }
     void onLoadRef.current().then((result) => {
@@ -122,10 +131,23 @@ export function ChannelRemoteModelsDialog({
     });
   }
 
+  const invalidContextNames = new Set(
+    Object.entries(contextDrafts)
+      .filter(
+        ([name, text]) =>
+          selected.has(name) && parseContextWindowInput(text) === undefined,
+      )
+      .map(([name]) => name),
+  );
+
   function importSelected() {
-    const items = (catalog?.items ?? []).filter((item) =>
-      selected.has(item.model_name),
-    );
+    const items = (catalog?.items ?? [])
+      .filter((item) => selected.has(item.model_name))
+      .map((item) => ({
+        ...item,
+        manualContextWindow:
+          parseContextWindowInput(contextDrafts[item.model_name] ?? "") ?? null,
+      }));
     onImport(items);
     toast.success(
       locale === "zh-CN"
@@ -165,7 +187,9 @@ export function ChannelRemoteModelsDialog({
             <Button
               type="button"
               size="sm"
-              disabled={loading || selected.size === 0}
+              disabled={
+                loading || selected.size === 0 || invalidContextNames.size > 0
+              }
               onClick={importSelected}
             >
               <CloudDownload className="size-3.5" />
@@ -262,6 +286,9 @@ export function ChannelRemoteModelsDialog({
                   <TableHead>
                     {locale === "zh-CN" ? "模型名（上游）" : "Upstream model"}
                   </TableHead>
+                  <TableHead className="w-[92px]">
+                    {locale === "zh-CN" ? "上下文" : "Context"}
+                  </TableHead>
                   <TableHead className="w-[150px]">
                     {locale === "zh-CN" ? "API Key" : "Keys"}
                   </TableHead>
@@ -274,7 +301,7 @@ export function ChannelRemoteModelsDialog({
                 {visibleRows.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
                     <TableCell
-                      colSpan={4}
+                      colSpan={5}
                       className="h-24 text-center text-muted-foreground"
                     >
                       {loading
@@ -301,6 +328,40 @@ export function ChannelRemoteModelsDialog({
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {row.name}
+                      </TableCell>
+                      <TableCell className="w-[92px] py-1.5">
+                        {row.status === "new" ? (
+                          <Input
+                            value={contextDrafts[row.name] ?? ""}
+                            placeholder={
+                              row.sources[0]?.context_window
+                                ? formatContextWindow(
+                                    row.sources[0].context_window,
+                                  )
+                                : locale === "zh-CN"
+                                  ? "未配置"
+                                  : "Unset"
+                            }
+                            inputMode="numeric"
+                            aria-label={`${row.name} ${
+                              locale === "zh-CN" ? "上下文" : "context window"
+                            }`}
+                            aria-invalid={
+                              invalidContextNames.has(row.name) || undefined
+                            }
+                            className="h-7 px-2 font-mono text-[11px] md:text-[11px]"
+                            onChange={(event) =>
+                              setContextDrafts((current) => ({
+                                ...current,
+                                [row.name]: event.target.value,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            —
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="w-[150px] py-1.5">
                         <CredentialBadges

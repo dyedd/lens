@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { SiteModelInput } from "@/lib/api/sites";
-import { parseModelNameContextWindow } from "@/lib/contextWindow";
 import {
   activeBaseUrlValue,
   protocolConfigSelectedCredentialIds,
@@ -104,29 +103,22 @@ export function useAggregatedModels(
         group.testKey ??= memberKey;
       }
 
-      return Array.from(groups.values()).map((group) => {
-        const nameContextWindow = parseModelNameContextWindow(group.modelName);
-        return {
-          key: aggregateModelGroupKey(protocolConfig, group.modelName),
-          modelName: group.modelName,
-          baseUrl,
-          credentialCount,
-          protocols: Array.from(group.protocols),
-          source: group.sources.has("manual") ? "manual" : "synced",
-          enabled: group.enabled,
-          upstreamMissing: group.upstreamMissing,
-          contextWindow: group.contextWindow,
-          autoContextWindow: group.upstreamContextWindow ?? nameContextWindow,
-          autoContextWindowSource:
-            group.upstreamContextWindow !== null
-              ? "upstream"
-              : nameContextWindow !== null
-                ? "model_name"
-                : null,
-          members: Array.from(group.members.values()),
-          testKey: group.testKey,
-        };
-      });
+      return Array.from(groups.values()).map((group) => ({
+        key: aggregateModelGroupKey(protocolConfig, group.modelName),
+        modelName: group.modelName,
+        baseUrl,
+        credentialCount,
+        protocols: Array.from(group.protocols),
+        source: group.sources.has("manual") ? "manual" : "synced",
+        enabled: group.enabled,
+        upstreamMissing: group.upstreamMissing,
+        contextWindow: group.contextWindow,
+        autoContextWindow: group.upstreamContextWindow,
+        autoContextWindowSource:
+          group.upstreamContextWindow === null ? null : "upstream",
+        members: Array.from(group.members.values()),
+        testKey: group.testKey,
+      }));
     });
   }, [baseUrls, credentials, protocolConfigs, locale]);
 }

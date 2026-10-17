@@ -184,6 +184,7 @@ export function useChannelModelPicker({
             ["auto"],
             "manual",
             item.context_window,
+            item.manualContextWindow ?? null,
           ),
         );
       imported += newModels.length;

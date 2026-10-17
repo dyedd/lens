@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import perf_counter
 
-from ...core.context_windows import resolve_group_context_window
 from ...core.errors import ResourceNotFoundError, RoutingError
 from ...models.channels import ChannelConfig
 from ...models.model_groups import ModelGroupItemState
@@ -53,9 +52,8 @@ async def resolve_routing_plan(
             raise RoutingError(f"No model group matched {requested_model}")
 
     channel_map = {channel.id: channel for channel in channels}
-    group_context_window = resolve_group_context_window(
-        group_name=resolved_group.name, context_window=resolved_group.context_window
-    )
+    # The group default only covers members without a channel model value.
+    group_context_window = resolved_group.context_window
     route_targets: list[RouteTarget] = []
     for item in resolved_group.items:
         if (

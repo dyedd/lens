@@ -17,11 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import type { ModelGroup } from "@/lib/api/groups";
-import {
-  formatContextWindow,
-  parseContextWindowInput,
-  parseModelNameContextWindow,
-} from "@/lib/contextWindow";
+import { parseContextWindowInput } from "@/lib/contextWindow";
 
 import type { FormState } from "./groupTypes";
 
@@ -44,7 +40,6 @@ export function ModelGroupSettings({
 }: ModelGroupSettingsProps) {
   const isZh = locale === "zh-CN";
   const groupMode = form.route_group_id ? "alias" : "direct";
-  const nameContextWindow = parseModelNameContextWindow(form.name);
   const isContextWindowInvalid =
     parseContextWindowInput(form.context_window) === undefined;
 
@@ -163,13 +158,7 @@ export function ModelGroupSettings({
                 className="font-mono"
                 inputMode="numeric"
                 aria-invalid={isContextWindowInvalid || undefined}
-                placeholder={
-                  nameContextWindow !== null
-                    ? formatContextWindow(nameContextWindow)
-                    : isZh
-                      ? "如 200K、1M"
-                      : "e.g. 200K, 1M"
-                }
+                placeholder={isZh ? "如 200K、1M" : "e.g. 200K, 1M"}
                 value={form.context_window}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -187,8 +176,8 @@ export function ModelGroupSettings({
                   ? "上下文格式无效，示例：200K、1M、128000"
                   : "Invalid context window. Examples: 200K, 1M, 128000"
                 : isZh
-                  ? "渠道模型未设置上下文时使用。请求超出某个渠道的上下文时会跳过该渠道，改用上下文更大的成员。"
-                  : "Used when a channel model has no context window. Requests longer than a channel's context skip it for a member with a larger one."}
+                  ? "仅用于没单独设置上下文的成员。请求估算超出某个成员的上下文时跳过它，改用上下文更大的成员；成员都没设置则不按上下文过滤。"
+                  : "Only covers members without their own context window. A request estimated past a member's window skips it for a larger one; with nothing configured, routing ignores context."}
             </FieldDescription>
           ) : null}
         </FieldGroup>

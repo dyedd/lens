@@ -31,6 +31,7 @@ export function buildModels(
   protocols: ProtocolKind[],
   source: "manual" | "synced",
   upstreamContextWindow: number | null = null,
+  contextWindow: number | null = null,
 ): FormModel[] {
   const existing = new Set(
     config.models.map((model) => `${model.credential_id}:${model.model_name}`),
@@ -45,7 +46,7 @@ export function buildModels(
       enabled: true,
       source,
       upstream_missing: false,
-      context_window: null,
+      context_window: contextWindow,
       upstream_context_window: upstreamContextWindow,
     }));
 }
