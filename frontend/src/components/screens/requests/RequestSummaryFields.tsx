@@ -32,7 +32,7 @@ export function RequestOutcomeBadge({
   const content = (
     <Badge
       variant="secondary"
-      className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground"
+      className="h-5 px-1.5 text-xs font-normal text-muted-foreground"
     >
       {label}
     </Badge>

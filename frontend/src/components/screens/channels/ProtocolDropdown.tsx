@@ -89,7 +89,7 @@ export function ProtocolDropdown({
             {selectedLabel ||
               (locale === "zh-CN" ? "选择协议" : "Select protocols")}
           </span>
-          <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground opacity-50" />
+          <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="z-[100] w-72 gap-0 p-1">
@@ -101,14 +101,14 @@ export function ProtocolDropdown({
             size="xs"
             aria-pressed={selected.has(protocol)}
             onClick={() => toggle(protocol)}
-            className="relative h-auto min-h-7 w-full justify-start rounded-sm py-1 pr-8 pl-2 font-normal"
+            className="relative h-auto min-h-7 w-full justify-start rounded-md py-1 pr-8 pl-2 font-normal"
           >
             <span className="grid min-w-0 flex-1 text-left">
               <span className="truncate">
                 {protocolLabel(protocol, locale)}
               </span>
               {protocolNote(protocol, locale) ? (
-                <span className="text-[11px] leading-4 whitespace-normal text-muted-foreground">
+                <span className="text-xs leading-4 whitespace-normal text-muted-foreground">
                   {protocolNote(protocol, locale)}
                 </span>
               ) : null}

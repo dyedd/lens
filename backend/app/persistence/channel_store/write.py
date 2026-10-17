@@ -25,7 +25,6 @@ from app.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigSyncTargetEntity,
 )
 
 from .cleanup import SiteConfigurationCleanupMixin
@@ -103,12 +102,6 @@ class SiteProtocolConfigUpsertsMixin:
             )
 
             await self._upsert_protocol_config_models(
-                session,
-                protocol_config_id,
-                protocol_config,
-                selected_credential_ids,
-            )
-            await self._upsert_sync_targets(
                 session,
                 protocol_config_id,
                 protocol_config,
@@ -206,56 +199,6 @@ class SiteProtocolConfigUpsertsMixin:
                 )
             )
 
-    async def _upsert_sync_targets(
-        self,
-        session: AsyncSession,
-        protocol_config_id: str,
-        protocol_config: SiteProtocolConfigInput,
-        credential_ids: set[str],
-    ) -> None:
-        await session.execute(
-            delete(SiteProtocolConfigSyncTargetEntity).where(
-                SiteProtocolConfigSyncTargetEntity.protocol_config_id
-                == protocol_config_id
-            )
-        )
-        seen: set[tuple[str, str, str]] = set()
-        materialized_model_keys = {
-            (model.credential_id, model.model_name.strip())
-            for model in protocol_config.models
-            if model.model_name.strip()
-        }
-        targets = [
-            (target.credential_id, target.protocol, target.model_name)
-            for target in protocol_config.sync_targets
-            if (target.credential_id, target.model_name.strip())
-            not in materialized_model_keys
-        ] + [
-            (model.credential_id, model.protocol, model.model_name)
-            for model in protocol_config.models
-        ]
-        for credential_id, protocol_value, raw_model_name in targets:
-            model_name = raw_model_name.strip()
-            protocol = protocol_value.value
-            key = (credential_id, protocol, model_name)
-            if not model_name or key in seen:
-                continue
-            if credential_id not in credential_ids:
-                raise ValueError(
-                    "Sync target credential not found in protocol config "
-                    f"{protocol_config_id}: {credential_id}"
-                )
-            seen.add(key)
-            session.add(
-                SiteProtocolConfigSyncTargetEntity(
-                    id=str(uuid.uuid4()),
-                    protocol_config_id=protocol_config_id,
-                    credential_id=credential_id,
-                    protocol=protocol,
-                    model_name=model_name,
-                )
-            )
-
 
 class SiteConfigUpsertsMixin(
     SiteProtocolConfigUpsertsMixin, SiteConfigurationCleanupMixin
@@ -302,6 +245,15 @@ class SiteConfigUpsertsMixin(
                     proxy_mode=payload.proxy_mode.value,
                     channel_proxy=payload.channel_proxy.strip(),
                     param_override=_dump_rules(payload.param_override),
+                    model_sync_include_rule_ids_json=json.dumps(
+                        payload.model_sync_include_rule_ids, ensure_ascii=True
+                    ),
+                    model_sync_exclude_rule_ids_json=json.dumps(
+                        payload.model_sync_exclude_rule_ids, ensure_ascii=True
+                    ),
+                    model_name_prefixes_json=json.dumps(
+                        payload.model_name_prefixes, ensure_ascii=True
+                    ),
                 )
             )
         else:
@@ -313,6 +265,15 @@ class SiteConfigUpsertsMixin(
             site.proxy_mode = payload.proxy_mode.value
             site.channel_proxy = payload.channel_proxy.strip()
             site.param_override = _dump_rules(payload.param_override)
+            site.model_sync_include_rule_ids_json = json.dumps(
+                payload.model_sync_include_rule_ids, ensure_ascii=True
+            )
+            site.model_sync_exclude_rule_ids_json = json.dumps(
+                payload.model_sync_exclude_rule_ids, ensure_ascii=True
+            )
+            site.model_name_prefixes_json = json.dumps(
+                payload.model_name_prefixes, ensure_ascii=True
+            )
 
         await self._upsert_base_urls(session, site_id, built_base_urls)
         current_protocol_config_ids = set(

@@ -350,9 +350,7 @@ export function CircuitBreakerSettingsSection({
         {_getCircuitBreakerFieldGroups(locale).map((group, groupIndex) => (
           <div key={group.title}>
             {groupIndex > 0 ? <SettingsSectionSeparator /> : null}
-            <h4 className="mb-4 text-xs font-medium text-foreground/88">
-              {group.title}
-            </h4>
+            <h4 className="mb-4 text-sm font-semibold">{group.title}</h4>
             <SettingsFieldList>
               {group.showHealthToggle ? (
                 <SettingsFieldRow

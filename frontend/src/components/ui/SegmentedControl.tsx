@@ -24,9 +24,9 @@ export function SegmentedControl<T extends string>({
           key={option.value}
           type="button"
           className={cn(
-            "h-6 min-w-0 truncate rounded-full px-2.5 text-[11px] font-medium whitespace-nowrap transition-colors",
+            "h-6 min-w-0 truncate rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
             option.value === value
-              ? "bg-pure text-pure-foreground shadow-xs"
+              ? "bg-pure text-pure-foreground"
               : "bg-transparent text-foreground/60 hover:text-foreground",
           )}
           onClick={() => onValueChange(option.value)}

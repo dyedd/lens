@@ -49,8 +49,8 @@ export function CandidateRow({
       type="button"
       variant="ghost"
       className={cn(
-        "h-auto min-h-8 w-full justify-between rounded-md px-3 py-1.5 text-left",
-        active ? "cursor-not-allowed opacity-60" : "hover:bg-muted",
+        "h-auto min-h-8 w-full justify-between rounded-md px-2 py-1 text-left",
+        active ? "cursor-not-allowed opacity-60" : "hover:bg-muted/50",
       )}
       onClick={onClick}
       disabled={active}
@@ -68,16 +68,16 @@ export function CandidateRow({
           <Badge
             key={protocol}
             variant="secondary"
-            className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+            className="font-normal text-muted-foreground"
           >
             {protocolLabel(protocol, locale)}
           </Badge>
         ))}
         <span className="text-muted-foreground">
           {active ? (
-            <Check size={15} className="text-primary" />
+            <Check className="size-4 text-primary" />
           ) : (
-            <Plus size={15} />
+            <Plus className="size-4" />
           )}
         </span>
       </div>
@@ -88,7 +88,6 @@ export function CandidateRow({
 /** Render a grouped model member with reorder and removal controls. */
 export function FoldedMemberRow({
   member,
-  index,
   isDragging,
   isBusy,
   canReorder,
@@ -101,7 +100,6 @@ export function FoldedMemberRow({
   locale,
 }: {
   member: FoldedMember;
-  index: number;
   isDragging: boolean;
   isBusy: boolean;
   canReorder: boolean;
@@ -150,23 +148,23 @@ export function FoldedMemberRow({
       onDragOver={canReorder ? (event) => event.preventDefault() : undefined}
       onDragEnd={canReorder ? onDragEnd : undefined}
       className={cn(
-        "flex min-w-0 items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-muted/40",
-        isDragging && "opacity-60 shadow-sm",
+        "flex min-h-8 min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-muted/50",
+        isDragging && "opacity-60",
         !enabled && "opacity-55",
         (member.invalid_item_count > 0 || member.unavailable_item_count > 0) &&
-          "border border-destructive bg-destructive/10",
+          "border border-destructive/40 bg-destructive/10",
       )}
     >
-      <span className="grid size-5 shrink-0 place-items-center text-xs tabular-nums text-muted-foreground">
-        {index + 1}
-      </span>
       {canReorder ? (
-        <span className="cursor-grab text-muted-foreground active:cursor-grabbing">
-          <GripVertical size={14} />
+        <span
+          aria-hidden="true"
+          className="grid size-5 shrink-0 cursor-grab place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-3.5" />
         </span>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
-        <div className="min-w-0 flex-1 basis-24">
+        <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-xs font-medium text-foreground">
             {member.model_name}
           </div>
@@ -186,7 +184,7 @@ export function FoldedMemberRow({
             </TooltipContent>
           </Tooltip>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           {member.source !== "manual" ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -195,30 +193,22 @@ export function FoldedMemberRow({
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                {member.source === "rule"
-                  ? locale === "zh-CN"
-                    ? "由匹配规则自动加入；可以像其他成员一样拖动排序"
-                    : "Joined through the match rules; reorder it like any member"
-                  : locale === "zh-CN"
-                    ? "同步时自动放入这个模型组"
-                    : "Placed into this group automatically during sync"}
+                {locale === "zh-CN"
+                  ? "匹配组规则或同名的模型在保存和同步时自动加入；可以像其他成员一样拖动排序"
+                  : "Joined automatically when the names match; reorder it like any member"}
               </TooltipContent>
             </Tooltip>
           ) : null}
           {member.rate_source !== "none" &&
           typeof member.rate_multiplier === "number" ? (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+            <Badge variant="secondary">
               {locale === "zh-CN" ? "倍率" : "Rate"} {member.rate_multiplier}x
             </Badge>
           ) : null}
           {member.context_window !== null ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Badge
-                  variant="secondary"
-                  className="px-1.5 py-0 text-[10px]"
-                  tabIndex={0}
-                >
+                <Badge variant="secondary" tabIndex={0}>
                   {locale === "zh-CN" ? "上下文" : "Context"}{" "}
                   {formatContextWindow(member.context_window)}
                 </Badge>
@@ -235,7 +225,7 @@ export function FoldedMemberRow({
             <Badge
               key={protocol}
               variant="secondary"
-              className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+              className="font-normal text-muted-foreground"
             >
               {protocolLabel(protocol, locale)}
             </Badge>
@@ -307,7 +297,7 @@ export function FoldedMemberRow({
             aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
             onClick={onRemove}
           >
-            <X size={13} />
+            <X className="size-3.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>

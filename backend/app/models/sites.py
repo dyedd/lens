@@ -5,6 +5,7 @@ from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_vali
 
 from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
+from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel
 
@@ -43,6 +44,32 @@ def _canonicalize_site_tags(values: list[str]) -> list[str]:
 
 
 SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
+
+MAX_MODEL_NAME_PREFIXES = 20
+
+
+def _canonicalize_model_name_prefixes(values: list[str]) -> list[str]:
+    prefixes: list[str] = []
+    for value in values:
+        prefix = value.strip().strip("/")
+        if not prefix:
+            raise ValueError("Model name prefixes cannot be empty")
+        if "/" in prefix:
+            raise ValueError("Model name prefixes cannot contain '/'")
+        if len(prefix) > 80:
+            raise ValueError("Model name prefixes cannot exceed 80 characters")
+        if prefix not in prefixes:
+            prefixes.append(prefix)
+    if len(prefixes) > MAX_MODEL_NAME_PREFIXES:
+        raise ValueError(
+            f"Sites cannot have more than {MAX_MODEL_NAME_PREFIXES} model name prefixes"
+        )
+    return prefixes
+
+
+ModelNamePrefixes = Annotated[
+    list[str], AfterValidator(_canonicalize_model_name_prefixes)
+]
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
 
 
@@ -129,19 +156,12 @@ class SiteModelInput(StrictBaseModel):
     upstream_context_window: ContextWindow | None = None
 
 
-class SiteSyncTarget(StrictBaseModel):
-    credential_id: str = Field(min_length=1)
-    protocol: ProtocolKind
-    model_name: str = Field(min_length=1)
-
-
 class SiteProtocolConfig(StrictBaseModel):
     id: str
     base_url_id: str = Field(min_length=1)
     protocols: list[ProtocolKind] = Field(default_factory=list)
     credential_ids: list[str] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
-    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
 
 
 class SiteProtocolConfigInput(StrictBaseModel):
@@ -149,7 +169,6 @@ class SiteProtocolConfigInput(StrictBaseModel):
     base_url_id: str = Field(min_length=1)
     protocols: list[ProtocolKind] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
-    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_model_protocols(self) -> "SiteProtocolConfigInput":
@@ -177,6 +196,12 @@ class SiteConfig(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    # Library regex rules; sync onboards upstream models matching include but
+    # not exclude. Empty include onboard nothing automatically.
+    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
+    # Vendor prefixes like "openai" that alias "openai/gpt-5" to "gpt-5".
+    model_name_prefixes: ModelNamePrefixes = Field(default_factory=list)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -189,6 +214,9 @@ class SiteCreate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_name_prefixes: ModelNamePrefixes = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -201,6 +229,9 @@ class SiteUpdate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
+    model_name_prefixes: ModelNamePrefixes = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import re
+import uuid
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ResourceNotFoundError
+from app.core.model_aliases import public_name_from_aliases
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupMemberSource,
@@ -16,10 +20,18 @@ from app.models.model_groups import (
     UnplacedModelRemovalResponse,
     UnplacedModelView,
 )
+from app.models.regex_rules import MAX_REGEX_RULES
 from app.persistence.entities import (
+    ModelGroupEntity,
+    RegexRuleEntity,
     SiteDiscoveredModelEntity,
+    SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigSyncTargetEntity,
+)
+from app.persistence.regex_rule_references import (
+    dump_rule_ids,
+    load_rule_patterns,
+    parse_rule_ids,
 )
 
 from .group_read import list_ready_channel_items
@@ -40,17 +52,20 @@ class GroupCoverage:
     id: str
     name: str
     is_route_group: bool
-    match_models: tuple[str, ...]
+    # Library rules; when set they replace the name for membership.
+    patterns: tuple[re.Pattern[str], ...]
     # Members and exclusions both count: an exclusion is a placement decision.
     model_names: frozenset[str]
 
 
-def build_group_coverage(group: ModelGroupView) -> GroupCoverage:
+def build_group_coverage(
+    group: ModelGroupView, patterns: tuple[re.Pattern[str], ...]
+) -> GroupCoverage:
     return GroupCoverage(
         id=group.id,
         name=group.name,
         is_route_group=bool(group.route_group_id),
-        match_models=tuple(group.match_models),
+        patterns=patterns,
         model_names=frozenset(
             item.model_name for item in (*group.items, *group.excluded_items)
         ),
@@ -61,17 +76,28 @@ def build_unplaced_models(
     groups: Sequence[GroupCoverage], channels: list[ChannelConfig]
 ) -> list[UnplacedModelView]:
     """Return READY channel model names that no execution group covers."""
-    covered_names = {
-        name
+    covered_keys = {
+        name.casefold()
         for group in groups
         if not group.is_route_group
         for name in group.model_names
     }
+    cover_patterns = [
+        pattern
+        for group in groups
+        if not group.is_route_group
+        for pattern in group.patterns
+    ]
+
+    def is_covered(aliases: list[str]) -> bool:
+        return any(alias.casefold() in covered_keys for alias in aliases) or any(
+            pattern.search(alias) for pattern in cover_patterns for alias in aliases
+        )
+
     groups_by_key: dict[str, list[GroupCoverage]] = defaultdict(list)
     for group in groups:
         for key in {
             model_match_key(group.name),
-            *(model_match_key(name) for name in group.match_models),
             *(model_match_key(name) for name in group.model_names),
         }:
             groups_by_key[key].append(group)
@@ -79,10 +105,13 @@ def build_unplaced_models(
     providers_by_name: dict[str, dict[tuple[str, str], UnplacedModelProvider]] = (
         defaultdict(dict)
     )
+    aliases_by_name: dict[str, set[str]] = defaultdict(set)
     for item in list_ready_channel_items(channels):
-        if item.model_name in covered_names:
+        aliases = item.match_aliases or [item.model_name]
+        if is_covered(aliases):
             continue
-        provider = providers_by_name[item.model_name].setdefault(
+        public_name = public_name_from_aliases(aliases, item.model_name)
+        provider = providers_by_name[public_name].setdefault(
             (item.protocol_config_id, item.credential_id),
             UnplacedModelProvider(
                 site_id=item.site_id or "",
@@ -96,6 +125,7 @@ def build_unplaced_models(
         )
         if item.protocol is not None and item.protocol not in provider.protocols:
             provider.protocols.append(item.protocol)
+        aliases_by_name[public_name].update(aliases)
 
     names_by_key: dict[str, list[str]] = defaultdict(list)
     for name in sorted(providers_by_name):
@@ -108,6 +138,7 @@ def build_unplaced_models(
             UnplacedModelView(
                 model_name=name,
                 match_key=key,
+                match_aliases=sorted(aliases_by_name[name]),
                 similar_group_ids=[group.id for group in similar_groups],
                 similar_group_names=[group.name for group in similar_groups],
                 similar_model_names=[
@@ -132,14 +163,32 @@ class GroupPlacementMixin:
         """Return channel models not covered by any execution group."""
         channels = await self._channel_store.list_channels()
         groups = await self.list_groups(channels=channels)
+        async with self._session_factory() as session:
+            patterns = await load_rule_patterns(
+                session,
+                [rule_id for group in groups for rule_id in group.match_rule_ids],
+            )
         return build_unplaced_models(
-            [build_group_coverage(group) for group in groups], channels
+            [
+                build_group_coverage(
+                    group,
+                    tuple(
+                        patterns[rule_id]
+                        for rule_id in group.match_rule_ids
+                        if rule_id in patterns
+                    ),
+                )
+                for group in groups
+            ],
+            channels,
         )
 
     async def place_models(
-        self, model_names: list[str] | None = None
+        self, model_names: list[str] | None = None, group_id: str = ""
     ) -> ModelGroupPlacementResponse:
-        """Join or create groups for unplaced models without a near name."""
+        """Join same-named groups or create own groups for unplaced models."""
+        if group_id:
+            return await self._place_models_into_group(model_names or [], group_id)
         if model_names is None:
             model_names = [
                 item.model_name for item in await self.list_unplaced_models()
@@ -152,19 +201,42 @@ class GroupPlacementMixin:
             joined=[
                 change
                 for change in report.added
-                if change.source == ModelGroupMemberSource.PLACEMENT
+                if change.source
+                in {ModelGroupMemberSource.AUTO, ModelGroupMemberSource.PLACEMENT}
                 and change.group_id not in created_ids
             ],
             unplaced=report.pending,
         )
 
+    async def _place_models_into_group(
+        self, model_names: list[str], group_id: str
+    ) -> ModelGroupPlacementResponse:
+        """Save the given names as members of an existing execution group."""
+        names = [name.strip() for name in model_names if name.strip()]
+        if not names:
+            raise ValueError("At least one model name is required")
+        async with self._session_factory() as session:
+            entity = await session.get(ModelGroupEntity, group_id)
+            if entity is None:
+                raise ResourceNotFoundError(group_id)
+            if entity.route_group_id.strip():
+                raise ValueError("Route groups cannot receive members directly")
+        report = await self.reconcile_group_members(
+            placement_names=set(names), into_group_id=group_id
+        )
+        return ModelGroupPlacementResponse(
+            created=[],
+            joined=[change for change in report.added if change.group_id == group_id],
+            unplaced=report.pending,
+        )
+
     async def remove_unplaced_models(
-        self, model_names: list[str]
+        self, model_names: list[str], *, exclude: bool = False
     ) -> UnplacedModelRemovalResponse:
         """Remove unplaced model names from every channel that still offers them.
 
-        Remove the materialized row and its sync target. A deleted synced
-        model must not return on the next upstream refresh.
+        ``exclude`` also references ``^name$`` exclude rules on the owning
+        sites, so the next sync does not onboard the removed names again.
         """
         names = set(model_names)
         unplaced_names = {view.model_name for view in await self.list_unplaced_models()}
@@ -175,35 +247,85 @@ class GroupPlacementMixin:
             )
         async with self._session_factory() as session:
             rows = (
-                (
-                    await session.execute(
-                        select(SiteDiscoveredModelEntity)
-                        .join(
-                            SiteProtocolConfigEntity,
-                            SiteProtocolConfigEntity.id
-                            == SiteDiscoveredModelEntity.protocol_config_id,
-                        )
-                        .where(SiteDiscoveredModelEntity.model_name.in_(names))
-                        .where(SiteDiscoveredModelEntity.enabled == 1)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            deleted = 0
-            for entity in rows:
                 await session.execute(
-                    delete(SiteProtocolConfigSyncTargetEntity).where(
-                        SiteProtocolConfigSyncTargetEntity.protocol_config_id
-                        == entity.protocol_config_id,
-                        SiteProtocolConfigSyncTargetEntity.credential_id
-                        == entity.credential_id,
-                        SiteProtocolConfigSyncTargetEntity.protocol == entity.protocol,
-                        SiteProtocolConfigSyncTargetEntity.model_name
-                        == entity.model_name,
+                    select(SiteDiscoveredModelEntity, SiteProtocolConfigEntity.site_id)
+                    .join(
+                        SiteProtocolConfigEntity,
+                        SiteProtocolConfigEntity.id
+                        == SiteDiscoveredModelEntity.protocol_config_id,
                     )
+                    .where(SiteDiscoveredModelEntity.model_name.in_(names))
+                    .where(SiteDiscoveredModelEntity.enabled == 1)
                 )
+            ).all()
+            deleted = 0
+            names_by_site: dict[str, set[str]] = defaultdict(set)
+            for entity, site_id in rows:
+                if exclude:
+                    names_by_site[site_id].add(entity.model_name)
                 await session.delete(entity)
                 deleted += 1
+            excluded = 0
+            for site_id, site_names in names_by_site.items():
+                excluded += await _add_site_exclude_rules(session, site_id, site_names)
             await session.commit()
-        return UnplacedModelRemovalResponse(deleted=deleted)
+        return UnplacedModelRemovalResponse(deleted=deleted, excluded=excluded)
+
+
+_REGEX_SPECIAL_CHARS = frozenset(".^$*+?{}[]" + chr(92) + "|()")
+
+
+def _exclude_pattern(name: str) -> str:
+    """Anchored literal pattern; escapes the same characters as the frontend."""
+    escaped = "".join(
+        chr(92) + char if char in _REGEX_SPECIAL_CHARS else char for char in name
+    )
+    return "^" + escaped + "$"
+
+
+async def _add_site_exclude_rules(
+    session: AsyncSession, site_id: str, names: set[str]
+) -> int:
+    """Reference ``^name$`` exclude rules so a sync never onboards them again."""
+    site = await session.get(SiteEntity, site_id)
+    if site is None:
+        return 0
+    referenced = parse_rule_ids(site.model_sync_exclude_rule_ids_json)
+    rule_rows = (
+        await session.execute(
+            select(RegexRuleEntity.id, RegexRuleEntity.name, RegexRuleEntity.pattern)
+        )
+    ).all()
+    existing_by_pattern = {row.pattern: row.id for row in rule_rows}
+    taken_names = {row.name.casefold() for row in rule_rows}
+    added = 0
+    for name in sorted(names):
+        pattern = _exclude_pattern(name)
+        rule_id = existing_by_pattern.get(pattern)
+        if rule_id is None:
+            if len(rule_rows) + added >= MAX_REGEX_RULES:
+                raise ValueError(f"At most {MAX_REGEX_RULES} regex rules are allowed")
+            rule_id = str(uuid.uuid4())
+            base_name = f"排除：{name}"[:60]
+            rule_name = base_name
+            suffix = 2
+            while rule_name.casefold() in taken_names:
+                suffix_text = f" ({suffix})"
+                rule_name = f"{base_name[: 60 - len(suffix_text)]}{suffix_text}"
+                suffix += 1
+            taken_names.add(rule_name.casefold())
+            existing_by_pattern[pattern] = rule_id
+            session.add(
+                RegexRuleEntity(
+                    id=rule_id,
+                    name=rule_name,
+                    pattern=pattern,
+                    description="删除模型时生成，阻止同步再次自动接入",
+                )
+            )
+        if rule_id not in referenced:
+            referenced.append(rule_id)
+            added += 1
+    if added:
+        site.model_sync_exclude_rule_ids_json = dump_rule_ids(referenced)
+    return added

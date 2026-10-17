@@ -75,7 +75,7 @@ function RegexRuleUsage({ rule, locale }: { rule: RegexRule; locale: Locale }) {
   );
 }
 
-/** Render the regex rule library that channels and groups reference. */
+/** Render the regex rule library that model groups and channels reference. */
 export function RegexRuleLibrarySection({ locale }: { locale: Locale }) {
   const library = useRegexRules();
   const [editor, setEditor] = useState<{ rule: RegexRule | null } | null>(null);
@@ -109,8 +109,8 @@ export function RegexRuleLibrarySection({ locale }: { locale: Locale }) {
         <p className="text-xs text-muted-foreground">
           {titleForLocale(
             locale,
-            "维护模型组匹配使用的正则规则。修改后会立即影响引用它的模型组。",
-            "Manage regex rules used by model groups. Changes apply immediately wherever a rule is used.",
+            "维护模型组匹配和站点自动接入/排除使用的正则规则。修改后会立即影响引用它的模型组和渠道。",
+            "Manage regex rules used by model groups and channel onboarding. Changes apply immediately wherever a rule is used.",
           )}
         </p>
         <Table>

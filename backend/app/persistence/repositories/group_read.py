@@ -20,6 +20,7 @@ from app.models.model_groups import (
     ModelGroupCandidateSubitem,
     ModelGroupItemInput,
     ModelGroupItemView,
+    ModelGroupOrigin,
     ModelGroupView,
 )
 from app.models.protocols import ProtocolKind
@@ -28,12 +29,10 @@ from app.persistence.entities import (
     ModelGroupItemEntity,
     ModelPriceEntity,
 )
-from app.persistence.group_match_rules import load_match_rules
 from app.persistence.group_rule_codec import (
     group_price_kwargs,
     parse_fallback_group_ids,
     parse_headers,
-    parse_match_models,
     parse_param_override,
 )
 from app.persistence.regex_rule_references import parse_rule_ids
@@ -127,6 +126,9 @@ def _build_item_view(
         rate_source=credential.rate_source if credential is not None else "none",
         rate_multiplier=credential.rate_multiplier if credential is not None else None,
         model_name=item.model_name,
+        match_aliases=(
+            list(channel_model.match_aliases) if channel_model is not None else []
+        ),
         enabled=item.enabled,
         source=item.source,
         sort_order=sort_order,
@@ -262,24 +264,9 @@ class GroupCandidatesMixin:
             _build_item_view(item, index, channels_by_id)
             for index, item in enumerate(payload.items)
         ]
-        matched_model_names: list[str] = []
-        if payload.match_models or payload.match_rule_ids:
-            async with self._session_factory() as session:
-                rules = await load_match_rules(
-                    session, payload.match_models, payload.match_rule_ids
-                )
-            matched_model_names = sorted(
-                {
-                    model.model_name
-                    for channel in all_channels
-                    for model in channel.models
-                    if rules.matches(model.model_name)
-                }
-            )
         return ModelGroupCandidatesResponse(
             candidates=candidates,
             evaluated_items=evaluated_items,
-            matched_model_names=matched_model_names,
         )
 
     @staticmethod
@@ -459,7 +446,7 @@ class GroupMappingMixin:
             strategy=entity.strategy,
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,
-            match_models=parse_match_models(entity.match_models_json),
+            origin=ModelGroupOrigin(entity.origin),
             match_rule_ids=parse_rule_ids(entity.match_rule_ids_json),
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),

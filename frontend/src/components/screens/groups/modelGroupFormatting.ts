@@ -3,7 +3,6 @@ import type {
   ModelGroupItemReason,
   ModelGroupItemState,
   ModelGroupMemberSource,
-  ModelGroupNewMemberPosition,
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
@@ -114,42 +113,11 @@ export function formatMemberSource(
   source: ModelGroupMemberSource,
   locale: "zh-CN" | "en-US",
 ) {
-  if (source === "rule") return locale === "zh-CN" ? "规则" : "Rule";
-  if (source === "placement") return locale === "zh-CN" ? "自动" : "Auto";
-  return locale === "zh-CN" ? "手动" : "Manual";
-}
-
-export const NEW_MEMBER_POSITION_OPTIONS: Array<{
-  value: ModelGroupNewMemberPosition;
-  zh: string;
-  en: string;
-}> = [
-  { value: "end", zh: "放在末尾", en: "At the end" },
-  { value: "start", zh: "放在开头", en: "At the start" },
-  { value: "rate_asc", zh: "按倍率从低到高", en: "By rate, lowest first" },
-];
-
-/**
- * Insert automatically joined items where the group places new members.
- *
- * Mirrors the backend reconcile: "rate_asc" puts each item before the first
- * member with a higher rate, and an unknown rate sorts last.
- */
-export function insertNewMembers(
-  items: FormItem[],
-  newItems: FormItem[],
-  position: ModelGroupNewMemberPosition,
-): FormItem[] {
-  if (!newItems.length) return items;
-  if (position === "start") return [...newItems, ...items];
-  if (position === "end") return [...items, ...newItems];
-  const rateOf = (item: FormItem) => item.rate_multiplier ?? Infinity;
-  const result = items.slice();
-  for (const item of newItems) {
-    const index = result.findIndex((member) => rateOf(member) > rateOf(item));
-    result.splice(index < 0 ? result.length : index, 0, item);
+  // "rule" only appears in rows and backups written before name-based joining.
+  if (source === "rule" || source === "placement") {
+    return locale === "zh-CN" ? "自动" : "Auto";
   }
-  return result;
+  return locale === "zh-CN" ? "手动" : "Manual";
 }
 
 /** Format a model price for compact display. */

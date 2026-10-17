@@ -40,16 +40,14 @@ export function JsonField({
       style={{ height }}
     >
       <div className="flex h-8 items-center justify-between border-b border-input/40 bg-muted/35 px-2">
-        <span className="font-mono text-[11px] text-muted-foreground">
-          JSON
-        </span>
+        <span className="font-mono text-xs text-muted-foreground">JSON</span>
         <div className="flex items-center gap-2">
           {actions}
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-[11px]"
+            className="h-6 px-2 text-xs"
             disabled={disabled}
             onClick={() => {
               const next = formatJson(value.trim());

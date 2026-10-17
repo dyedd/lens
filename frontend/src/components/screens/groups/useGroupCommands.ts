@@ -287,12 +287,21 @@ export function useGroupCommands({
     );
   }
 
-  /** Add unplaced model names to an existing group's match rules. */
+  /** Save unplaced model names as members of an existing group. */
   async function addModelsToGroup(groupId: string, modelNames: string[]) {
     const group = groups.find((item) => item.id === groupId);
     if (!group) return;
-    const matchModels = [...new Set([...group.match_models, ...modelNames])];
-    if (await updateGroupPartial(group, { match_models: matchModels })) {
+    const added = await runCommand(
+      group.id,
+      locale === "zh-CN" ? "加入模型组失败" : "Failed to add to the group",
+      async () => {
+        await apiRequest<unknown>("/admin/model-group-placements", {
+          method: "POST",
+          body: JSON.stringify({ model_names: modelNames, group_id: groupId }),
+        });
+      },
+    );
+    if (added) {
       toast.success(
         locale === "zh-CN"
           ? `已加入「${group.name}」`
@@ -314,11 +323,7 @@ export function useGroupCommands({
         await apiRequest<ModelGroup>("/admin/model-groups", {
           method: "POST",
           body: JSON.stringify(
-            formToModelGroupPayload({
-              ...EMPTY_FORM,
-              name,
-              match_models: [name],
-            }),
+            formToModelGroupPayload({ ...EMPTY_FORM, name }),
           ),
         });
         created += 1;
@@ -344,16 +349,17 @@ export function useGroupCommands({
     }
   }
 
-  /** Create one group whose match rules cover the given model names. */
+  /** Create a group and save the given models as its members. */
   async function createGroupForModels(name: string, modelNames: string[]) {
     const created = await runCommand(
       `place:${name}`,
       locale === "zh-CN" ? "创建模型组失败" : "Failed to create group",
       async () => {
-        await saveGroup(
-          { ...EMPTY_FORM, name, match_models: modelNames },
-          null,
-        );
+        const group = await saveGroup({ ...EMPTY_FORM, name }, null);
+        await apiRequest<unknown>("/admin/model-group-placements", {
+          method: "POST",
+          body: JSON.stringify({ model_names: modelNames, group_id: group.id }),
+        });
       },
     );
     if (created) {
@@ -394,24 +400,37 @@ export function useGroupCommands({
   }
 
   /** Remove unplaced model names from every channel offering them. */
-  async function removeUnplacedModels(modelNames: string[]) {
-    const payload: UnplacedModelRemovalRequest = { model_names: modelNames };
+  async function removeUnplacedModels(
+    modelNames: string[],
+    excludeFromOnboarding: boolean,
+  ) {
+    const payload: UnplacedModelRemovalRequest = {
+      model_names: modelNames,
+      exclude: excludeFromOnboarding,
+    };
     return runCommand(
       "unplaced-removal",
       locale === "zh-CN" ? "删除渠道模型失败" : "Failed to remove models",
       async () => {
-        const { deleted } = await apiRequest<UnplacedModelRemovalResponse>(
-          "/admin/unplaced-model-removals",
-          { method: "POST", body: JSON.stringify(payload) },
-        );
+        const { deleted, excluded } =
+          await apiRequest<UnplacedModelRemovalResponse>(
+            "/admin/unplaced-model-removals",
+            { method: "POST", body: JSON.stringify(payload) },
+          );
         await Promise.all([
           invalidateGroupData(),
           queryClient.invalidateQueries({ queryKey: ["sites"] }),
+          queryClient.invalidateQueries({ queryKey: ["regex-rules"] }),
         ]);
+        const suffix = excluded
+          ? locale === "zh-CN"
+            ? `，并加入 ${excluded} 条排除规则`
+            : ` and excluded ${excluded} from onboarding`
+          : "";
         toast.success(
           locale === "zh-CN"
-            ? `已删除 ${deleted} 个渠道模型及其同步目标`
-            : `Removed ${deleted} channel models and their sync targets`,
+            ? `已删除 ${deleted} 个渠道模型${suffix}`
+            : `Removed ${deleted} channel models${suffix}`,
         );
       },
     );

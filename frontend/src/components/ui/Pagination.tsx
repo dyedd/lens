@@ -227,7 +227,7 @@ export function TablePagination({
                   onSelect={() => onPageSizeChange(value)}
                   className={cn(
                     "h-6 justify-end px-2 py-0 text-xs font-normal text-muted-foreground focus:bg-muted focus:text-foreground",
-                    value === pageSize && "bg-muted/60 text-foreground",
+                    value === pageSize && "bg-accent text-foreground",
                   )}
                 >
                   <span className="inline-flex w-full items-center justify-end tabular-nums">

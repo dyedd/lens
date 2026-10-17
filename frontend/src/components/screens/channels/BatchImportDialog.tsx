@@ -317,8 +317,8 @@ export function BatchImportDialog({
                     }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleForeignDrop}
-                    className={`flex w-full flex-col items-center gap-2 rounded-lg border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center outline-none transition-colors hover:bg-muted/40 ${
-                      isDragging ? "bg-muted ring-2 ring-primary" : ""
+                    className={`flex w-full flex-col items-center gap-2 rounded-lg border border-dashed border-border/80 bg-muted/35 px-4 py-10 text-center outline-none transition-colors hover:bg-muted/50 ${
+                      isDragging ? "bg-muted/50 ring-1 ring-primary" : ""
                     }`}
                   >
                     {foreign.isPreviewing ? (
@@ -341,7 +341,7 @@ export function BatchImportDialog({
                   </button>
                 ) : (
                   <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/30 p-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/35 p-2.5">
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">
                           {FORMAT_LABELS[foreign.preview.format]?.[
@@ -358,7 +358,7 @@ export function BatchImportDialog({
                         size="xs"
                         onClick={() => foreignFileInputRef.current?.click()}
                       >
-                        <RotateCcw className="size-3" />
+                        <RotateCcw className="size-3.5" />
                         {isZh ? "更换文件" : "Change file"}
                       </Button>
                     </div>
@@ -427,17 +427,13 @@ export function BatchImportDialog({
                                       </span>
                                     )}
                                   </span>
-                                  <span className="truncate text-[11px] text-muted-foreground">
+                                  <span className="truncate text-xs text-muted-foreground">
                                     {site.base_urls[0] ?? ""}
                                   </span>
                                 </span>
                                 <span className="hidden shrink-0 items-center gap-1 sm:flex">
                                   {site.protocols.map((protocol) => (
-                                    <Badge
-                                      key={protocol}
-                                      variant="secondary"
-                                      className="text-[10px]"
-                                    >
+                                    <Badge key={protocol} variant="secondary">
                                       {protocolLabel(protocol, locale)}
                                     </Badge>
                                   ))}
