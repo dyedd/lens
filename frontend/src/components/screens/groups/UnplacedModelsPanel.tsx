@@ -34,11 +34,16 @@ interface UnplacedModelsPanelProps {
   busyId: string | null;
   /** Execution groups; route groups ignore match rules so cannot be joined. */
   joinableGroupIds: Set<string>;
+  /** Join targets for the multi-select bulk action. */
+  joinableGroups: Array<{ id: string; name: string }>;
   onAddModelsToGroup: (groupId: string, modelNames: string[]) => void;
   onCreateGroupForModels: (name: string, modelNames: string[]) => void;
   onCreateOwnGroups: (modelNames: string[]) => Promise<boolean>;
   onAutoPlace: () => void;
-  onRemoveModels: (modelNames: string[]) => Promise<boolean>;
+  onRemoveModels: (
+    modelNames: string[],
+    excludeFromOnboarding: boolean,
+  ) => Promise<boolean>;
 }
 
 type RemoveRequest = {
@@ -78,12 +83,12 @@ function removalDescription(target: RemoveRequest | null, isZh: boolean) {
   if (names.length <= 1) {
     const name = names[0] ?? "";
     return isZh
-      ? `将从 ${providerCount} 个渠道的 API Key 中移除「${name}」及其同步目标。`
-      : `Remove "${name}" and its sync targets from ${providerCount} channel API keys.`;
+      ? `将从 ${providerCount} 个渠道的 API Key 中移除「${name}」。`
+      : `Remove "${name}" from ${providerCount} channel API keys.`;
   }
   return isZh
-    ? `将从渠道中移除选中的 ${names.length} 个模型及其同步目标，涉及 ${providerCount} 个渠道的 API Key。`
-    : `Remove ${names.length} selected models and their sync targets across ${providerCount} channel API keys.`;
+    ? `将从渠道中移除选中的 ${names.length} 个模型，涉及 ${providerCount} 个渠道的 API Key。`
+    : `Remove ${names.length} selected models across ${providerCount} channel API keys.`;
 }
 
 function UnplacedModelName({
@@ -101,7 +106,7 @@ function UnplacedModelName({
           className="inline-flex items-center gap-1 rounded-md px-1 font-mono text-xs hover:bg-muted"
         >
           {model.model_name}
-          <span className="font-sans text-[11px] tabular-nums text-muted-foreground">
+          <span className="font-sans text-xs tabular-nums text-muted-foreground">
             ×{model.providers.length}
           </span>
         </button>
@@ -130,6 +135,7 @@ export function UnplacedModelsPanel({
   unplacedModels,
   busyId,
   joinableGroupIds,
+  joinableGroups,
   onAddModelsToGroup,
   onCreateGroupForModels,
   onCreateOwnGroups,
@@ -145,6 +151,7 @@ export function UnplacedModelsPanel({
   const [isOpen, setIsOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [removeTarget, setRemoveTarget] = useState<RemoveRequest | null>(null);
+  const [excludeOnRemove, setExcludeOnRemove] = useState(true);
   const visibleNames = useMemo(
     () => new Set(unplacedModels.map((model) => model.model_name)),
     [unplacedModels],
@@ -191,6 +198,7 @@ export function UnplacedModelsPanel({
 
   function requestRemoval(models: UnplacedModel[]) {
     if (!models.length) return;
+    setExcludeOnRemove(true);
     setRemoveTarget({
       modelNames: models.map((model) => model.model_name),
       providerCount: models.reduce(
@@ -203,7 +211,7 @@ export function UnplacedModelsPanel({
   async function confirmRemove() {
     if (!removeTarget) return;
     const names = removeTarget.modelNames;
-    if (await onRemoveModels(names)) {
+    if (await onRemoveModels(names, excludeOnRemove)) {
       setRemoveTarget(null);
       dropSelected(names);
     }
@@ -258,8 +266,8 @@ export function UnplacedModelsPanel({
             {isOpen ? (
               <p className="text-xs text-muted-foreground">
                 {isZh
-                  ? "这些模型与现有模型组名称相近，系统暂未自动建组。你可以合并到已有模型组、单独建组或删除。"
-                  : "These models are similar to existing groups, so automatic grouping paused. Join an existing group, create a group, or remove them."}
+                  ? "这些模型名与其他模型组或模型相近，系统未自动建组，需要你裁决：并入已有组、单独建组或删除。"
+                  : "These names collide with existing groups or models, so automatic grouping paused. Join a group, create one, or remove them."}
               </p>
             ) : null}
           </div>
@@ -278,6 +286,35 @@ export function UnplacedModelsPanel({
                   ? `为每个模型建组 (${selectedNames.length})`
                   : `Create a group for each (${selectedNames.length})`}
               </Button>
+              {joinableGroups.length ? (
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      disabled={busy}
+                    >
+                      {isZh
+                        ? `加入模型组 (${selectedNames.length})`
+                        : `Join a group (${selectedNames.length})`}
+                      <ChevronDown data-icon="inline-end" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {joinableGroups.map((group) => (
+                      <DropdownMenuItem
+                        key={group.id}
+                        onSelect={() =>
+                          onAddModelsToGroup(group.id, selectedNames)
+                        }
+                      >
+                        {group.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -411,7 +448,7 @@ export function UnplacedModelsPanel({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                          <DropdownMenuLabel className="text-xs text-muted-foreground">
                             {isZh ? "选择组名" : "Group name"}
                           </DropdownMenuLabel>
                           {cluster.modelNames.map((name) => (
@@ -494,7 +531,24 @@ export function UnplacedModelsPanel({
           if (!open) setRemoveTarget(null);
         }}
         onConfirm={() => void confirmRemove()}
-      />
+      >
+        <label
+          htmlFor="unplaced-exclude-on-remove"
+          className="flex items-start gap-2 rounded-md bg-muted/35 p-2.5 text-xs text-muted-foreground"
+        >
+          <Checkbox
+            id="unplaced-exclude-on-remove"
+            className="mt-0.5"
+            checked={excludeOnRemove}
+            onCheckedChange={(checked) => setExcludeOnRemove(checked === true)}
+          />
+          <span>
+            {isZh
+              ? "同时加入排除正则，避免下次同步重新接入这些模型。"
+              : "Add exclusion regexes so the next sync does not onboard these models again."}
+          </span>
+        </label>
+      </ConfirmDeleteDialog>
     </section>
   );
 }

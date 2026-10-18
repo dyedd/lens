@@ -20,27 +20,19 @@ from app.models.model_groups import (
     ModelGroupItemView,
     ModelGroupUpdate,
     ModelGroupView,
-    canonicalize_match_models,
 )
-from app.models.regex_rules import canonicalize_regex_rule_ids
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
 )
-from app.persistence.group_match_rules import (
-    create_default_group_match_rule,
-    is_auto_joined,
-    load_group_match_rules,
-)
 from app.persistence.group_rule_codec import (
     dump_fallback_group_ids,
-    dump_match_models,
     dump_rules,
     parse_fallback_group_ids,
-    parse_match_models,
 )
 from app.persistence.regex_rule_references import (
     dump_rule_ids,
+    load_rule_patterns,
     parse_rule_ids,
     validate_rule_ids,
 )
@@ -164,30 +156,12 @@ class ModelGroupRepository(
                 excluded_items=payload.excluded_items,
             )
             await validate_rule_ids(session, payload.match_rule_ids)
-            match_models = payload.match_models
-            match_rule_ids = list(payload.match_rule_ids)
-            if (
-                not route_group
-                and not match_rule_ids
-                and (
-                    not match_models
-                    or (
-                        len(match_models) == 1
-                        and match_models[0].casefold()
-                        == payload.name.strip().casefold()
-                    )
-                )
-            ):
-                rule = await create_default_group_match_rule(session, payload.name)
-                match_rule_ids.append(rule.id)
-                match_models = []
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
-                match_models_json=dump_match_models(match_models),
-                match_rule_ids_json=dump_rule_ids(match_rule_ids),
+                match_rule_ids_json=dump_rule_ids(payload.match_rule_ids),
                 param_override=dump_rules(payload.param_override),
                 headers_json=dump_rules(payload.headers),
                 fallback_group_ids_json=dump_fallback_group_ids(
@@ -281,8 +255,6 @@ class ModelGroupRepository(
             for key, value in changes.items():
                 if key == "strategy" and value is not None:
                     entity.strategy = value.value
-                elif key == "match_models":
-                    entity.match_models_json = dump_match_models(value or [])
                 elif key == "match_rule_ids":
                     if value is not None:
                         entity.match_rule_ids_json = dump_rule_ids(value)
@@ -305,7 +277,6 @@ class ModelGroupRepository(
                     setattr(entity, key, value)
 
             if entity.route_group_id:
-                entity.match_models_json = dump_match_models([])
                 entity.match_rule_ids_json = dump_rule_ids([])
 
             if replaces_items:
@@ -353,16 +324,21 @@ class ModelGroupRepository(
         kept_keys = {
             model_group_item_key(item) for item in (*next_items, *next_excluded_items)
         }
+        patterns = tuple(
+            (
+                await load_rule_patterns(
+                    session, parse_rule_ids(entity.match_rule_ids_json)
+                )
+            ).values()
+        )
+        name_key = entity.name.casefold()
+
+        def rejoins(model_name: str) -> bool:
+            if patterns:
+                return any(pattern.search(model_name) for pattern in patterns)
+            return model_name.casefold() == name_key
+
         # A member whose target is gone cannot rejoin, so it needs no exclusion.
-        removed = [
-            item
-            for item in previous_items
-            if model_group_item_key(item) not in kept_keys
-            and item.state != ModelGroupItemState.INVALID
-        ]
-        if not removed:
-            return []
-        rules = (await load_group_match_rules(session, [entity]))[entity.id]
         return [
             ModelGroupItemInput(
                 channel_id=item.channel_id,
@@ -371,8 +347,10 @@ class ModelGroupRepository(
                 enabled=item.enabled,
                 source=item.source,
             )
-            for item in removed
-            if is_auto_joined(rules, item.model_name)
+            for item in previous_items
+            if model_group_item_key(item) not in kept_keys
+            and item.state != ModelGroupItemState.INVALID
+            and rejoins(item.model_name)
         ]
 
     async def delete_group(self, group_id: str) -> None:
@@ -398,7 +376,7 @@ class ModelGroupRepository(
             await session.commit()
 
     async def merge_group(self, group_id: str, target_group_id: str) -> ModelGroupView:
-        """Fold a group's name, rules, and members into another execution group."""
+        """Fold a group's members and references into another execution group."""
         channels = await self._channel_store.list_channels()
         async with self._session_factory() as session:
             source = await session.get(ModelGroupEntity, group_id)
@@ -411,25 +389,6 @@ class ModelGroupRepository(
                 raise ResourceConflictError("Model group cannot merge into itself")
             if target.route_group_id.strip():
                 raise ResourceConflictError("Merge target must be an execution group")
-
-            target.match_models_json = dump_match_models(
-                canonicalize_match_models(
-                    [
-                        *parse_match_models(target.match_models_json),
-                        source.name,
-                        *parse_match_models(source.match_models_json),
-                    ]
-                )
-                or []
-            )
-            target.match_rule_ids_json = dump_rule_ids(
-                canonicalize_regex_rule_ids(
-                    [
-                        *parse_rule_ids(target.match_rule_ids_json),
-                        *parse_rule_ids(source.match_rule_ids_json),
-                    ]
-                )
-            )
 
             item_rows = (
                 (

@@ -8,7 +8,7 @@ import {
   type FormState,
   type MemberStatusFilter,
 } from "./groups/groupTypes";
-import { buildMemberChangeSummary, modelGroupToForm } from "./groups/groupView";
+import { modelGroupToForm } from "./groups/groupView";
 import { useGroupCandidates } from "./groups/useGroupCandidates";
 import { useGroupCommands } from "./groups/useGroupCommands";
 import { useGroupMembers } from "./groups/useGroupMembers";
@@ -92,14 +92,14 @@ export function GroupsScreen() {
     locale,
   });
   const filters = useGroupFilters(queries.groupRows, locale);
+  const joinRuleIds = editor.form.route_group_id
+    ? []
+    : editor.form.match_rule_ids;
   const candidates = useGroupCandidates({
     candidateResponse: queries.candidateQuery.data,
-    // Placeholder data still reflects the previous rules.
-    candidateResponseIsCurrent: !queries.candidateQuery.isPlaceholderData,
     candidateSearch: editor.candidateSearch,
     expandedChannels: editor.expandedChannels,
-    form: editor.form,
-    isCreating: !editor.editingId,
+    joinRuleIds,
     locale,
     setExpandedChannels: editor.setExpandedChannels,
     setForm: editor.setForm,
@@ -112,9 +112,6 @@ export function GroupsScreen() {
     candidates.isAutoJoined,
   );
   const modelTest = useGroupModelTest(locale);
-  const editingGroup = queries.groups?.find(
-    (group) => group.id === editor.editingId,
-  );
   const commands = useGroupCommands({
     editingId: editor.editingId,
     form: editor.form,
@@ -139,6 +136,9 @@ export function GroupsScreen() {
               .map((group) => group.id),
           )
         }
+        joinableGroups={queries.groupRows
+          .filter((group) => !group.is_route_group)
+          .map((group) => ({ id: group.id, name: group.name }))}
         isLoading={queries.isLoading}
         search={filters.search}
         strategyFilter={filters.strategyFilter}
@@ -173,7 +173,9 @@ export function GroupsScreen() {
         onCreateGroupForModels={commands.createGroupForModels}
         onCreateOwnGroups={commands.createOwnGroups}
         onAutoPlace={commands.autoPlaceModels}
-        onRemoveUnplacedModels={commands.removeUnplacedModels}
+        onRemoveUnplacedModels={(names, exclude) =>
+          commands.removeUnplacedModels(names, exclude)
+        }
         onOpenSyncRuns={() => setIsSyncRunsOpen(true)}
       />
 
@@ -197,22 +199,16 @@ export function GroupsScreen() {
           changeName={candidates.changeName}
           routeTargetOptions={queries.routeTargetOptions}
           changeRouteTarget={candidates.changeRouteTarget}
-          changeMatchRules={candidates.changeMatchRules}
-          invalidMatchRules={candidates.invalidMatchRules}
-          hasDeletedMatchRules={candidates.hasDeletedMatchRules}
-          ruleMatchModelCount={candidates.ruleMatchModelCount}
-          ruleMatchSourceCount={candidates.ruleMatchSourceCount}
-          memberChange={
-            editingGroup
-              ? buildMemberChangeSummary(editingGroup, editor.form)
-              : null
-          }
           excludedMembers={members.excludedMembers}
           restoreExcludedMember={members.restoreExcludedMember}
           candidateSearch={editor.candidateSearch}
           changeCandidateSearch={editor.setCandidateSearch}
           refetchCandidates={queries.candidateQuery.refetch}
           isFetchingCandidates={queries.candidateQuery.isFetching}
+          candidateRegex={candidates.candidateRegex}
+          onCandidateRegexChange={candidates.setCandidateRegex}
+          onAddAllCandidates={candidates.addAllVisibleCandidates}
+          visibleCandidateCount={candidates.visibleCandidateCount}
           groupedCandidates={candidates.groupedCandidates}
           expandedChannels={candidates.expandedChannels}
           toggleChannel={candidates.toggleChannel}

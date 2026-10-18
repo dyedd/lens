@@ -29,6 +29,9 @@ class ChannelDiscoveredModel(StrictBaseModel):
     credential_id: str = ""
     credential_name: str = ""
     model_name: str
+    # Names this model also answers to, e.g. "gpt-5" for "openai/gpt-5"
+    # when the site trims vendor prefixes. Internal to matching.
+    match_aliases: list[str] = Field(default_factory=list, exclude=True)
     enabled: bool = True
     upstream_missing: bool = False
     upstream_missing_since: datetime | None = Field(default=None, exclude=True)
@@ -40,6 +43,7 @@ class ChannelDiscoveredModel(StrictBaseModel):
 class ChannelConfig(StrictBaseModel):
     id: str
     site_id: str = ""
+    site_tags: list[str] = Field(default_factory=list)
     name: str
     protocol: ProtocolKind
     base_url: HttpUrl

@@ -75,6 +75,35 @@ def test_export_backup_can_include_request_logs(
     assert payload["request_logs"][0]["billing_units"] == 2
 
 
+def test_import_backup_drops_retired_group_fields(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(valid_site_payload())
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    payload = exported.json()
+    [group] = payload["groups"]
+    group.update({"match_models": ["gpt-4o"], "source_tags": ["prod"]})
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={
+            "file": (
+                "backup.json",
+                json.dumps(payload).encode(),
+                "application/json",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    restored = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert [item["name"] for item in restored] == [group["name"]]
+
+
 def test_import_backup_rejects_invalid_file(client, admin_headers) -> None:
     response = client.post(
         "/api/admin/backups/import",
@@ -106,7 +135,6 @@ def test_import_backup_accepts_exported_bundle(
         headers=admin_headers,
         json={
             "name": "backup-group",
-            "match_rule_ids": [rule["id"]],
             "param_override": [{"path": "temperature", "action": "set", "value": 0.2}],
             "headers": [{"name": "X-Group", "action": "override", "value": "enabled"}],
         },
@@ -156,10 +184,7 @@ def test_import_backup_accepts_exported_bundle(
         {"name": "X-Group", "action": "override", "value": "enabled", "match": None}
     ]
     rules = client.get("/api/admin/regex-rules", headers=admin_headers).json()
-    assert next(item for item in rules if item["id"] == rule["id"]) == {
-        **rule,
-        "groups": [{"id": group.json()["id"], "name": "backup-group"}],
-    }
+    assert {item["id"] for item in rules} == {rule["id"]}
     settings = {
         item["key"]: item["value"]
         for item in client.get("/api/admin/settings", headers=admin_headers).json()

@@ -1,38 +1,26 @@
 """Protocol conversion dispatch.
 
-Each (client protocol, upstream protocol) pair registers one adapter; the
-public ``convert_*`` entrypoints look the pair up instead of repeating the
-matrix as if/elif chains.
+Every convertible protocol contributes two spoke functions: a parser that
+reads its own wire payload into the unified protocol (``unified.py``,
+``unified_response.py``, ``unified_stream.py``) and a builder that writes the
+unified value back out. Any client/upstream pair is therefore served by
+composing one parser with one builder, so adding a protocol costs two
+functions instead of converters for every existing pair.
+
+Same-protocol requests and responses never reach this module: the caller
+forwards them byte-for-byte, which keeps prompt caching, provider built-in
+tools and server-side state (``previous_response_id``) intact.
 """
 
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from ...core.protocol_reachability import can_reach_protocol
 from ...models.protocols import ProtocolKind
-from .anthropic_request_to_chat import anthropic_request_to_chat
-from .anthropic_to_responses import anthropic_request_to_responses
-from .chat_request_to_responses import chat_request_to_responses
 from .chat_stream import repair_chat_tool_call_stream
-from .chat_to_anthropic import (
-    chat_response_to_anthropic,
-    chat_stream_to_anthropic_stream,
-)
-from .chat_to_responses import (
-    chat_response_to_responses,
-    chat_stream_to_responses_stream,
-)
-from .responses_request_to_chat import responses_request_to_chat
-from .responses_to_anthropic import (
-    responses_response_to_anthropic,
-    responses_stream_to_anthropic_stream,
-)
-from .responses_to_chat import (
-    responses_response_to_chat,
-    responses_stream_to_chat_stream,
-)
+from .responses_common import is_reasoning_envelope
 
 __all__ = [
     "can_reach_protocol",
@@ -40,73 +28,114 @@ __all__ = [
     "convert_response",
     "convert_stream_iterator",
     "repair_chat_tool_call_stream",
+    "strip_foreign_reasoning",
 ]
 
-RequestConverter = Callable[[dict[str, Any], bool], dict[str, Any]]
-ResponseConverter = Callable[[dict[str, Any], str], dict[str, Any]]
-StreamConverter = Callable[[AsyncIterator[bytes], str, bool], AsyncIterator[bytes]]
+Parse = Callable[[dict[str, Any]], Any]
+Build = Callable[[Any], dict[str, Any]]
+ParseStream = Callable[[AsyncIterator[bytes]], AsyncIterator[Any]]
+BuildStream = Callable[[AsyncIterator[Any], str], AsyncIterator[bytes]]
 
 
-@dataclass(frozen=True)
-class ProtocolPairConverter:
-    """Adapters normalizing one (client, upstream) pair's converter signatures."""
+@dataclass(frozen=True, slots=True)
+class Spoke:
+    """One protocol's wire readers and writers for the unified protocol."""
 
-    request: RequestConverter
-    response: ResponseConverter
-    stream: StreamConverter
+    parse_request: Parse
+    build_request: Build
+    parse_response: Parse
+    build_response: Build
+    parse_stream: ParseStream
+    build_stream: BuildStream
 
 
-def _unsupported(
-    client_protocol: ProtocolKind, channel_protocol: ProtocolKind
-) -> ValueError:
-    return ValueError(
-        f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
+def _spokes() -> dict[ProtocolKind, Spoke]:
+    """Import spokes lazily so protocol modules stay independently testable."""
+    from .spoke_anthropic import (
+        build_anthropic_request,
+        build_anthropic_response,
+        parse_anthropic_request,
+        parse_anthropic_response,
+        parse_anthropic_stream,
+        serialize_anthropic_stream,
+    )
+    from .spoke_chat import (
+        build_chat_request,
+        build_chat_response,
+        parse_chat_request,
+        parse_chat_response,
+    )
+    from .spoke_chat_stream import parse_chat_stream, serialize_chat_stream
+    from .spoke_gemini import (
+        build_gemini_request,
+        build_gemini_response,
+        parse_gemini_request,
+        parse_gemini_response,
+        parse_gemini_stream,
+        serialize_gemini_stream,
+    )
+    from .spoke_responses import (
+        build_responses_request,
+        build_responses_response,
+        parse_responses_request,
+        parse_responses_response,
+        parse_responses_stream,
+        serialize_responses_stream,
     )
 
+    return {
+        ProtocolKind.OPENAI_CHAT: Spoke(
+            parse_request=parse_chat_request,
+            build_request=build_chat_request,
+            parse_response=parse_chat_response,
+            build_response=build_chat_response,
+            parse_stream=parse_chat_stream,
+            build_stream=serialize_chat_stream,
+        ),
+        ProtocolKind.OPENAI_RESPONSES: Spoke(
+            parse_request=parse_responses_request,
+            build_request=build_responses_request,
+            parse_response=parse_responses_response,
+            build_response=build_responses_response,
+            parse_stream=parse_responses_stream,
+            build_stream=serialize_responses_stream,
+        ),
+        ProtocolKind.ANTHROPIC: Spoke(
+            parse_request=parse_anthropic_request,
+            build_request=build_anthropic_request,
+            parse_response=parse_anthropic_response,
+            build_response=build_anthropic_response,
+            parse_stream=parse_anthropic_stream,
+            build_stream=serialize_anthropic_stream,
+        ),
+        ProtocolKind.GEMINI: Spoke(
+            parse_request=parse_gemini_request,
+            build_request=build_gemini_request,
+            parse_response=parse_gemini_response,
+            build_response=build_gemini_response,
+            parse_stream=parse_gemini_stream,
+            build_stream=serialize_gemini_stream,
+        ),
+    }
 
-_CONVERTERS: dict[tuple[ProtocolKind, ProtocolKind], ProtocolPairConverter] = {
-    (ProtocolKind.ANTHROPIC, ProtocolKind.OPENAI_CHAT): ProtocolPairConverter(
-        request=lambda body, preserve_reasoning: anthropic_request_to_chat(
-            body, preserve_thinking=preserve_reasoning
-        ),
-        response=chat_response_to_anthropic,
-        stream=lambda raw_iterator, original_model, include_usage: (
-            chat_stream_to_anthropic_stream(raw_iterator, original_model)
-        ),
-    ),
-    (ProtocolKind.OPENAI_RESPONSES, ProtocolKind.OPENAI_CHAT): ProtocolPairConverter(
-        request=lambda body, preserve_reasoning: responses_request_to_chat(body),
-        response=chat_response_to_responses,
-        stream=lambda raw_iterator, original_model, include_usage: (
-            chat_stream_to_responses_stream(raw_iterator, original_model)
-        ),
-    ),
-    (ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES): ProtocolPairConverter(
-        request=lambda body, preserve_reasoning: chat_request_to_responses(body),
-        response=responses_response_to_chat,
-        stream=lambda raw_iterator, original_model, include_usage: (
-            responses_stream_to_chat_stream(
-                raw_iterator, original_model, include_usage=include_usage
-            )
-        ),
-    ),
-    (ProtocolKind.ANTHROPIC, ProtocolKind.OPENAI_RESPONSES): ProtocolPairConverter(
-        request=lambda body, preserve_reasoning: anthropic_request_to_responses(body),
-        response=responses_response_to_anthropic,
-        stream=lambda raw_iterator, original_model, include_usage: (
-            responses_stream_to_anthropic_stream(raw_iterator, original_model)
-        ),
-    ),
-}
+
+_SPOKES = _spokes()
 
 
-def _lookup(
+def spoke_for(protocol: ProtocolKind) -> Spoke:
+    spoke = _SPOKES.get(protocol)
+    if spoke is None:
+        raise ValueError(f"Unsupported conversion protocol: {protocol.value}")
+    return spoke
+
+
+def _check_reachable(
     client_protocol: ProtocolKind, channel_protocol: ProtocolKind
-) -> ProtocolPairConverter:
-    converter = _CONVERTERS.get((client_protocol, channel_protocol))
-    if converter is None:
-        raise _unsupported(client_protocol, channel_protocol)
-    return converter
+) -> None:
+    if not can_reach_protocol(channel_protocol, client_protocol):
+        raise ValueError(
+            f"Unsupported conversion: {client_protocol.value} -> {channel_protocol.value}"
+        )
 
 
 def convert_request(
@@ -117,12 +146,69 @@ def convert_request(
     preserve_reasoning: bool = False,
 ) -> dict[str, Any]:
     """Convert a client request into the selected upstream protocol."""
-    result = _lookup(client_protocol, channel_protocol).request(
-        body, preserve_reasoning
-    )
+    _check_reachable(client_protocol, channel_protocol)
+    request = spoke_for(client_protocol).parse_request(dict(body))
+    request.origin = client_protocol
+    request.replay_reasoning = preserve_reasoning
+    if target_model:
+        request.model = target_model
+    result = spoke_for(channel_protocol).build_request(request)
     if target_model:
         result["model"] = target_model
+    # Upstream transport reads this flag to pick the streaming endpoint, so it
+    # holds for every target protocol; Gemini drops it from the final payload.
+    if request.stream:
+        result["stream"] = True
     return result
+
+
+def strip_foreign_reasoning(body: dict[str, Any]) -> dict[str, Any]:
+    """Drop Anthropic thinking blocks that carry a foreign reasoning envelope.
+
+    A client whose history passed through a Responses channel holds thinking
+    blocks whose ``signature`` is a Lens envelope. Anthropic rejects those, so
+    they are removed before a same-protocol request is forwarded.
+    """
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return body
+
+    cleaned: list[Any] = []
+    changed = False
+    for message in messages:
+        if not isinstance(message, dict):
+            cleaned.append(message)
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            cleaned.append(message)
+            continue
+        kept = [
+            block
+            for block in content
+            if not (
+                isinstance(block, dict)
+                and (
+                    (
+                        block.get("type") == "thinking"
+                        and is_reasoning_envelope(block.get("signature"))
+                    )
+                    or (
+                        block.get("type") == "redacted_thinking"
+                        and is_reasoning_envelope(block.get("data"))
+                    )
+                )
+            )
+        ]
+        if len(kept) == len(content):
+            cleaned.append(message)
+            continue
+        changed = True
+        if kept:
+            cleaned.append({**message, "content": kept})
+    if not changed:
+        return body
+    return {**body, "messages": cleaned}
 
 
 def convert_response(
@@ -132,10 +218,12 @@ def convert_response(
     original_model: str = "",
 ) -> bytes:
     """Convert an upstream response into the client protocol."""
-    chat_data = json.loads(response_body)
-    converted = _lookup(client_protocol, channel_protocol).response(
-        chat_data, original_model
-    )
+    _check_reachable(client_protocol, channel_protocol)
+    body = json.loads(response_body)
+    response = spoke_for(channel_protocol).parse_response(body)
+    if not response.model:
+        response.model = original_model
+    converted = spoke_for(client_protocol).build_response(response)
     return json.dumps(converted, ensure_ascii=False).encode("utf-8")
 
 
@@ -148,8 +236,9 @@ async def convert_stream_iterator(
     include_usage: bool = False,
 ) -> AsyncIterator[bytes]:
     """Convert an upstream byte stream into the client protocol stream."""
-    stream = _lookup(client_protocol, channel_protocol).stream(
-        raw_iterator, original_model, include_usage
-    )
+    _check_reachable(client_protocol, channel_protocol)
+    del include_usage
+    events = spoke_for(channel_protocol).parse_stream(raw_iterator)
+    stream = spoke_for(client_protocol).build_stream(events, original_model)
     async for chunk in stream:
         yield chunk

@@ -9,6 +9,7 @@ import {
 import { type FormEventHandler, useMemo, useState } from "react";
 import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   Dialog,
@@ -38,9 +39,11 @@ import {
 } from "@/components/ui/Select";
 import { ToolbarButton } from "@/components/ui/ToolbarButton";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
+import { useRegexRules } from "@/hooks/useRegexRules";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolLabel, protocolOptions } from "@/lib/protocols";
+import { compileRegexRulePattern } from "@/lib/regexRules";
 import { AddChannelModelsDialog } from "./AddChannelModelsDialog";
 import { ChannelModelsTable } from "./ChannelModelsTable";
 import type {
@@ -68,8 +71,18 @@ type Props = {
   onDelete: (key: string) => void;
   onTest: (key: string) => void;
   testing: boolean;
-  onAddBinding: (names: string, protocols: ProtocolKind[]) => boolean;
+  onAddBinding: (
+    names: string,
+    protocols: ProtocolKind[],
+    groupId?: string,
+  ) => boolean;
   onOpenRemote: () => void;
+  /** Execution groups new models can join after the channel is saved. */
+  groupOptions: Array<{ id: string; name: string }>;
+  /** Library rule ids that auto-onboard matching upstream models. */
+  onboardingRuleIds: string[];
+  /** Adds exclude rules so removed models never sync back in. */
+  onExcludeModels: (modelNames: string[]) => Promise<boolean>;
   initialStatusFilter?: ModelStatusFilter;
   isNested?: boolean;
 };
@@ -78,7 +91,7 @@ type Props = {
 export function ChannelModelsDialog({ open, onOpenChange, ...props }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <ChannelModelsBody onOpenChange={onOpenChange} {...props} />
       </DialogContent>
     </Dialog>
@@ -101,6 +114,9 @@ function ChannelModelsBody({
   testing,
   onAddBinding,
   onOpenRemote,
+  groupOptions,
+  onboardingRuleIds,
+  onExcludeModels,
   initialStatusFilter = "all",
   isNested = false,
 }: Omit<Props, "open">) {
@@ -111,7 +127,8 @@ function ChannelModelsBody({
   const [sortBy, setSortBy] = useState<ModelSort>("name-asc");
   const [newOpen, setNewOpen] = useState(false);
   const [bulkProtocols, setBulkProtocols] = useState<ProtocolKind[]>(["auto"]);
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [removeRequest, setRemoveRequest] = useState<string[] | null>(null);
+  const [excludeOnRemove, setExcludeOnRemove] = useState(true);
 
   const hasMultipleBaseUrls = useMemo(
     () => new Set(models.map((model) => model.baseUrl)).size > 1,
@@ -183,16 +200,52 @@ function ChannelModelsBody({
   const activeFilterCount =
     Number(statusFilter !== "all") + Number(protocolFilter !== "all");
   const sortOptions = modelSortOptions(locale);
+  const libraryRules = useRegexRules().rules;
+  const onboardingPatterns = useMemo(
+    () =>
+      libraryRules
+        .filter((rule) => onboardingRuleIds.includes(rule.id))
+        .map((rule) => compileRegexRulePattern(rule.pattern))
+        .filter((pattern): pattern is RegExp => pattern !== null),
+    [libraryRules, onboardingRuleIds],
+  );
+  const removeNames = useMemo(
+    () =>
+      (removeRequest ?? [])
+        .map((key) => models.find((model) => model.key === key)?.modelName)
+        .filter((name): name is string => Boolean(name)),
+    [models, removeRequest],
+  );
+  // Names an onboarding rule would sync back after the delete.
+  const removableOnboardingNames = [
+    ...new Set(
+      removeNames.filter((name) =>
+        onboardingPatterns.some((pattern) => pattern.test(name)),
+      ),
+    ),
+  ];
 
   function applyBulkProtocols() {
     if (!bulkProtocols.length || selectedCount === 0) return;
     for (const key of selectedKeys) onUpdateProtocols(key, bulkProtocols);
   }
 
-  function deleteSelected() {
-    for (const key of selectedKeys) onDelete(key);
+  function requestRemoval(keys: string[]) {
+    if (!keys.length) return;
+    setExcludeOnRemove(true);
+    setRemoveRequest(keys);
+  }
+
+  async function confirmRemoval() {
+    const keys = removeRequest ?? [];
+    if (!keys.length) return;
+    if (excludeOnRemove && removableOnboardingNames.length) {
+      const excluded = await onExcludeModels(removableOnboardingNames);
+      if (!excluded) return;
+    }
+    for (const key of keys) onDelete(key);
     selection.clear();
-    setBulkDeleteOpen(false);
+    setRemoveRequest(null);
   }
 
   return (
@@ -241,7 +294,7 @@ function ChannelModelsBody({
                   {locale === "zh-CN" ? "筛选" : "Filter"}
                 </span>
                 {activeFilterCount ? (
-                  <span className="text-[10px] tabular-nums">
+                  <span className="text-xs tabular-nums">
                     {activeFilterCount}
                   </span>
                 ) : null}
@@ -250,7 +303,7 @@ function ChannelModelsBody({
             <PopoverContent align="start" className="z-[100] w-[240px] p-2">
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {locale === "zh-CN" ? "状态" : "Status"}
                   </p>
                   <Select
@@ -259,7 +312,7 @@ function ChannelModelsBody({
                       setStatusFilter(value as ModelStatusFilter)
                     }
                   >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="z-[100]">
@@ -279,7 +332,7 @@ function ChannelModelsBody({
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {locale === "zh-CN" ? "协议" : "Protocol"}
                   </p>
                   <Select
@@ -288,7 +341,7 @@ function ChannelModelsBody({
                       setProtocolFilter(value as ProtocolFilter)
                     }
                   >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="z-[100]">
@@ -338,12 +391,12 @@ function ChannelModelsBody({
               {sortOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-[10px]"
+                  className="h-6 gap-2 px-2 py-0 text-xs"
                   onSelect={() => setSortBy(option.value)}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
                   {sortBy === option.value ? (
-                    <Check className="size-3 text-muted-foreground" />
+                    <Check className="size-3.5 text-muted-foreground" />
                   ) : null}
                 </DropdownMenuItem>
               ))}
@@ -356,23 +409,23 @@ function ChannelModelsBody({
             onSetEnabled={(enabled) => {
               for (const key of selectedKeys) onToggleEnabled(key, enabled);
             }}
-            onDelete={() => setBulkDeleteOpen(true)}
+            onDelete={() => requestRemoval(selectedKeys)}
           >
             <div className="mt-1 flex h-7 w-full items-center gap-1.5">
               <Button
                 type="button"
                 variant="ghost"
-                className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted"
+                className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-xs text-foreground/70 shadow-none hover:bg-muted"
                 disabled={!bulkProtocols.length}
                 onClick={applyBulkProtocols}
               >
-                <Cable className="size-3" />
+                <Cable className="size-3.5" />
                 {locale === "zh-CN" ? "应用" : "Apply"}
               </Button>
               <ProtocolDropdown
                 value={bulkProtocols}
                 locale={locale}
-                className="h-7 px-2 py-0 text-[11px] has-[>svg]:px-2"
+                className="h-7 px-2 py-0 text-xs has-[>svg]:px-2"
                 onChange={setBulkProtocols}
               />
             </div>
@@ -416,7 +469,7 @@ function ChannelModelsBody({
             onToggleEnabled={onToggleEnabled}
             onUpdateProtocols={onUpdateProtocols}
             onUpdateContextWindow={onUpdateContextWindow}
-            onDelete={onDelete}
+            onDelete={(key) => requestRemoval([key])}
             onTest={onTest}
           />
         </div>
@@ -452,20 +505,43 @@ function ChannelModelsBody({
         locale={locale}
         onOpenChange={setNewOpen}
         onAddBinding={onAddBinding}
+        groupOptions={groupOptions}
       />
       <ConfirmDeleteDialog
-        open={bulkDeleteOpen}
+        open={removeRequest !== null}
         locale={locale}
         title={locale === "zh-CN" ? "删除模型" : "Delete models"}
         description={
           locale === "zh-CN"
-            ? `删除选中的 ${selectedCount} 个模型及其同步目标，保存后生效。`
-            : `${selectedCount} selected models and their sync targets will be removed after you save.`
+            ? `删除选中的 ${removeRequest?.length ?? 0} 个模型，保存后生效。`
+            : `${removeRequest?.length ?? 0} selected models will be removed after you save.`
         }
-        isDisabled={selectedCount === 0}
-        onOpenChange={setBulkDeleteOpen}
-        onConfirm={deleteSelected}
-      />
+        onOpenChange={(open) => {
+          if (!open) setRemoveRequest(null);
+        }}
+        onConfirm={() => void confirmRemoval()}
+      >
+        {removableOnboardingNames.length ? (
+          <label
+            htmlFor="exclude-on-remove"
+            className="flex items-start gap-2 rounded-md bg-muted/35 p-2.5 text-xs text-muted-foreground"
+          >
+            <Checkbox
+              id="exclude-on-remove"
+              className="mt-0.5"
+              checked={excludeOnRemove}
+              onCheckedChange={(checked) =>
+                setExcludeOnRemove(checked === true)
+              }
+            />
+            <span>
+              {locale === "zh-CN"
+                ? "这些模型匹配自动接入规则，删除后下次同步会重新接入。同时加入排除正则可避免重新接入。"
+                : "These models match auto-onboard rules and would sync back in. Add exclusion regexes to keep them out."}
+            </span>
+          </label>
+        ) : null}
+      </ConfirmDeleteDialog>
     </>
   );
 }

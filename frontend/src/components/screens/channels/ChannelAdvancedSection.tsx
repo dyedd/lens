@@ -163,15 +163,15 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-6 gap-1 px-2 text-[11px]"
+                    className="h-6 gap-1 px-2 text-xs"
                   >
-                    <ListPlus className="size-3" />
+                    <ListPlus className="size-3.5" />
                     {locale === "zh-CN" ? "填入常用值" : "Insert common value"}
-                    <ChevronDown className="size-3" />
+                    <ChevronDown className="size-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-56">
-                  <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
                     {locale === "zh-CN" ? "常用请求头" : "Common headers"}
                   </DropdownMenuLabel>
                   {HEADER_PRESETS.map((preset) => (

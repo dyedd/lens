@@ -26,7 +26,7 @@ function ConfigPreviewMeta({ label, value }: { label: string; value: string }) {
   return (
     <Item variant="muted" size="sm">
       <ItemContent>
-        <ItemDescription className="text-[11px] text-muted-foreground">
+        <ItemDescription className="text-xs text-muted-foreground">
           {label}
         </ItemDescription>
         <ItemTitle>{value}</ItemTitle>
@@ -96,7 +96,7 @@ export function ConfigImportPreview({
                     <ItemTitle>{item.label}</ItemTitle>
                     <Badge
                       variant="secondary"
-                      className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground"
+                      className=" text-muted-foreground"
                     >
                       {item.count}
                     </Badge>
