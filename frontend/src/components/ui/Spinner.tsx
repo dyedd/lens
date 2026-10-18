@@ -13,7 +13,7 @@ function Spinner({
       role={accessibleLabel ? "status" : undefined}
       aria-label={accessibleLabel}
       aria-hidden={accessibleLabel ? undefined : true}
-      className={cn("size-4 animate-spin text-muted-foreground", className)}
+      className={cn("size-4 animate-spin text-primary", className)}
       {...props}
     />
   );
