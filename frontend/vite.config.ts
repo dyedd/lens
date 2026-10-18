@@ -3,8 +3,10 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// Single source of truth for the dev API port; `lens dev` exports this variable.
-const backendTarget = process.env.LENS_DEV_BACKEND ?? "http://127.0.0.1:18080";
+// The API port is written in exactly one place, `LENS_PORT`; `lens dev` exports
+// it so this proxy follows the backend instead of duplicating the number.
+const backendTarget =
+  process.env.VITE_LENS_DEV_BACKEND ?? "http://127.0.0.1:18080";
 
 export default defineConfig({
   build: {
@@ -23,6 +25,9 @@ export default defineConfig({
     // first on Windows, which leaves the documented 127.0.0.1:3000 unreachable.
     host: "127.0.0.1",
     port: 3000,
+    // The URL printed by `lens dev` is only correct on this port, so fail loudly
+    // instead of moving to the next free one.
+    strictPort: true,
     proxy: {
       "/api": backendTarget,
       "/v1": backendTarget,
