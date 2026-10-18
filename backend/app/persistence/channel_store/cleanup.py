@@ -11,6 +11,7 @@ from app.persistence.entities import (
     ModelGroupItemEntity,
     SiteDiscoveredModelEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
 
 from ...core.runtime_channel_ids import compose_runtime_channel_id
@@ -25,6 +26,13 @@ class SiteConfigurationCleanupMixin:
         await session.execute(
             delete(SiteDiscoveredModelEntity).where(
                 SiteDiscoveredModelEntity.protocol_config_id.in_(protocol_config_ids)
+            )
+        )
+        await session.execute(
+            delete(SiteProtocolConfigSyncTargetEntity).where(
+                SiteProtocolConfigSyncTargetEntity.protocol_config_id.in_(
+                    protocol_config_ids
+                )
             )
         )
         await session.execute(

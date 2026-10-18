@@ -109,8 +109,8 @@ export function RegexRuleLibrarySection({ locale }: { locale: Locale }) {
         <p className="text-xs text-muted-foreground">
           {titleForLocale(
             locale,
-            "维护渠道同步和模型组匹配使用的正则规则。修改后会立即影响引用它的功能。",
-            "Manage regex rules used by channel sync and model group matching. Changes apply immediately wherever a rule is used.",
+            "维护模型组匹配使用的正则规则。修改后会立即影响引用它的模型组。",
+            "Manage regex rules used by model groups. Changes apply immediately wherever a rule is used.",
           )}
         </p>
         <Table>
