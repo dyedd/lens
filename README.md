@@ -201,19 +201,27 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 uv sync --locked
 cd frontend && pnpm install && cd ..
 uv run --no-sync python -c "import os, secrets; from pathlib import Path; path = Path('.env'); os.umask(0o077); path.exists() or path.write_text(f'LENS_AUTH_SECRET_KEY={secrets.token_hex(32)}\n', encoding='utf-8')"
-uv run --no-sync lens db upgrade
-uv run --no-sync lens seed-admin --username admin --generate-password
+uv run --no-sync lens setup
 uv run --no-sync lens dev
 ```
 
-本地开发默认端口：
+`lens setup` 升级数据库、在管理员不存在时生成初始密码（写入 `data/admin-password`），并构建前端。`lens dev` 在同一个进程里运行 API，同时启动 Vite；端口只由 `LENS_PORT` 决定：
 
-- Vite dev server：`http://127.0.0.1:3000`（`/api`、`/v1`、`/v1beta` 由 Vite 代理到后端，所以只需要打开这一个地址）
-- FastAPI 后端：`http://127.0.0.1:18080`
+- Vite dev server：`http://127.0.0.1:3000`（`/api`、`/v1`、`/v1beta` 由 Vite 代理到 API，所以只需要打开这一个地址）
+- FastAPI 后端：`http://127.0.0.1:${LENS_PORT}`，默认 `18080`
 
-也可以分开启动：
+只改后端时不需要前端：
 
 ```bash
+uv run --no-sync lens serve
+```
+
+同时调试前后端（Vite 热更新），或前后端各起一份：
+
+```bash
+uv run --no-sync lens dev
+
+# 或分别启动
 uv run --no-sync lens serve
 
 cd frontend
@@ -362,7 +370,7 @@ pnpm dev
 | 变量                   | 默认值 | 说明                                                          |
 | ---------------------- | ------ | ------------------------------------------------------------- |
 | `LENS_PORT`            | `3000` | 容器监听端口与宿主机映射端口（同一值）                        |
-| `LENS_SKIP_DB_UPGRADE` | `0`    | 容器启动时设为 `1` 可跳过自动数据库迁移；需自行确保结构已升级 |
+| `LENS_SKIP_DB_UPGRADE` | `0`    | 容器启动时设为 `1` 可跳过自动迁移：不再升级数据库，也不再生成初始管理员密码，需自行确保结构已升级 |
 
 ### PostgreSQL 配置
 
@@ -393,7 +401,8 @@ LENS_DATABASE_URL=postgresql+psycopg://lens:password@postgresql:5432/lens
 ## 数据库迁移
 
 ```bash
-uv run --no-sync lens db upgrade  # 升级到最新
+uv run --no-sync lens migrate  # 升级到最新，并写入初始管理员密码
+uv run --no-sync lens db upgrade  # 只升级到最新
 uv run --no-sync lens db downgrade  # 回退一步
 uv run --no-sync lens db revision -m "describe your change"  # 生成新迁移
 ```

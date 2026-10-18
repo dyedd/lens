@@ -3,13 +3,11 @@ set -eu
 
 mkdir -p /app/data
 
-if [ "${LENS_SKIP_DB_UPGRADE:-0}" != "1" ]; then
-  lens db upgrade
+# Upgrades the schema and writes the initial admin password when needed.
+if [ "${LENS_SKIP_DB_UPGRADE:-0}" = "1" ]; then
+  echo "LENS_SKIP_DB_UPGRADE=1: skipping the startup migration" >&2
+else
+  lens migrate
 fi
-
-lens seed-admin \
-  --username admin \
-  --generate-password \
-  --password-file /app/data/admin-password
 
 exec lens serve --host 0.0.0.0 --port "${LENS_PORT:-3000}"

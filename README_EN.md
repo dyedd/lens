@@ -204,19 +204,27 @@ The command below generates a random signing key only when `.env` does not exist
 uv sync --locked
 cd frontend && pnpm install && cd ..
 uv run --no-sync python -c "import os, secrets; from pathlib import Path; path = Path('.env'); os.umask(0o077); path.exists() or path.write_text(f'LENS_AUTH_SECRET_KEY={secrets.token_hex(32)}\n', encoding='utf-8')"
-uv run --no-sync lens db upgrade
-uv run --no-sync lens seed-admin --username admin --generate-password
+uv run --no-sync lens setup
 uv run --no-sync lens dev
 ```
 
-Default local development ports:
+`lens setup` upgrades the database, writes an initial admin password when no admin exists (to `data/admin-password`), and builds the UI. `lens dev` runs the API in the same process and starts Vite alongside it; `LENS_PORT` is the only place the port is set:
 
-- Vite dev server: `http://127.0.0.1:3000` (Vite proxies `/api`, `/v1` and `/v1beta` to the backend, so this is the only address you need to open)
-- FastAPI backend: `http://127.0.0.1:18080`
+- Vite dev server: `http://127.0.0.1:3000` (Vite proxies `/api`, `/v1` and `/v1beta` to the API, so this is the only address you need to open)
+- FastAPI backend: `http://127.0.0.1:${LENS_PORT}`, `18080` by default
 
-You can also run them separately:
+Backend-only work skips the UI:
 
 ```bash
+uv run --no-sync lens serve
+```
+
+To debug both sides with Vite hot reload, or to run them as separate processes:
+
+```bash
+uv run --no-sync lens dev
+
+# or run them separately
 uv run --no-sync lens serve
 
 cd frontend
@@ -358,7 +366,7 @@ Cooldown and health windows are runtime state in the current Lens process. They 
 | Variable               | Default | Description                                                        |
 | ---------------------- | ------- | ------------------------------------------------------------------ |
 | `LENS_PORT`            | `3000`  | Container listen port and host port mapping (same value)           |
-| `LENS_SKIP_DB_UPGRADE` | `0`     | Set to `1` to skip container startup migrations; upgrade the schema first |
+| `LENS_SKIP_DB_UPGRADE` | `0`     | Set to `1` to skip the startup migration, including the initial admin password; upgrade the schema first |
 
 ### PostgreSQL Configuration
 
@@ -389,7 +397,8 @@ The first `lens` is the database username, the last `lens` is the database name,
 ## Database Migrations
 
 ```bash
-uv run --no-sync lens db upgrade  # upgrade to latest
+uv run --no-sync lens migrate  # upgrade to latest and write the initial admin password
+uv run --no-sync lens db upgrade  # upgrade to latest only
 uv run --no-sync lens db downgrade  # downgrade one revision
 uv run --no-sync lens db revision -m "describe your change"  # create a migration
 ```
