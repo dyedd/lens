@@ -85,5 +85,4 @@ class RegexRuleView(StrictBaseModel):
     name: str
     pattern: str
     description: str = ""
-    sites: list[RegexRuleReferenceView] = Field(default_factory=list)
     groups: list[RegexRuleReferenceView] = Field(default_factory=list)

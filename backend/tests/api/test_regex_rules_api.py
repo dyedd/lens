@@ -29,7 +29,6 @@ def test_regex_rule_crud_happy_path(client, admin_headers, create_regex_rule) ->
         "name": "GPT",
         "pattern": "^gpt-",
         "description": "OpenAI",
-        "sites": [],
         "groups": [],
     }
     assert updated.status_code == 200, updated.text
@@ -70,15 +69,10 @@ def test_create_regex_rule_rejects_duplicate_names_and_invalid_patterns(
     ("path", "payload"),
     [
         pytest.param(
-            "/api/admin/sites",
-            {**valid_site_payload(), "model_sync_exclude_rule_ids": ["missing"]},
-            id="site",
-        ),
-        pytest.param(
             "/api/admin/model-groups",
             {"name": "family", "match_rule_ids": ["missing"]},
             id="group",
-        ),
+        )
     ],
 )
 def test_writes_reject_unknown_regex_rule_ids(
@@ -127,13 +121,7 @@ def test_deleting_rule_removes_it_from_referencing_site_and_group(
 ) -> None:
     kept = create_regex_rule("Keep", "^gpt-")
     dropped = create_regex_rule("Drop", "-preview$")
-    site = create_site(
-        {
-            **valid_site_payload(),
-            "model_sync_include_rule_ids": [dropped["id"], kept["id"]],
-            "model_sync_exclude_rule_ids": [dropped["id"]],
-        }
-    )
+    create_site(valid_site_payload())
     group = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
@@ -145,19 +133,13 @@ def test_deleting_rule_removes_it_from_referencing_site_and_group(
     )
 
     assert response.status_code == 204
-    stored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
-    assert (
-        stored_site["model_sync_include_rule_ids"],
-        stored_site["model_sync_exclude_rule_ids"],
-    ) == ([kept["id"]], [])
     stored_group = client.get(
         f"/api/admin/model-groups/{group['id']}", headers=admin_headers
     ).json()
     assert stored_group["match_rule_ids"] == [kept["id"]]
-    assert client.get("/api/admin/regex-rules", headers=admin_headers).json() == [
-        {
-            **kept,
-            "sites": [{"id": site["id"], "name": site["name"]}],
-            "groups": [{"id": group["id"], "name": "family"}],
-        }
-    ]
+    rules = client.get("/api/admin/regex-rules", headers=admin_headers).json()
+    assert all(rule["id"] != dropped["id"] for rule in rules)
+    assert next(rule for rule in rules if rule["id"] == kept["id"]) == {
+        **kept,
+        "groups": [{"id": group["id"], "name": "family"}],
+    }

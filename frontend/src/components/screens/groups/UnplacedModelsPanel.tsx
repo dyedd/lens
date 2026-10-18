@@ -78,12 +78,12 @@ function removalDescription(target: RemoveRequest | null, isZh: boolean) {
   if (names.length <= 1) {
     const name = names[0] ?? "";
     return isZh
-      ? `将从 ${providerCount} 个渠道的 API Key 中移除「${name}」。开启自动同步的渠道会停用该模型，避免下次同步再次加入。`
-      : `Remove "${name}" from ${providerCount} channel API keys. Auto-synced channels disable it so the next sync does not add it again.`;
+      ? `将从 ${providerCount} 个渠道的 API Key 中移除「${name}」及其同步目标。`
+      : `Remove "${name}" and its sync targets from ${providerCount} channel API keys.`;
   }
   return isZh
-    ? `将从渠道中移除选中的 ${names.length} 个模型，涉及 ${providerCount} 个渠道的 API Key。开启自动同步的渠道会停用这些模型，避免下次同步再次加入。`
-    : `Remove ${names.length} selected models across ${providerCount} channel API keys. Auto-synced channels disable them so the next sync does not add them again.`;
+    ? `将从渠道中移除选中的 ${names.length} 个模型及其同步目标，涉及 ${providerCount} 个渠道的 API Key。`
+    : `Remove ${names.length} selected models and their sync targets across ${providerCount} channel API keys.`;
 }
 
 function UnplacedModelName({

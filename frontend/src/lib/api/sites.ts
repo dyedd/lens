@@ -46,7 +46,6 @@ export type SiteModel = {
   model_name: string;
   enabled: boolean;
   sort_order: number;
-  source: "manual" | "synced";
   upstream_missing: boolean;
   /** Admin override; null falls back to the upstream or model-name value. */
   context_window: number | null;
@@ -59,7 +58,6 @@ export type SiteModelInput = {
   credential_id: string;
   model_name: string;
   enabled: boolean;
-  source: "manual" | "synced";
   upstream_missing: boolean;
   context_window: number | null;
   upstream_context_window: number | null;
@@ -70,21 +68,21 @@ export type SiteProtocolConfig = {
   protocols: ProtocolKind[];
   credential_ids: string[];
   models: SiteModel[];
+  sync_targets: SiteSyncTarget[];
 };
 export type SiteProtocolConfigInput = {
   id?: string | null;
   base_url_id: string;
   protocols: ProtocolKind[];
   models: SiteModelInput[];
+  sync_targets: SiteSyncTarget[];
 };
-export type SiteModelSyncSettings = {
-  model_sync_enabled: boolean;
-  /** Library regex rule ids; when set, only models matching any of them sync. */
-  model_sync_include_rule_ids: string[];
-  /** Library regex rule ids; models matching any of them never sync. */
-  model_sync_exclude_rule_ids: string[];
+export type SiteSyncTarget = {
+  credential_id: string;
+  protocol: ProtocolKind;
+  model_name: string;
 };
-export type Site = SiteModelSyncSettings & {
+export type Site = {
   id: string;
   name: string;
   enabled: boolean;
@@ -125,7 +123,7 @@ export type HealthSummary = {
   items: HealthItem[];
   next_offset: number | null;
 };
-export type SitePayload = SiteModelSyncSettings & {
+export type SitePayload = {
   name: string;
   tags: string[];
   proxy_mode: ChannelProxyMode;
@@ -171,7 +169,6 @@ export type SiteBatchImportModelInput = {
   model_name: string;
   credential_ref: string;
   enabled?: boolean;
-  source?: "manual" | "synced";
 };
 export type SiteBatchImportProtocolInput = {
   protocol?: ProtocolKind;

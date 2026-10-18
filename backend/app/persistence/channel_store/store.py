@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.errors import ResourceNotFoundError
 from app.models.channels import ChannelConfig
-from app.models.protocols import ModelSource, ProtocolKind
+from app.models.protocols import ProtocolKind
 from app.models.site_import import (
     SiteBatchImportItemResult,
     SiteBatchImportRequest,
@@ -122,13 +122,12 @@ class SiteOperationsMixin:
         self,
         protocol_config_id: str,
         credential_id: str,
-        protocols: list[ProtocolKind],
         *,
         upstream_names: set[str],
-        wanted_names: set[str],
+        target_keys: set[tuple[ProtocolKind, str]],
         upstream_context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
-        """Add wanted upstream models and flag synced models missing upstream.
+        """Materialize selected upstream targets and flag missing models.
 
         Context windows the upstream reports are refreshed on every bound row.
         """
@@ -175,37 +174,51 @@ class SiteOperationsMixin:
             credential_models = [
                 row for row in config_rows if row.credential_id == credential_id
             ]
-            bound_names = {row.model_name for row in credential_models}
-            # Automatic forwarding cannot share a model with fixed protocols.
-            added_protocols = (
-                [ProtocolKind.AUTO] if ProtocolKind.AUTO in protocols else protocols
-            )
             next_sort_order = (
                 max((row.sort_order for row in config_rows), default=-1) + 1
             )
-            added = sorted(wanted_names - bound_names)
-            for model_name in added:
-                for protocol in added_protocols:
-                    session.add(
-                        SiteDiscoveredModelEntity(
-                            id=str(uuid.uuid4()),
-                            protocol_config_id=protocol_config_id,
-                            credential_id=credential_id,
-                            model_name=model_name,
-                            enabled=1,
-                            sort_order=next_sort_order,
-                            protocol=protocol.value,
-                            source=ModelSource.SYNCED.value,
-                            upstream_context_window=reported_context_windows.get(
-                                model_name
-                            ),
-                        )
-                    )
-                    next_sort_order += 1
-
+            existing_by_key = {
+                (row.protocol, row.model_name): row for row in credential_models
+            }
+            desired_keys = {
+                (protocol.value, model_name) for protocol, model_name in target_keys
+            }
+            added: set[str] = set()
             missing: set[str] = set()
-            restored: set[str] = set()
             checked_at = datetime.now(UTC).replace(tzinfo=None)
+            for protocol_value, model_name in sorted(desired_keys):
+                row = existing_by_key.get((protocol_value, model_name))
+                if row is not None:
+                    continue
+                is_missing = model_name not in upstream_names
+                session.add(
+                    SiteDiscoveredModelEntity(
+                        id=str(uuid.uuid4()),
+                        protocol_config_id=protocol_config_id,
+                        credential_id=credential_id,
+                        model_name=model_name,
+                        enabled=1,
+                        sort_order=next_sort_order,
+                        protocol=protocol_value,
+                        upstream_missing=int(is_missing),
+                        upstream_missing_since=checked_at if is_missing else None,
+                        upstream_context_window=reported_context_windows.get(
+                            model_name
+                        ),
+                    )
+                )
+                next_sort_order += 1
+                (missing if is_missing else added).add(model_name)
+
+            stale_rows = [
+                row
+                for row in credential_models
+                if (row.protocol, row.model_name) not in desired_keys
+            ]
+            for row in stale_rows:
+                await session.delete(row)
+
+            restored: set[str] = set()
             has_backfill = False
             has_context_changes = False
             for row in credential_models:
@@ -214,7 +227,10 @@ class SiteOperationsMixin:
                     if row.upstream_context_window != reported:
                         row.upstream_context_window = reported
                         has_context_changes = True
-                if row.source != ModelSource.SYNCED.value:
+                if (
+                    row in stale_rows
+                    or (row.protocol, row.model_name) not in desired_keys
+                ):
                     continue
                 is_missing = row.model_name not in upstream_names
                 if is_missing == bool(row.upstream_missing):
@@ -226,10 +242,17 @@ class SiteOperationsMixin:
                 row.upstream_missing_since = checked_at if is_missing else None
                 (missing if is_missing else restored).add(row.model_name)
 
-            if added or missing or restored or has_backfill or has_context_changes:
+            if (
+                stale_rows
+                or added
+                or missing
+                or restored
+                or has_backfill
+                or has_context_changes
+            ):
                 await session.commit()
             return UpstreamModelChanges(
-                added=added, missing=sorted(missing), restored=sorted(restored)
+                added=sorted(added), missing=sorted(missing), restored=sorted(restored)
             )
 
 

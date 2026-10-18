@@ -193,12 +193,12 @@ export function useGroupCandidates({
     });
   }
 
-  /** Whether saving would add this model back: a rule or the group's own name. */
+  /** Whether saving would add this model back through the current rules. */
   function isAutoJoined(current: FormState, modelName: string) {
-    return (
-      modelName.toLowerCase() === current.name.trim().toLowerCase() ||
-      buildRuleMatcher(current.match_models, matchedModelNames ?? [])(modelName)
-    );
+    return buildRuleMatcher(
+      current.match_models,
+      matchedModelNames ?? [],
+    )(modelName);
   }
 
   return {
