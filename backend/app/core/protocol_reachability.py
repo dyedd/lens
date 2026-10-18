@@ -4,13 +4,24 @@ from collections.abc import Iterable
 
 from ..models.protocols import ProtocolKind
 
-SUPPORTED_CONVERSIONS: frozenset[tuple[ProtocolKind, ProtocolKind]] = frozenset(
+CHAT_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
     {
-        (ProtocolKind.OPENAI_CHAT, ProtocolKind.ANTHROPIC),
-        (ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES),
-        (ProtocolKind.OPENAI_RESPONSES, ProtocolKind.OPENAI_CHAT),
-        (ProtocolKind.OPENAI_RESPONSES, ProtocolKind.ANTHROPIC),
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.OPENAI_RESPONSES,
+        ProtocolKind.ANTHROPIC,
+        ProtocolKind.GEMINI,
     }
+)
+
+# Every chat protocol can serve every other one, because conversion goes
+# through the unified protocol: one parser and one builder per protocol
+# instead of a converter per pair. Same-protocol traffic is forwarded without
+# converting, and non-chat modalities (embedding, image, rerank) stay native.
+SUPPORTED_CONVERSIONS: frozenset[tuple[ProtocolKind, ProtocolKind]] = frozenset(
+    (upstream, client)
+    for upstream in CHAT_PROTOCOLS
+    for client in CHAT_PROTOCOLS
+    if upstream != client
 )
 
 

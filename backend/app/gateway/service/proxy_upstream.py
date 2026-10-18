@@ -201,6 +201,7 @@ async def _json_upstream_result(
 async def _build_anthropic_sse_to_json_result(
     response: httpx.Response,
     channel: ChannelConfig,
+    client_protocol: ProtocolKind | None,
     pricing_group_name: str | None,
     rate_multiplier: float | None,
     request_content: str | None,
@@ -231,6 +232,21 @@ async def _build_anthropic_sse_to_json_result(
         response_content = distilled_content
         media_type = "application/json"
         response_headers.pop("content-type", None)
+
+    if (
+        client_protocol is not None
+        and client_protocol != ProtocolKind.ANTHROPIC
+        and media_type == "application/json"
+    ):
+        # The distilled body is an Anthropic message; other clients need
+        # their own protocol's shape.
+        try:
+            content = convert_response(
+                client_protocol, ProtocolKind.ANTHROPIC, content, ""
+            )
+        except ValueError as exc:
+            raise _invalid_upstream("Invalid upstream response", exc) from exc
+        response_content = decode_content_bytes(content)
 
     return await _json_upstream_result(
         response,
@@ -541,6 +557,7 @@ async def _build_channel_result(
             result = await _build_anthropic_sse_to_json_result(
                 response,
                 channel,
+                client_protocol,
                 pricing_group_name,
                 rate_multiplier,
                 request_content,

@@ -18,7 +18,7 @@ type Props = {
   onChange: (protocols: ProtocolKind[]) => void;
 };
 
-/** Mirrors backend protocol_reachability: only Chat and Responses upstreams convert. */
+/** Mirrors backend protocol_reachability: every chat protocol converts for the others. */
 function protocolNote(protocol: ProtocolKind, locale: Locale) {
   const zh = locale === "zh-CN";
   if (protocol === "auto") {
@@ -26,15 +26,15 @@ function protocolNote(protocol: ProtocolKind, locale: Locale) {
       ? "按客户端协议原样透传，不转换"
       : "Pass through in the client's protocol, no conversion";
   }
-  if (protocol === "openai_chat") {
+  if (
+    protocol === "openai_chat" ||
+    protocol === "openai_responses" ||
+    protocol === "anthropic" ||
+    protocol === "gemini"
+  ) {
     return zh
-      ? "可转换服务 Anthropic / Responses 客户端"
-      : "Can convert for Anthropic / Responses clients";
-  }
-  if (protocol === "openai_responses") {
-    return zh
-      ? "可转换服务 Chat / Anthropic 客户端"
-      : "Can convert for Chat / Anthropic clients";
+      ? "可转换服务其他三种 chat 协议客户端"
+      : "Can convert for the other three chat protocols";
   }
   return "";
 }
