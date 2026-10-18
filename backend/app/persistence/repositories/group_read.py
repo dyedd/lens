@@ -102,7 +102,6 @@ def _build_item_view(
         else None
     )
     context = resolve_channel_model_context_window(
-        model_name=item.model_name,
         context_window=(
             channel_model.context_window if channel_model is not None else None
         ),

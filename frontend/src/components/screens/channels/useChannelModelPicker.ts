@@ -207,6 +207,7 @@ export function useChannelModelPicker({
           item.model_name,
           ["auto"],
           item.context_window,
+          item.manualContextWindow ?? null,
         );
         if (newModel) {
           models.push(newModel);
