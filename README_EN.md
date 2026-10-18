@@ -23,7 +23,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Clients                                                              │
-│ OpenAI SDK / Anthropic SDK / Gemini SDK / curl                       │
+│ OpenAI SDK / Anthropic SDK / Gemini Interactions / curl              │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │ Lens Base URL + sk-lens-...
                                 ▼
@@ -34,8 +34,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  /v1/chat/completions        /v1/messages                            │
 │  /v1/responses               /v1/embeddings      /v1/rerank          │
 │  /v1/images/generations      /v1/images/edits                        │
-│  /v1beta/models/{model}:generateContent                              │
-│  /v1beta/models/{model}:streamGenerateContent                        │
+│  /v1beta/interactions                                               │
 │                                                                      │
 │  Request resolution                                                  │
 │  - Validate gateway key                                              │
@@ -47,7 +46,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  Routing plan                                                        │
 │  - Model group item: runtime channel + credential + upstream model   │
 │  - Strategy: round robin / failover                                  │
-│  - Default Auto: forward the client protocol; convert only when an   │
+│  - Default OpenAI Chat: other chat clients convert automatically       │
 │    upstream protocol is pinned                                       │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
@@ -58,7 +57,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  Site                                                                │
 │  ├─ Base URLs: one site can keep multiple upstream URLs               │
 │  ├─ Credentials: one site can keep multiple API keys                  │
-│  └─ Models: Auto by default, forwarding the client protocol; pin an   │
+│  └─ Models: OpenAI Chat by default, other clients convert             │
 │     upstream protocol only when conversion is required                │
 │                                                                      │
 │  Synced / manual models                                              │
@@ -68,8 +67,8 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │                                                                      │
 │  Model groups                                                        │
 │  - Declare strategy and an optional execution group                  │
-│  - Client protocols are inferred from members; Auto serves every     │
-│    entry                                                              │
+│  - Client protocols are inferred from members; each member has one    │
+│    fixed upstream protocol                                            │
 │  - Items bind to: runtime channel + credential + upstream model      │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
@@ -77,7 +76,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Candidate expansion and load balancing                               │
 │                                                                      │
-│  Runtime channel = one protocol on a URL (Auto by default)            │
+│  Runtime channel = one protocol on a URL                              │
 │  Route candidate = runtime channel + credential + upstream model     │
 │                                                                      │
 │  Round robin: smooth rotation across candidates                      │
@@ -110,7 +109,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 - Site management: Configure multiple Base URLs and credentials per site, with model sync, manual models, batch import, and site tags
 - Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, reusable execution groups, per-channel toggles, and multimodal fallback
 - Context awareness: The same model can have a different context window per channel (typed in the channel model table or while fetching models, otherwise read from the upstream model list), and a model group can set the default for members without one; requests estimated past a member's context skip it, and context-length errors keep failing over to the next member
-- Protocols: Models default to Auto and forward the client request unchanged. After an upstream protocol is pinned, Anthropic / OpenAI Responses clients can reach OpenAI Chat or Responses upstreams, and OpenAI Chat clients can reach Responses upstreams
+- Protocols: Models default to OpenAI Chat and convert other chat clients automatically. OpenAI Chat, OpenAI Responses, Anthropic, and Gemini can convert into each other; embeddings, images, and rerank stay native
 - Model testing: Single-model and batch model tests with configurable test prompts
 - Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt; optional request/response body capture
 - Health and cooldown: Model health page graded by success rate, built-in circuit-breaker cooldown with exponential backoff, and custom cooldown detection rules
@@ -232,20 +231,20 @@ Open `/channels`, create a site, configure Base URLs and credentials, then sync 
 
 - **Base URLs**: One site can maintain multiple upstream URLs.
 - **Credentials**: One site can maintain multiple API keys so routing can switch at credential granularity.
-- **Models**: Auto by default, forwarding the client protocol upstream. Pin an upstream protocol only when it differs from the client and conversion is required. Models can bind to different credentials in the same site.
+- **Models**: Default to OpenAI Chat; clients using other chat protocols convert automatically. Pin Anthropic/Gemini for native upstreams. Models can bind to different credentials in the same site.
 
 Common Base URLs:
 
 | Upstream type  | Base URL example                            | Protocol                                              |
 | -------------- | ------------------------------------------- | ----------------------------------------------------- |
-| OpenAI         | `https://api.openai.com`                    | Auto, or pin Chat / Responses for a specific API      |
-| Anthropic      | `https://api.anthropic.com`                 | Auto, or Anthropic                                    |
-| Gemini         | `https://generativelanguage.googleapis.com` | Auto, or Gemini                                       |
-| Compatible API | `https://newapi.example.com`                | Auto (Chat, Rerank, and other entries pass through)   |
+| OpenAI         | `https://api.openai.com`                    | Pin Chat / Responses for the specific API             |
+| Anthropic      | `https://api.anthropic.com`                 | Anthropic                                             |
+| Gemini         | `https://generativelanguage.googleapis.com` | Gemini (upstream uses Interactions API)               |
+| Compatible API | `https://newapi.example.com`                | OpenAI Chat (Chat, Rerank, and other entries convert) |
 
 ### 2. Create Model Groups
 
-Open `/groups`, create a model group, add upstream models, and choose a routing strategy. Client protocols come from the members: Auto members accept every entry; a member with a pinned upstream protocol accepts that protocol and the client protocols that can convert to it.
+Open `/groups`, create a model group, add upstream models, and choose a routing strategy. Client protocols come from the members: each member has one fixed upstream protocol, and the gateway converts to it when needed.
 
 - **Round robin**: Smoothly rotate across model group candidates
 - **Failover**: Prefer earlier members, then switch to the next credential or channel after failures
@@ -253,7 +252,7 @@ Open `/groups`, create a model group, add upstream models, and choose a routing 
 - **Multimodal fallback**: Configure ordered backup model groups for a model group; for multimodal requests, backup groups are tried once the primary group's candidates are exhausted
 - **Context windows**: A channel model uses its manually set context window first (channel model table, fetch dialog, or the model group default), then the value its upstream model list reports. Members with no value anywhere are never filtered, so the request and the upstream decide. The gateway skips members too small for the estimated request tokens; if none fit, upstreams still decide, and context-length errors keep failing over
 
-**Protocol conversion**: Conversion runs only when a member's upstream protocol differs from the client protocol. Any two of the four chat protocols — OpenAI Chat, OpenAI Responses, Anthropic, and Gemini — can be converted into each other (12 client/upstream combinations); same-protocol requests are forwarded unchanged.
+**Protocol conversion**: Conversion runs only when a member's upstream protocol differs from the client protocol. Any two of the four chat protocols — OpenAI Chat, OpenAI Responses, Anthropic, and Gemini — can be converted into each other (12 client/upstream combinations); same-protocol requests pass through unchanged. Gemini clients and upstreams both use Google's recommended Interactions API.
 
 ### 3. Issue Gateway Keys
 
@@ -548,16 +547,12 @@ The request body is forwarded as-is to the upstream `/v1/rerank` endpoint (e.g. 
 <summary>Gemini (curl)</summary>
 
 ```bash
-curl "http://127.0.0.1:3000/v1beta/models/your-gemini-model:generateContent" \
+curl "http://127.0.0.1:3000/v1beta/interactions" \
   -H "x-goog-api-key: sk-lens-..." \
   -H "Content-Type: application/json" \
   -d '{
-    "contents": [
-      {
-        "role": "user",
-        "parts": [{"text": "hello"}]
-      }
-    ]
+    "model": "your-gemini-model",
+    "input": "hello"
   }'
 ```
 

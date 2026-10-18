@@ -16,6 +16,7 @@ from ...models.protocols import ProtocolKind
 from ..converters import (
     convert_response,
     convert_stream_iterator,
+    needs_protocol_conversion,
     repair_chat_tool_call_stream,
 )
 from ..router.cooldown import (
@@ -281,20 +282,9 @@ async def _build_stream_result(
         or chat_expected_choices < 1
     ):
         chat_expected_choices = 1
-    gemini_expected_candidates = 1
-    generation_config = body.get("generationConfig")
-    if isinstance(generation_config, dict):
-        candidate_count = generation_config.get("candidateCount")
-        if (
-            isinstance(candidate_count, int)
-            and not isinstance(candidate_count, bool)
-            and candidate_count > 0
-        ):
-            gemini_expected_candidates = candidate_count
     capture = StreamCapture(
         capture_body=log_body_enabled,
         chat_expected_choices=chat_expected_choices,
-        gemini_expected_candidates=gemini_expected_candidates,
         deadline=deadline,
         event_format=(
             "ndjson" if _response_media_type(response) in _NDJSON_MEDIA_TYPES else None
@@ -315,7 +305,9 @@ async def _build_stream_result(
             event_format="ndjson" if capture.event_format == "ndjson" else "sse",
         )
 
-    if client_protocol is not None and client_protocol != channel.protocol:
+    if client_protocol is not None and needs_protocol_conversion(
+        client_protocol, channel.protocol
+    ):
         converted_iter = convert_stream_iterator(
             client_protocol,
             channel.protocol,
@@ -396,7 +388,9 @@ async def _build_json_result(
         )
     except ValueError as exc:
         raise _invalid_upstream("Invalid upstream usage", exc) from exc
-    if client_protocol is not None and client_protocol != channel.protocol:
+    if client_protocol is not None and needs_protocol_conversion(
+        client_protocol, channel.protocol
+    ):
         try:
             content = convert_response(
                 client_protocol, channel.protocol, content, body.get("model", "")

@@ -333,10 +333,10 @@ class ModelGroupRepository(
         )
         name_key = entity.name.casefold()
 
-        def rejoins(model_name: str) -> bool:
+        def rejoins(item: ModelGroupItemView) -> bool:
             if patterns:
-                return any(pattern.search(model_name) for pattern in patterns)
-            return model_name.casefold() == name_key
+                return any(pattern.search(item.model_name) for pattern in patterns)
+            return item.model_name.casefold() == name_key
 
         # A member whose target is gone cannot rejoin, so it needs no exclusion.
         return [
@@ -350,7 +350,7 @@ class ModelGroupRepository(
             for item in previous_items
             if model_group_item_key(item) not in kept_keys
             and item.state != ModelGroupItemState.INVALID
-            and rejoins(item.model_name)
+            and rejoins(item)
         ]
 
     async def delete_group(self, group_id: str) -> None:
@@ -367,6 +367,21 @@ class ModelGroupRepository(
             )
             if inbound_route_group.scalar_one_or_none() is not None:
                 raise ValueError("Model group is still referenced by route groups")
+            fallback_rows = (
+                await session.execute(
+                    select(
+                        ModelGroupEntity.id,
+                        ModelGroupEntity.fallback_group_ids_json,
+                    ).where(ModelGroupEntity.id != group_id)
+                )
+            ).all()
+            if any(
+                group_id in parse_fallback_group_ids(fallback_ids_json)
+                for _, fallback_ids_json in fallback_rows
+            ):
+                raise ResourceConflictError(
+                    "Model group is still referenced as a fallback"
+                )
             await session.execute(
                 delete(ModelGroupItemEntity).where(
                     ModelGroupItemEntity.group_id == group_id

@@ -5,10 +5,8 @@ import type {
   ModelGroupMemberSource,
   RoutingStrategy,
 } from "@/lib/api/groups";
-import type { ProtocolKind } from "@/lib/api/protocols";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
-import { PROTOCOL_LIST } from "@/lib/protocols";
-import type { FormItem, GroupDisplayMember, GroupRow } from "./groupTypes";
+import type { FormItem, GroupDisplayMember } from "./groupTypes";
 
 export const STRATEGY_OPTIONS: Array<{
   value: RoutingStrategy;
@@ -156,19 +154,6 @@ export function moveItems<T>(items: T[], fromIndex: number, toIndex: number) {
   return nextItems;
 }
 
-export const GROUP_PROTOCOL_ORDER: ProtocolKind[] = ["auto", ...PROTOCOL_LIST];
-
-/** Unique member protocols, in display order. Route groups have none. */
-export function groupMemberProtocols(
-  group: Pick<GroupRow, "is_route_group" | "items">,
-): ProtocolKind[] {
-  if (group.is_route_group) return [];
-  const present = new Set(
-    group.items.flatMap((item) => (item.protocol ? [item.protocol] : [])),
-  );
-  return GROUP_PROTOCOL_ORDER.filter((protocol) => present.has(protocol));
-}
-
 /** Build the backend's collision key: lowercase letters and digits only. */
 export function buildModelMatchKey(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -235,7 +220,6 @@ export function buildGroupDisplayMembers(
         credential_mask: item.credential_mask,
         base_url: item.base_url,
         source: item.source,
-        protocols: [],
         items: [],
         enabled_item_count: 0,
         disabled_item_count: 0,
@@ -253,9 +237,6 @@ export function buildGroupDisplayMembers(
     if (item.state === "ready") member.ready_item_count += 1;
     if (item.state === "invalid") member.invalid_item_count += 1;
     if (item.state === "unavailable") member.unavailable_item_count += 1;
-    if (item.protocol && !member.protocols.includes(item.protocol)) {
-      member.protocols.push(item.protocol);
-    }
   }
 
   return Array.from(memberMap.values());

@@ -6,7 +6,6 @@ import {
   useState,
 } from "react";
 import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
@@ -65,16 +64,6 @@ function ChannelModelSection({
   | "onManageModels"
 >) {
   const isZh = locale === "zh-CN";
-  const [prefixDraft, setPrefixDraft] = useState("");
-  function addPrefix() {
-    const prefix = prefixDraft.trim().replace(/\/+$/, "");
-    setPrefixDraft("");
-    if (!prefix || form.model_name_prefixes.includes(prefix)) return;
-    setForm((current) => ({
-      ...current,
-      model_name_prefixes: [...current.model_name_prefixes, prefix],
-    }));
-  }
   return (
     <div className="min-w-0 space-y-2.5 rounded-md bg-muted/35 p-2.5">
       <div className="flex items-center justify-between gap-3">
@@ -120,54 +109,6 @@ function ChannelModelSection({
                 model_sync_exclude_rule_ids: ruleIds,
               }))
             }
-          />
-        </div>
-      </div>
-      <div className="flex items-start gap-2">
-        <span className="w-14 shrink-0 pt-1 text-xs leading-6 text-muted-foreground">
-          {isZh ? "命名前缀" : "Prefixes"}
-        </span>
-        <div className="flex min-h-7 flex-1 flex-wrap items-center gap-1 rounded-md border border-input/40 px-2 py-0.5 focus-within:border-primary/60 focus-within:ring-[1px] focus-within:ring-primary/40">
-          {form.model_name_prefixes.map((prefix) => (
-            <Badge
-              key={prefix}
-              variant="secondary"
-              className="gap-0.5 pr-0.5 font-mono text-foreground"
-            >
-              {prefix}/
-              <button
-                type="button"
-                className="grid size-4 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
-                aria-label={isZh ? `移除 ${prefix}` : `Remove ${prefix}`}
-                onClick={() =>
-                  setForm((current) => ({
-                    ...current,
-                    model_name_prefixes: current.model_name_prefixes.filter(
-                      (item) => item !== prefix,
-                    ),
-                  }))
-                }
-              >
-                ×
-              </button>
-            </Badge>
-          ))}
-          <input
-            value={prefixDraft}
-            onChange={(event) => setPrefixDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (event.key === "Enter" || event.key === ",") {
-                event.preventDefault();
-                addPrefix();
-              }
-            }}
-            onBlur={addPrefix}
-            aria-label={isZh ? "模型命名前缀" : "Model name prefix"}
-            placeholder={
-              isZh ? "如 openai，留空表示不处理" : "e.g. openai, empty disables"
-            }
-            className="h-6 min-w-24 flex-1 bg-transparent font-mono text-xs outline-none placeholder:font-sans placeholder:text-muted-foreground"
           />
         </div>
       </div>

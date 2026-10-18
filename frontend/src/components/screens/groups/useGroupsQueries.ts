@@ -9,21 +9,15 @@ import type {
   RoutingStrategy,
   UnplacedModelsResponse,
 } from "@/lib/api/groups";
-import type { ProtocolKind } from "@/lib/api/protocols";
 import { getModelFamilyKey } from "@/lib/ModelIcons";
 import {
   buildModelPrefixOptions,
   resolveEffectiveModelPrefix,
   type SelectedModelPrefix,
 } from "@/lib/modelPrefix";
-import { protocolLabel } from "@/lib/protocols";
 import type { FormState, GroupRow, GroupSort } from "./groupTypes";
 import { buildGroupRows } from "./groupView";
-import {
-  GROUP_PROTOCOL_ORDER,
-  groupMemberProtocols,
-  modelGroupItemKey,
-} from "./modelGroupFormatting";
+import { modelGroupItemKey } from "./modelGroupFormatting";
 
 type GroupsQueryOptions = {
   dialogOpen: boolean;
@@ -139,9 +133,6 @@ export function useGroupFilters(
   locale: "zh-CN" | "en-US",
 ) {
   const [familyFilter, setFamilyFilter] = useState<SelectedModelPrefix>("all");
-  const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
-    "all",
-  );
   const [search, setSearch] = useState("");
   const [strategyFilter, setStrategyFilter] = useState<"all" | RoutingStrategy>(
     "all",
@@ -159,29 +150,12 @@ export function useGroupFilters(
     familyOptions,
     familyFilter,
   );
-  const protocolOptions = useMemo(() => {
-    const present = new Set<ProtocolKind>();
-    for (const group of groupRows) {
-      for (const protocol of groupMemberProtocols(group)) present.add(protocol);
-    }
-    return GROUP_PROTOCOL_ORDER.filter((protocol) => present.has(protocol));
-  }, [groupRows]);
-  const effectiveProtocolFilter: "all" | ProtocolKind =
-    protocolFilter !== "all" && protocolOptions.includes(protocolFilter)
-      ? protocolFilter
-      : "all";
   const visibleGroups = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = groupRows.filter((group) => {
       if (
         effectiveFamilyFilter !== "all" &&
         getModelFamilyKey(group.name) !== effectiveFamilyFilter
-      ) {
-        return false;
-      }
-      if (
-        effectiveProtocolFilter !== "all" &&
-        !groupMemberProtocols(group).includes(effectiveProtocolFilter)
       ) {
         return false;
       }
@@ -218,7 +192,6 @@ export function useGroupFilters(
     });
   }, [
     effectiveFamilyFilter,
-    effectiveProtocolFilter,
     groupRows,
     locale,
     search,
@@ -228,7 +201,6 @@ export function useGroupFilters(
 
   function resetFilters() {
     setFamilyFilter("all");
-    setProtocolFilter("all");
     setSearch("");
     setStrategyFilter("all");
     setSortBy("members-desc");
@@ -237,21 +209,14 @@ export function useGroupFilters(
   return {
     activeFilterCount: [
       effectiveFamilyFilter !== "all",
-      effectiveProtocolFilter !== "all",
       Boolean(search.trim()),
       strategyFilter !== "all",
     ].filter(Boolean).length,
     effectiveFamilyFilter,
-    effectiveProtocolFilter,
     familyOptions,
-    protocolOptions: protocolOptions.map((protocol) => ({
-      value: protocol,
-      label: protocolLabel(protocol, locale),
-    })),
     resetFilters,
     search,
     setFamilyFilter,
-    setProtocolFilter,
     setSearch,
     setSortBy,
     setStrategyFilter,

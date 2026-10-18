@@ -35,7 +35,9 @@ export function AddChannelModelsDialog({
   groupOptions: Array<{ id: string; name: string }>;
 }) {
   const [newName, setNewName] = useState("");
-  const [newProtocols, setNewProtocols] = useState<ProtocolKind[]>(["auto"]);
+  const [newProtocols, setNewProtocols] = useState<ProtocolKind[]>([
+    "openai_chat",
+  ]);
   const [targetGroupId, setTargetGroupId] = useState("__auto__");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,7 +72,7 @@ export function AddChannelModelsDialog({
                   )
                 ) {
                   setNewName("");
-                  setNewProtocols(["auto"]);
+                  setNewProtocols(["openai_chat"]);
                   setTargetGroupId("__auto__");
                   onOpenChange(false);
                 }
@@ -98,7 +100,7 @@ export function AddChannelModelsDialog({
           </div>
           <Field>
             <FieldLabel>
-              {locale === "zh-CN" ? "转发协议" : "Forwarding"}
+              {locale === "zh-CN" ? "上游协议" : "Upstream protocol"}
             </FieldLabel>
             <ProtocolDropdown
               value={newProtocols}

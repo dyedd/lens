@@ -49,8 +49,6 @@ export type FormState = {
   model_sync_include_rule_ids: string[];
   /** Library regex rules that keep matching upstream models out. */
   model_sync_exclude_rule_ids: string[];
-  /** Vendor prefixes aliasing "openai/gpt-5" to "gpt-5"; last alias wins. */
-  model_name_prefixes: string[];
   headersJson: string;
   paramsJson: string;
 };

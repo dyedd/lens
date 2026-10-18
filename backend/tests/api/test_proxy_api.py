@@ -170,8 +170,8 @@ async def _set_gateway_spend(app_state: Any, key_id: str, spent: float) -> None:
             },
         ),
         (
-            "/v1beta/models/gemini-2.5-flash:generateContent",
-            {"contents": []},
+            "/v1beta/interactions",
+            {"model": "gemini-2.5-flash", "input": "hello"},
             {
                 "error": {
                     "code": 401,
@@ -329,17 +329,17 @@ def test_proxy_json_endpoints_forward_expected_protocol_and_body(
         ),
         (
             "post",
-            "/v1beta/models/gemini-2.5-flash:generateContent",
-            {"contents": []},
+            "/v1beta/interactions",
+            {"model": "gemini-2.5-flash", "input": "hello"},
             "gemini",
-            {"contents": [], "model": "gemini-2.5-flash", "stream": False},
+            {"model": "gemini-2.5-flash", "input": "hello"},
         ),
         (
             "post",
-            "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
-            {"contents": []},
+            "/v1beta/interactions",
+            {"model": "gemini-2.5-flash", "input": "hello", "stream": True},
             "gemini",
-            {"contents": [], "model": "gemini-2.5-flash", "stream": True},
+            {"model": "gemini-2.5-flash", "input": "hello", "stream": True},
         ),
     ]
 
@@ -452,176 +452,6 @@ def test_responses_proxy_preserves_input_shape(
         },
         {"model": "gpt-5.6-sol", "input": input_items},
     ]
-
-
-@pytest.mark.parametrize(
-    ("protocol", "path", "body", "upstream_response"),
-    [
-        pytest.param(
-            "openai_chat",
-            "/v1/chat/completions",
-            {"model": "auto-model", "messages": [{"role": "user", "content": "hi"}]},
-            {"choices": [{"message": {"role": "assistant", "content": "hi"}}]},
-            id="chat",
-        ),
-        pytest.param(
-            "openai_responses",
-            "/v1/responses",
-            {"model": "auto-model", "input": "hello"},
-            {"id": "resp_auto", "object": "response", "output": []},
-            id="responses",
-        ),
-        pytest.param(
-            "anthropic",
-            "/v1/messages",
-            {"model": "auto-model", "messages": [], "max_tokens": 10},
-            {"type": "message", "content": [{"type": "text", "text": "hi"}]},
-            id="anthropic",
-        ),
-        pytest.param(
-            "gemini",
-            "/v1beta/models/auto-model:generateContent",
-            {"contents": [{"role": "user", "parts": [{"text": "hello"}]}]},
-            {"candidates": [{"content": {"parts": [{"text": "hi"}]}}]},
-            id="gemini",
-        ),
-        pytest.param(
-            "openai_embedding",
-            "/v1/embeddings",
-            {"model": "auto-model", "input": ["hello"]},
-            {"data": [{"object": "embedding", "embedding": [0.1], "index": 0}]},
-            id="embeddings",
-        ),
-        pytest.param(
-            "openai_image",
-            "/v1/images/generations",
-            {"model": "auto-model", "prompt": "a lens"},
-            {"data": [{"b64_json": "aW1hZ2U="}]},
-            id="images",
-        ),
-        pytest.param(
-            "rerank",
-            "/v1/rerank",
-            {"model": "auto-model", "query": "hello", "documents": ["world"]},
-            {"results": [{"index": 0, "relevance_score": 0.9}]},
-            id="rerank",
-        ),
-    ],
-)
-def test_auto_channel_uses_client_protocol_for_upstream_request(
-    client,
-    admin_headers,
-    monkeypatch,
-    create_site,
-    create_model_group,
-    create_gateway_key,
-    protocol,
-    path,
-    body,
-    upstream_response,
-) -> None:
-    import app.gateway.service.proxy_upstream as proxy_upstream
-
-    captured: dict[str, Any] = {}
-
-    async def fake_send_upstream(
-        _client: httpx.AsyncClient,
-        upstream: Any,
-        *,
-        stream: bool,
-        body_bytes: bytes,
-    ) -> httpx.Response:
-        captured["url"] = upstream.url
-        captured["body"] = json.loads(body_bytes)
-        captured["headers"] = httpx.Headers(upstream.headers)
-        assert not stream
-        return httpx.Response(
-            200,
-            json=upstream_response,
-            request=httpx.Request("POST", upstream.url),
-        )
-
-    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
-    site_payload = valid_site_payload(protocols=["auto"], model_name="auto-model")
-    site_payload["base_urls"][0]["url"] = "https://upstream.example"
-    create_site(site_payload)
-    create_model_group(
-        name="auto-model",
-        items=[_protocol_group_item("auto", "auto-model")],
-    )
-    key = create_gateway_key()
-
-    response = client.post(
-        path,
-        headers=gateway_headers(key),
-        json={**body, "vendor_option": {"keep": True}},
-    )
-
-    assert response.status_code == 200, response.text
-    assert response.json() == upstream_response
-    assert httpx.URL(captured["url"]).path == path
-    assert captured["body"] == {**body, "vendor_option": {"keep": True}}
-    if protocol == "gemini":
-        assert httpx.URL(captured["url"]).params["key"] == "upstream-secret"
-    elif protocol == "anthropic":
-        assert captured["headers"]["x-api-key"] == "upstream-secret"
-    else:
-        assert captured["headers"]["authorization"] == "Bearer upstream-secret"
-    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()
-    assert logs["items"][0]["protocol"] == protocol
-    assert logs["items"][0]["channel_id"] == "pc-1_auto"
-    assert logs["items"][0]["success"] is True
-
-
-def test_auto_channel_failure_does_not_cool_down_other_client_protocols(
-    client,
-    monkeypatch,
-    create_site,
-    create_model_group,
-    create_gateway_key,
-) -> None:
-    import app.gateway.service.proxy_upstream as proxy_upstream
-
-    async def fake_send_upstream(
-        _client: httpx.AsyncClient,
-        upstream: Any,
-        *,
-        stream: bool,
-        body_bytes: bytes,
-    ) -> httpx.Response:
-        if httpx.URL(upstream.url).path == "/v1/messages":
-            return httpx.Response(
-                404,
-                json={"error": {"message": "not found"}},
-                request=httpx.Request("POST", upstream.url),
-            )
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"role": "assistant", "content": "hi"}}]},
-            request=httpx.Request("POST", upstream.url),
-        )
-
-    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
-    create_site(valid_site_payload(protocols=["auto"], model_name="auto-model"))
-    create_model_group(
-        name="auto-model",
-        items=[_protocol_group_item("auto", "auto-model")],
-    )
-    key = create_gateway_key()
-    anthropic = client.post(
-        "/v1/messages",
-        headers=gateway_headers(key),
-        json={"model": "auto-model", "messages": [], "max_tokens": 10},
-    )
-    assert anthropic.status_code == 502, anthropic.text
-
-    response = client.post(
-        "/v1/chat/completions",
-        headers=gateway_headers(key),
-        json={"model": "auto-model", "messages": []},
-    )
-
-    assert response.status_code == 200, response.text
 
 
 def test_model_group_param_override_has_highest_priority(
@@ -2022,3 +1852,52 @@ def test_failover_preserves_body_isolation_and_final_log(
         next(item["spent_cost_usd"] for item in keys if item["id"] == key["id"])
         == log["total_cost_usd"]
     )
+
+
+def test_gemini_interactions_stream_log_restoration_keeps_incremental_text() -> None:
+    from app.gateway.service.streaming.restore import distill_stream_response_content
+    from app.models.protocols import ProtocolKind
+
+    events = [
+        {
+            "event_type": "interaction.created",
+            "interaction": {
+                "id": "interaction_1",
+                "object": "interaction",
+                "model": "gemini",
+                "status": "in_progress",
+            },
+        },
+        {
+            "event_type": "step.start",
+            "index": 0,
+            "step": {"type": "model_output"},
+        },
+        {
+            "event_type": "step.delta",
+            "index": 0,
+            "delta": {"type": "text", "text": "Hel"},
+        },
+        {
+            "event_type": "step.delta",
+            "index": 0,
+            "delta": {"type": "text", "text": "lo"},
+        },
+        {"event_type": "step.stop", "index": 0},
+        {
+            "event_type": "interaction.completed",
+            "interaction": {
+                "id": "interaction_1",
+                "object": "interaction",
+                "model": "gemini",
+                "status": "completed",
+            },
+        },
+    ]
+    raw = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+
+    restored = distill_stream_response_content(ProtocolKind.GEMINI, raw)
+
+    assert restored is not None
+    payload = json.loads(restored)
+    assert payload["steps"][0]["content"][0]["text"] == "Hello"

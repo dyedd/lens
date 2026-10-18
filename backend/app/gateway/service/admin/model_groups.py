@@ -19,7 +19,6 @@ from ....models.model_groups import (
     UnplacedModelRemovalResponse,
     UnplacedModelsResponse,
 )
-from ....models.protocols import ProtocolKind
 from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
 from ..app_state import app_state
 from ..auth import get_current_admin
@@ -74,11 +73,7 @@ async def test_model_group_model(
     credential = next(item for item in channel.keys if item.id == member.credential_id)
 
     protocol = channel.protocol
-    if protocol == ProtocolKind.AUTO:
-        if payload.protocol is None or payload.protocol == ProtocolKind.AUTO:
-            raise ValueError("Choose a client protocol for the model test")
-        protocol = payload.protocol
-    elif payload.protocol is not None and payload.protocol != protocol:
+    if payload.protocol is not None and payload.protocol != protocol:
         raise ValueError("Test protocol must match the configured upstream protocol")
 
     probe_payload = SiteModelTestRequest(

@@ -193,8 +193,6 @@ class StreamCapture:
     has_seen_first_chunk: bool = False
     chat_expected_choices: int = 1
     chat_finished_choices: set[int] = field(default_factory=set)
-    gemini_expected_candidates: int = 1
-    gemini_finished_candidates: set[int] = field(default_factory=set)
     first_token_latency_ms: int = 0
     response_content_chunks: list[str] = field(default_factory=list)
     response_content_bytes: int = 0

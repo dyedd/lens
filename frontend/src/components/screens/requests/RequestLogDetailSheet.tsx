@@ -50,20 +50,26 @@ function generateCurl(
   } else if (record.protocol === "rerank") {
     path = "/v1/rerank";
   } else if (record.protocol === "gemini") {
-    path = `/v1beta/models/${record.requested_group_name || "gemini-pro"}:generateContent`;
+    path = "/v1beta/interactions";
   }
 
   const headers = [
     '  -H "Content-Type: application/json"',
-    '  -H "Authorization: Bearer sk-lens-YOUR_API_KEY"',
+    record.protocol === "gemini"
+      ? '  -H "x-goog-api-key: sk-lens-YOUR_API_KEY"'
+      : '  -H "Authorization: Bearer sk-lens-YOUR_API_KEY"',
   ];
   if (record.protocol === "anthropic") {
     headers.push('  -H "anthropic-version: 2023-06-01"');
   }
 
+  const fallbackBody =
+    record.protocol === "gemini"
+      ? `{\n    "model": "${record.requested_group_name || ""}",\n    "input": "Hello"\n  }`
+      : `{\n    "model": "${record.requested_group_name || ""}",\n    "messages": [{"role": "user", "content": "Hello"}]\n  }`;
   const bodyStr = requestContent?.trim()
     ? `  -d '${requestContent.trim().replace(/'/g, "'\\''")}'`
-    : `  -d '{\n    "model": "${record.requested_group_name || ""}",\n    "messages": [{"role": "user", "content": "Hello"}]\n  }'`;
+    : `  -d '${fallbackBody}'`;
 
   return `curl -X POST "${origin}${path}" \\\n${headers.join(" \\\n")} \\\n${bodyStr}`;
 }

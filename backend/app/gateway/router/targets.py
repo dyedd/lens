@@ -144,7 +144,7 @@ def build_route_targets(
             ):
                 continue
             active.extend(_expand_target_credentials(target))
-        return _scope_fault_protocol(active, protocol)
+        return active
 
     active: list[RouteTarget] = []
     for channel in sorted(channels, key=lambda item: item.name):
@@ -161,15 +161,4 @@ def build_route_targets(
                 RouteTarget(channel=channel, model_name=requested_model)
             )
         )
-    return _scope_fault_protocol(active, protocol)
-
-
-def _scope_fault_protocol(
-    targets: list[RouteTarget], protocol: ProtocolKind
-) -> list[RouteTarget]:
-    return [
-        replace(target, fault_protocol=protocol.value)
-        if target.channel.protocol == ProtocolKind.AUTO
-        else target
-        for target in targets
-    ]
+    return active

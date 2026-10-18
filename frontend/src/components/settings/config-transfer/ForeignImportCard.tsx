@@ -9,7 +9,6 @@ import { Spinner } from "@/components/ui/Spinner";
 import type { ForeignSiteFormat } from "@/lib/api/foreignImports";
 import type { SiteBatchImportResult } from "@/lib/api/sites";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
-import { protocolLabel } from "@/lib/protocols";
 import { useForeignImport } from "./useForeignImport";
 
 const FORMAT_LABELS: Record<ForeignSiteFormat, [string, string]> = {
@@ -232,16 +231,6 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
                               ? ` · ${site.tags.join(" / ")}`
                               : ""}
                           </span>
-                        </span>
-                        <span className="hidden shrink-0 items-center gap-2 sm:flex">
-                          {site.protocols.map((protocol) => (
-                            <span
-                              key={protocol}
-                              className="text-xs text-muted-foreground"
-                            >
-                              {protocolLabel(protocol, locale)}
-                            </span>
-                          ))}
                         </span>
                         <span className="w-28 shrink-0 text-right text-xs text-muted-foreground">
                           {titleForLocale(

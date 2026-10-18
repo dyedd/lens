@@ -209,30 +209,12 @@ async def list_gemini_models(
     return build_gemini_models_payload(groups, gateway_key)
 
 
-async def proxy_gemini_generate_content(
-    model_name: str,
+async def proxy_gemini_interaction(
     request: Request,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> Response:
-    """Proxy an authenticated non-streaming Gemini content request."""
-    body = await _read_json_object(request, "Gemini generateContent")
-    body = {**body, "model": model_name, "stream": False}
-    return await proxy_protocol(
-        ProtocolKind.GEMINI,
-        body,
-        gateway_key,
-        request.headers.get("user-agent"),
-    )
-
-
-async def proxy_gemini_stream_generate_content(
-    model_name: str,
-    request: Request,
-    gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
-) -> Response:
-    """Proxy an authenticated streaming Gemini content request."""
-    body = await _read_json_object(request, "Gemini streamGenerateContent")
-    body = {**body, "model": model_name, "stream": True}
+    """Proxy an authenticated Gemini Interactions request."""
+    body = await _read_json_object(request, "Gemini Interactions")
     return await proxy_protocol(
         ProtocolKind.GEMINI,
         body,
