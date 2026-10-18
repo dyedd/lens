@@ -38,9 +38,14 @@ from app.persistence.entities import ModelGroupEntity, ModelGroupItemEntity
 from app.persistence.group_match_rules import (
     GroupMatchRules,
     build_group_match_rules,
+    create_default_group_match_rule,
     load_group_match_rules,
 )
-from app.persistence.group_rule_codec import dump_match_models, parse_match_models
+from app.persistence.group_rule_codec import (
+    dump_match_models,
+    parse_match_models,
+)
+from app.persistence.regex_rule_references import dump_rule_ids
 
 from .group_placement import (
     GroupCoverage,
@@ -155,6 +160,33 @@ class _ReconcileRun:
         for item in items:
             key = (item.channel_id, item.credential_id, item.model_name)
             if key in existing_keys or _exclusion_key(*key) in exclusion_keys:
+                continue
+            deleted = next(
+                (
+                    row
+                    for row in self.deleted_rows
+                    if row.group_id == state.entity.id and _row_key(row) == key
+                ),
+                None,
+            )
+            if deleted is not None:
+                self.deleted_rows.remove(deleted)
+                deleted.source = source.value
+                deleted.excluded = 0
+                self.report.removed[:] = [
+                    change
+                    for change in self.report.removed
+                    if (
+                        change.group_id,
+                        change.channel_id,
+                        change.credential_id,
+                        change.model_name,
+                    )
+                    != (state.entity.id, *key)
+                ]
+                state.members.append(deleted)
+                existing_keys.add(key)
+                state.is_reordered = True
                 continue
             existing_keys.add(key)
             row = ModelGroupItemEntity(
@@ -316,7 +348,7 @@ class GroupReconcileMixin:
         channels: list[ChannelConfig],
         placement_names: set[str] | None,
     ) -> None:
-        """Join a same-named group or create one; near names wait for a person."""
+        """Place explicit requests; automatic sync leaves unknown models pending."""
         route_groups = (
             (
                 await run.session.execute(
@@ -356,24 +388,34 @@ class GroupReconcileMixin:
             items = [
                 item for item in run.ready_items if item.model_name == view.model_name
             ]
-            if is_requested and same_named is not None:
+            if (
+                is_requested
+                and same_named is not None
+                and same_named.rules.matches(view.model_name)
+            ):
                 run.add(same_named, items, ModelGroupMemberSource.PLACEMENT)
                 continue
-            if not is_requested or not is_placeable_as_new_group(view):
+            if (
+                placement_names is None
+                or not is_requested
+                or not is_placeable_as_new_group(view)
+            ):
                 run.report.pending.append(view)
                 continue
+            rule = await create_default_group_match_rule(run.session, view.model_name)
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=view.model_name,
                 strategy=RoutingStrategy.FAILOVER.value,
                 route_group_id="",
-                match_models_json=dump_match_models([view.model_name]),
+                match_models_json=dump_match_models([]),
+                match_rule_ids_json=dump_rule_ids([rule.id]),
                 new_member_position=ModelGroupNewMemberPosition.END.value,
             )
             run.session.add(entity)
             state = _GroupMemberState(
                 entity=entity,
-                rules=build_group_match_rules([view.model_name], [], {}),
+                rules=build_group_match_rules([], [rule.id], {}),
                 members=[],
                 excluded=[],
             )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import delete
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context_windows import coerce_context_window
 from app.core.runtime_channel_ids import compose_runtime_channel_id
-from app.models.protocols import ModelSource, ProtocolKind
+from app.models.protocols import ProtocolKind
 from app.models.sites import SiteConfig, SiteCredentialInput
 from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.channel_store.mapping import load_header_rules, load_param_rules
@@ -19,11 +20,10 @@ from app.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
-from app.persistence.regex_rule_references import dump_rule_ids, parse_rule_ids
 
 from ..site_loader import fetch_site_rows
-from .regex_rules import validate_backup_rule_ids
 from .serialize import format_optional_datetime, parse_optional_datetime
 
 
@@ -75,12 +75,21 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "protocol": (
                     row.protocol if row.protocol in valid_protocol_values else None
                 ),
-                "source": row.source,
                 "upstream_missing": bool(row.upstream_missing),
                 "context_window": coerce_context_window(row.context_window),
                 "upstream_context_window": coerce_context_window(
                     row.upstream_context_window
                 ),
+            }
+        )
+
+    targets_by_protocol_config: dict[str, list[dict[str, object]]] = {}
+    for row in rows.sync_targets:
+        targets_by_protocol_config.setdefault(row.protocol_config_id, []).append(
+            {
+                "credential_id": row.credential_id,
+                "protocol": row.protocol,
+                "model_name": row.model_name,
             }
         )
 
@@ -113,6 +122,7 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                     row.base_url_id,
                 ),
                 "models": models,
+                "sync_targets": targets_by_protocol_config.get(row.id, []),
             }
         )
 
@@ -128,13 +138,6 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "channel_proxy": row.channel_proxy,
                 "headers": load_header_rules(row.headers_json),
                 "param_override": load_param_rules(row.param_override),
-                "model_sync_enabled": bool(row.model_sync_enabled),
-                "model_sync_include_rule_ids": parse_rule_ids(
-                    row.model_sync_include_rule_ids_json
-                ),
-                "model_sync_exclude_rule_ids": parse_rule_ids(
-                    row.model_sync_exclude_rule_ids_json
-                ),
                 "base_urls": base_urls_by_site.get(row.id, []),
                 "credentials": credentials_by_site.get(row.id, []),
                 "protocols": protocol_configs_by_site.get(row.id, []),
@@ -149,6 +152,7 @@ async def replace_sites(
 ) -> tuple[set[str], set[tuple[str, str, str]]]:
     await session.execute(delete(SiteCredentialRateEntity))
     await session.execute(delete(SiteDiscoveredModelEntity))
+    await session.execute(delete(SiteProtocolConfigSyncTargetEntity))
     await session.execute(delete(SiteProtocolConfigEntity))
     await session.execute(delete(SiteCredentialEntity))
     await session.execute(delete(SiteBaseUrlEntity))
@@ -169,11 +173,6 @@ async def replace_sites(
             raise ValueError(f"Duplicate site name in backup: {site.name}")
         site_ids.add(site.id)
         site_names.add(site.name)
-        validate_backup_rule_ids(
-            [*site.model_sync_include_rule_ids, *site.model_sync_exclude_rule_ids],
-            rule_ids,
-        )
-
         session.add(
             SiteEntity(
                 id=site.id,
@@ -191,13 +190,6 @@ async def replace_sites(
                 param_override=json.dumps(
                     [rule.model_dump(mode="json") for rule in site.param_override],
                     ensure_ascii=True,
-                ),
-                model_sync_enabled=int(site.model_sync_enabled),
-                model_sync_include_rule_ids_json=dump_rule_ids(
-                    site.model_sync_include_rule_ids
-                ),
-                model_sync_exclude_rule_ids_json=dump_rule_ids(
-                    site.model_sync_exclude_rule_ids
                 ),
             )
         )
@@ -327,16 +319,27 @@ async def replace_sites(
                         enabled=1 if model.enabled else 0,
                         sort_order=model.sort_order,
                         protocol=model.protocol.value,
-                        source=model.source.value,
-                        upstream_missing=int(
-                            model.upstream_missing
-                            and model.source == ModelSource.SYNCED
-                        ),
+                        upstream_missing=int(model.upstream_missing),
                         context_window=model.context_window,
                         upstream_context_window=model.upstream_context_window,
                     )
                 )
 
+            for target in protocol_config.sync_targets:
+                if target.credential_id not in bound_credential_ids:
+                    raise ValueError(
+                        "Sync target credential not found in backup site "
+                        f"{site.name}: {target.credential_id}"
+                    )
+                session.add(
+                    SiteProtocolConfigSyncTargetEntity(
+                        id=str(uuid.uuid4()),
+                        protocol_config_id=protocol_config.id,
+                        credential_id=target.credential_id,
+                        protocol=target.protocol.value,
+                        model_name=target.model_name,
+                    )
+                )
         protocol_by_id = {protocol.id: protocol for protocol in site.protocols}
         for credential in site.credentials:
             if credential.rate_source == "none":

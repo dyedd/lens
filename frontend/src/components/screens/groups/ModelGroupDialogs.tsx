@@ -1,8 +1,9 @@
-import { ArrowLeft, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import {
   type Dispatch,
   type FormEventHandler,
   type SetStateAction,
+  useEffect,
   useState,
 } from "react";
 import { HeaderRows } from "@/components/ruleEditors/HeaderRows";
@@ -114,78 +115,39 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
     form,
     setForm,
   } = props;
-  const [isBinding, setIsBinding] = useState(false);
+  const [candidateSheetOpen, setCandidateSheetOpen] = useState(false);
+  useEffect(() => {
+    if (!dialogOpen) setCandidateSheetOpen(false);
+  }, [dialogOpen]);
   const existingItemKeys = new Set(
     form.items.map((item) => modelGroupItemKey(item)),
   );
 
   return (
-    <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
-      <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
-        <SheetHeader className="shrink-0 px-4 py-4 pr-14">
-          <div className="flex items-center gap-3">
-            {isBinding ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={locale === "zh-CN" ? "返回模型组" : "Back to group"}
-                onClick={() => setIsBinding(false)}
-              >
-                <ArrowLeft />
-              </Button>
-            ) : null}
-            <div className="min-w-0">
-              <SheetTitle>
-                {isBinding
-                  ? locale === "zh-CN"
-                    ? "添加渠道成员"
-                    : "Add channel members"
-                  : editingId
+    <>
+      <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
+        <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
+          <SheetHeader className="shrink-0 px-4 py-4 pr-14">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0">
+                <SheetTitle>
+                  {editingId
                     ? locale === "zh-CN"
                       ? "编辑模型组"
                       : "Edit model group"
                     : locale === "zh-CN"
                       ? "新建模型组"
                       : "Create model group"}
-              </SheetTitle>
-              <SheetDescription className="mt-1 truncate text-xs">
-                {isBinding
-                  ? locale === "zh-CN"
-                    ? "选择要添加的渠道成员；手动添加已排除的模型会取消排除。"
-                    : "Choose channel members to add. Adding an excluded model lifts its exclusion."
-                  : locale === "zh-CN"
+                </SheetTitle>
+                <SheetDescription className="mt-1 truncate text-xs">
+                  {locale === "zh-CN"
                     ? "模型名称、渠道成员和匹配规则"
                     : "Model name, channel members, and match rules"}
-              </SheetDescription>
+                </SheetDescription>
+              </div>
             </div>
-          </div>
-        </SheetHeader>
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-          {isBinding ? (
-            <section
-              aria-label={locale === "zh-CN" ? "可选模型" : "Available models"}
-              className="mx-6 mb-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60"
-            >
-              <ModelGroupCandidateToolbar
-                locale={locale}
-                candidateSearch={props.candidateSearch}
-                changeCandidateSearch={props.changeCandidateSearch}
-                refetchCandidates={props.refetchCandidates}
-                isFetchingCandidates={props.isFetchingCandidates}
-              />
-              <ModelGroupCandidateList
-                locale={locale}
-                groupedCandidates={props.groupedCandidates}
-                expandedChannels={props.expandedChannels}
-                existingItemKeys={existingItemKeys}
-                toggleChannel={props.toggleChannel}
-                addCandidate={props.addCandidate}
-                candidateIsError={props.candidateIsError}
-                candidateListError={props.candidateListError}
-              />
-            </section>
-          ) : (
+          </SheetHeader>
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pb-6">
               <ModelGroupSettings
                 locale={locale}
@@ -222,7 +184,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               ) : null}
               {!form.route_group_id ? (
                 <ModelGroupSelectedMembers
-                  onAddSources={() => setIsBinding(true)}
+                  onAddSources={() => setCandidateSheetOpen(true)}
                   locale={locale}
                   strategy={form.strategy}
                   foldedMembers={props.foldedMembers}
@@ -332,59 +294,96 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 </AccordionItem>
               </Accordion>
             </div>
-          )}
-          <SheetFooter className="shrink-0 flex-row items-center justify-between gap-3 px-4 py-4">
-            <span className="text-xs text-muted-foreground">
-              {form.route_group_id
-                ? locale === "zh-CN"
-                  ? "别名模型组"
-                  : "Alias group"
-                : locale === "zh-CN"
-                  ? `已选 ${props.foldedMembers.length} 个模型`
-                  : `${props.foldedMembers.length} selected models`}
-            </span>
-            <div className="flex items-center gap-2">
-              {isBinding ? (
+            <SheetFooter className="shrink-0 flex-row items-center justify-between gap-3 px-4 py-4">
+              <span className="text-xs text-muted-foreground">
+                {form.route_group_id
+                  ? locale === "zh-CN"
+                    ? "别名模型组"
+                    : "Alias group"
+                  : locale === "zh-CN"
+                    ? `已选 ${props.foldedMembers.length} 个模型`
+                    : `${props.foldedMembers.length} selected models`}
+              </span>
+              <div className="flex items-center gap-2">
                 <Button
-                  type="button"
+                  variant="ghost"
                   size="sm"
-                  onClick={() => setIsBinding(false)}
+                  type="button"
+                  onClick={() => setDialogOpen(false)}
                 >
-                  {locale === "zh-CN" ? "完成选择" : "Done"}
+                  {locale === "zh-CN" ? "取消" : "Cancel"}
                 </Button>
-              ) : (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => setDialogOpen(false)}
-                  >
-                    {locale === "zh-CN" ? "取消" : "Cancel"}
-                  </Button>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={
-                      props.invalidMatchRules.length > 0 ||
-                      props.hasDeletedMatchRules
-                    }
-                  >
-                    {editingId
-                      ? locale === "zh-CN"
-                        ? "保存"
-                        : "Save"
-                      : locale === "zh-CN"
-                        ? "创建"
-                        : "Create"}
-                  </Button>
-                </>
-              )}
-            </div>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={
+                    props.invalidMatchRules.length > 0 ||
+                    props.hasDeletedMatchRules
+                  }
+                >
+                  {editingId
+                    ? locale === "zh-CN"
+                      ? "保存"
+                      : "Save"
+                    : locale === "zh-CN"
+                      ? "创建"
+                      : "Create"}
+                </Button>
+              </div>
+            </SheetFooter>
+          </form>
+        </SheetContent>
+      </Sheet>
+      <Sheet open={candidateSheetOpen} onOpenChange={setCandidateSheetOpen}>
+        <SheetContent
+          side="right"
+          showOverlay={false}
+          className="flex flex-col gap-0 sm:right-[calc(560px+1.5rem)] sm:max-w-[420px]"
+        >
+          <SheetHeader className="shrink-0 px-5 py-5 pr-14">
+            <SheetTitle>
+              {locale === "zh-CN" ? "添加渠道成员" : "Add channel members"}
+            </SheetTitle>
+            <SheetDescription>
+              {locale === "zh-CN"
+                ? "选择成员加入当前模型组；已排除的模型会恢复为成员。"
+                : "Choose members for this group. Excluded models are restored when added."}
+            </SheetDescription>
+          </SheetHeader>
+          <section
+            aria-label={locale === "zh-CN" ? "可选模型" : "Available models"}
+            className="mx-5 mb-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60"
+          >
+            <ModelGroupCandidateToolbar
+              locale={locale}
+              candidateSearch={props.candidateSearch}
+              changeCandidateSearch={props.changeCandidateSearch}
+              refetchCandidates={props.refetchCandidates}
+              isFetchingCandidates={props.isFetchingCandidates}
+            />
+            <ModelGroupCandidateList
+              locale={locale}
+              groupedCandidates={props.groupedCandidates}
+              expandedChannels={props.expandedChannels}
+              existingItemKeys={existingItemKeys}
+              toggleChannel={props.toggleChannel}
+              addCandidate={props.addCandidate}
+              candidateIsError={props.candidateIsError}
+              candidateListError={props.candidateListError}
+            />
+          </section>
+          <SheetFooter className="shrink-0 px-5 py-4">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setCandidateSheetOpen(false)}
+            >
+              {locale === "zh-CN" ? "完成" : "Done"}
+            </Button>
           </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

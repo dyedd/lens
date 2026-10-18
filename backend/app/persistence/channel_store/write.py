@@ -11,7 +11,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.protocols import ModelSource
 from app.models.sites import (
     SiteBaseUrl,
     SiteCreate,
@@ -26,8 +25,8 @@ from app.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
-from app.persistence.regex_rule_references import dump_rule_ids, validate_rule_ids
 
 from .cleanup import SiteConfigurationCleanupMixin
 from .endpoint_credentials import credential_ids_for_url
@@ -109,6 +108,12 @@ class SiteProtocolConfigUpsertsMixin:
                 protocol_config,
                 selected_credential_ids,
             )
+            await self._upsert_sync_targets(
+                session,
+                protocol_config_id,
+                protocol_config,
+                selected_credential_ids,
+            )
         missing_urls = base_url_ids - seen_base_url_ids
         if missing_urls:
             missing_label = ", ".join(sorted(missing_urls))
@@ -175,9 +180,7 @@ class SiteProtocolConfigUpsertsMixin:
                 )
             seen_models.add(model_key)
 
-            is_upstream_missing = (
-                model.upstream_missing and model.source == ModelSource.SYNCED
-            )
+            is_upstream_missing = model.upstream_missing
             model_id = model.id
             if not model_id or model_id in seen_row_ids:
                 model_id = str(uuid.uuid4())
@@ -192,7 +195,6 @@ class SiteProtocolConfigUpsertsMixin:
                     enabled=int(model.enabled),
                     sort_order=model_index,
                     protocol=protocol_value,
-                    source=model.source.value,
                     upstream_missing=int(is_upstream_missing),
                     upstream_missing_since=(
                         missing_since_by_key.get(model_key) or _naive_utc_now()
@@ -201,6 +203,56 @@ class SiteProtocolConfigUpsertsMixin:
                     ),
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,
+                )
+            )
+
+    async def _upsert_sync_targets(
+        self,
+        session: AsyncSession,
+        protocol_config_id: str,
+        protocol_config: SiteProtocolConfigInput,
+        credential_ids: set[str],
+    ) -> None:
+        await session.execute(
+            delete(SiteProtocolConfigSyncTargetEntity).where(
+                SiteProtocolConfigSyncTargetEntity.protocol_config_id
+                == protocol_config_id
+            )
+        )
+        seen: set[tuple[str, str, str]] = set()
+        materialized_model_keys = {
+            (model.credential_id, model.model_name.strip())
+            for model in protocol_config.models
+            if model.model_name.strip()
+        }
+        targets = [
+            (target.credential_id, target.protocol, target.model_name)
+            for target in protocol_config.sync_targets
+            if (target.credential_id, target.model_name.strip())
+            not in materialized_model_keys
+        ] + [
+            (model.credential_id, model.protocol, model.model_name)
+            for model in protocol_config.models
+        ]
+        for credential_id, protocol_value, raw_model_name in targets:
+            model_name = raw_model_name.strip()
+            protocol = protocol_value.value
+            key = (credential_id, protocol, model_name)
+            if not model_name or key in seen:
+                continue
+            if credential_id not in credential_ids:
+                raise ValueError(
+                    "Sync target credential not found in protocol config "
+                    f"{protocol_config_id}: {credential_id}"
+                )
+            seen.add(key)
+            session.add(
+                SiteProtocolConfigSyncTargetEntity(
+                    id=str(uuid.uuid4()),
+                    protocol_config_id=protocol_config_id,
+                    credential_id=credential_id,
+                    protocol=protocol,
+                    model_name=model_name,
                 )
             )
 
@@ -222,13 +274,6 @@ class SiteConfigUpsertsMixin(
         if not payload.base_urls:
             raise ValueError("At least one base URL is required")
 
-        await validate_rule_ids(
-            session,
-            [
-                *payload.model_sync_include_rule_ids,
-                *payload.model_sync_exclude_rule_ids,
-            ],
-        )
         built_base_urls = self._build_base_urls(payload.base_urls)
         base_url_ids = {item.id for item in built_base_urls}
         built_credentials = self._build_credentials(payload.credentials, base_url_ids)
@@ -257,13 +302,6 @@ class SiteConfigUpsertsMixin(
                     proxy_mode=payload.proxy_mode.value,
                     channel_proxy=payload.channel_proxy.strip(),
                     param_override=_dump_rules(payload.param_override),
-                    model_sync_enabled=int(payload.model_sync_enabled),
-                    model_sync_include_rule_ids_json=dump_rule_ids(
-                        payload.model_sync_include_rule_ids
-                    ),
-                    model_sync_exclude_rule_ids_json=dump_rule_ids(
-                        payload.model_sync_exclude_rule_ids
-                    ),
                 )
             )
         else:
@@ -275,13 +313,6 @@ class SiteConfigUpsertsMixin(
             site.proxy_mode = payload.proxy_mode.value
             site.channel_proxy = payload.channel_proxy.strip()
             site.param_override = _dump_rules(payload.param_override)
-            site.model_sync_enabled = int(payload.model_sync_enabled)
-            site.model_sync_include_rule_ids_json = dump_rule_ids(
-                payload.model_sync_include_rule_ids
-            )
-            site.model_sync_exclude_rule_ids_json = dump_rule_ids(
-                payload.model_sync_exclude_rule_ids
-            )
 
         await self._upsert_base_urls(session, site_id, built_base_urls)
         current_protocol_config_ids = set(

@@ -12,6 +12,7 @@ from .entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
 
 
@@ -23,6 +24,7 @@ class SiteRows:
     credential_rates: list[SiteCredentialRateEntity]
     protocol_configs: list[SiteProtocolConfigEntity]
     discovered_models: list[SiteDiscoveredModelEntity]
+    sync_targets: list[SiteProtocolConfigSyncTargetEntity]
 
 
 async def fetch_site_rows(
@@ -34,7 +36,7 @@ async def fetch_site_rows(
         site_query = site_query.where(SiteEntity.id.in_(site_ids))
     site_rows = (await session.execute(site_query)).scalars().all()
     if not site_rows:
-        return SiteRows([], [], [], [], [], [])
+        return SiteRows([], [], [], [], [], [], [])
 
     ids = [item.id for item in site_rows]
     base_url_rows = (
@@ -118,6 +120,28 @@ async def fetch_site_rows(
             .all()
         )
 
+    sync_target_rows: list[SiteProtocolConfigSyncTargetEntity] = []
+    if protocol_config_ids:
+        sync_target_rows = (
+            (
+                await session.execute(
+                    select(SiteProtocolConfigSyncTargetEntity)
+                    .where(
+                        SiteProtocolConfigSyncTargetEntity.protocol_config_id.in_(
+                            protocol_config_ids
+                        )
+                    )
+                    .order_by(
+                        SiteProtocolConfigSyncTargetEntity.protocol_config_id.asc(),
+                        SiteProtocolConfigSyncTargetEntity.credential_id.asc(),
+                        SiteProtocolConfigSyncTargetEntity.model_name.asc(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
     return SiteRows(
         sites=site_rows,
         base_urls=base_url_rows,
@@ -125,4 +149,5 @@ async def fetch_site_rows(
         credential_rates=credential_rate_rows,
         protocol_configs=protocol_rows,
         discovered_models=model_rows,
+        sync_targets=sync_target_rows,
     )

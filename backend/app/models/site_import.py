@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import Field, HttpUrl, field_validator
 
 from ..core.urls import canonicalize_base_url
-from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
+from .protocols import ChannelProxyMode, ProtocolKind
 from .sites import (
     SiteConfig,
     SiteTags,
@@ -36,7 +36,6 @@ class SiteImportModelInput(StrictBaseModel):
     credential_ref: str = Field(min_length=1)
     protocol: ProtocolKind | None = None
     enabled: bool = True
-    source: ModelSource = ModelSource.MANUAL
 
 
 class SiteImportProtocolInput(StrictBaseModel):
