@@ -61,6 +61,8 @@ export type PickerModelItem = {
   model_name: string;
   /** Context window the upstream model list reports. */
   context_window: number | null;
+  /** Context window the admin sets while picking; null leaves it unset. */
+  manualContextWindow?: number | null;
 };
 
 export type ModelTestTarget = {
@@ -100,7 +102,7 @@ export type AggregatedModel = {
   upstreamMissing: boolean;
   /** Admin override shared by every key's copy of this model. */
   contextWindow: number | null;
-  /** Upstream-reported or name-detected value used without an override. */
+  /** Upstream-reported value used without an override. */
   autoContextWindow: number | null;
   autoContextWindowSource: Exclude<ContextWindowSource, "manual"> | null;
   /** Per-credential rows for expanding the collapsed overview row. */

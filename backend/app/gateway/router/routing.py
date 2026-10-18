@@ -50,8 +50,9 @@ def _keep_targets_fitting_context(
 ) -> list[RouteTarget]:
     """Drop targets whose known context window is too small for the request.
 
-    The request size is an estimate, so when no target is known to fit the
-    pool is left unchanged and the upstreams decide.
+    Targets without a configured context window stay in the pool, and when no
+    target is known to fit the pool is left unchanged: the request size is an
+    estimate, and members that reject it still fail over to the next one.
     """
     if not required_context_tokens:
         return targets
