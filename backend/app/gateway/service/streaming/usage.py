@@ -7,7 +7,6 @@ from ....models.protocols import ProtocolKind
 from ..runtime_types import StreamCapture
 from .types import (
     OPENAI_RESPONSES_TERMINAL_EVENTS,
-    parse_ndjson_payloads,
     parse_sse_payloads,
 )
 
@@ -84,18 +83,29 @@ def _anthropic_usage(
 
 
 def _gemini_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
-    usage = _usage_mapping(payload.get("usageMetadata"), "usageMetadata")
-    input_tokens = _usage_int(usage, "promptTokenCount")
-    cache_read_input_tokens = _usage_int(usage, "cachedContentTokenCount")
-    output_tokens = _usage_int(usage, "candidatesTokenCount")
-    total_tokens = _usage_int(usage, "totalTokenCount") or (
-        input_tokens + output_tokens
-    )
+    source = payload.get("interaction")
+    if isinstance(source, Mapping):
+        payload = source
+    usage = payload.get("usage")
+    if not isinstance(usage, Mapping):
+        usage = {}
+    input_tokens = _usage_int(usage, "total_input_tokens")
+    output_tokens = _usage_int(usage, "total_output_tokens")
+    total_tokens = _usage_int(usage, "total_tokens") or (input_tokens + output_tokens)
+    cached_tokens = _usage_int(usage, "total_cached_tokens")
+    image_input_tokens = 0
+    modalities = usage.get("input_tokens_by_modality")
+    if isinstance(modalities, list):
+        for item in modalities:
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("modality") == "IMAGE":
+                image_input_tokens += _usage_int(item, "tokens")
     return {
-        "resolved_model": payload.get("modelVersion") or payload.get("model"),
+        "resolved_model": payload.get("model"),
         "input_tokens": input_tokens,
-        "image_input_tokens": 0,
-        "cache_read_input_tokens": min(cache_read_input_tokens, input_tokens),
+        "image_input_tokens": image_input_tokens,
+        "cache_read_input_tokens": min(cached_tokens, input_tokens),
         "cache_write_input_tokens": 0,
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
@@ -199,10 +209,30 @@ def extract_stream_usage(
         return dict(EMPTY_USAGE)
 
     if protocol == ProtocolKind.GEMINI:
-        payloads = parse_sse_payloads(
-            raw_content, errors=parse_errors
-        ) or parse_ndjson_payloads(raw_content, errors=parse_errors)
-        return extract_usage_from_payload(protocol, payloads[-1] if payloads else {})
+        payloads = parse_sse_payloads(raw_content, errors=parse_errors)
+        merged: dict[str, int | str | None] = dict(EMPTY_USAGE)
+        int_keys = (
+            "input_tokens",
+            "image_input_tokens",
+            "cache_read_input_tokens",
+            "cache_write_input_tokens",
+            "output_tokens",
+            "total_tokens",
+        )
+        for payload in payloads:
+            parsed = extract_usage_from_payload(protocol, payload)
+            if parsed["resolved_model"]:
+                merged["resolved_model"] = parsed["resolved_model"]
+            for key in int_keys:
+                value = parsed[key]
+                assert isinstance(value, int)
+                if value:
+                    merged[key] = max(merged[key], value)
+        merged["total_tokens"] = max(
+            int(merged["total_tokens"] or 0),
+            int(merged["input_tokens"] or 0) + int(merged["output_tokens"] or 0),
+        )
+        return merged
 
     payloads = parse_sse_payloads(raw_content, errors=parse_errors)
     merged: dict[str, int | str | None] = dict(EMPTY_USAGE)

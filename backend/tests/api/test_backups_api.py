@@ -104,6 +104,39 @@ def test_import_backup_drops_retired_group_fields(
     assert [item["name"] for item in restored] == [group["name"]]
 
 
+def test_import_backup_drops_retired_site_fields(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(valid_site_payload())
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    payload = exported.json()
+    [site] = payload["sites"]
+    site["model_sync_enabled"] = True
+    site["model_name_prefixes"] = ["openai"]
+    for protocol_config in site["protocols"]:
+        for model in protocol_config["models"]:
+            model["source"] = "manual"
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={
+            "file": (
+                "backup.json",
+                json.dumps(payload).encode(),
+                "application/json",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    restored = client.get("/api/admin/sites", headers=admin_headers).json()
+    assert [item["name"] for item in restored] == [site["name"]]
+
+
 def test_import_backup_rejects_invalid_file(client, admin_headers) -> None:
     response = client.post(
         "/api/admin/backups/import",

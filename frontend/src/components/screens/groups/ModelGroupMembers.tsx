@@ -21,7 +21,6 @@ import {
   contextWindowSourceLabel,
   formatContextWindow,
 } from "@/lib/contextWindow";
-import { protocolLabel } from "@/lib/protocols";
 import type { FoldedMember } from "./groupTypes";
 import {
   formatCredentialIdentity,
@@ -42,8 +41,6 @@ export function CandidateRow({
   locale: "zh-CN" | "en-US";
   onClick: () => void;
 }) {
-  const nativeProtocols = candidate.protocols;
-
   return (
     <Button
       type="button"
@@ -64,15 +61,6 @@ export function CandidateRow({
         </div>
       </div>
       <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
-        {nativeProtocols.map((protocol) => (
-          <Badge
-            key={protocol}
-            variant="secondary"
-            className="font-normal text-muted-foreground"
-          >
-            {protocolLabel(protocol, locale)}
-          </Badge>
-        ))}
         <span className="text-muted-foreground">
           {active ? (
             <Check className="size-4 text-primary" />
@@ -221,15 +209,6 @@ export function FoldedMemberRow({
               </TooltipContent>
             </Tooltip>
           ) : null}
-          {member.protocols.map((protocol) => (
-            <Badge
-              key={protocol}
-              variant="secondary"
-              className="font-normal text-muted-foreground"
-            >
-              {protocolLabel(protocol, locale)}
-            </Badge>
-          ))}
           {member.pending_item_count > 0 ? (
             <Tooltip>
               <TooltipTrigger asChild>

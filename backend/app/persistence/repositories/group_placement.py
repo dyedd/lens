@@ -10,7 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ResourceNotFoundError
-from app.core.model_aliases import public_name_from_aliases
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupMemberSource,
@@ -89,9 +88,9 @@ def build_unplaced_models(
         for pattern in group.patterns
     ]
 
-    def is_covered(aliases: list[str]) -> bool:
-        return any(alias.casefold() in covered_keys for alias in aliases) or any(
-            pattern.search(alias) for pattern in cover_patterns for alias in aliases
+    def is_covered(model_name: str) -> bool:
+        return model_name.casefold() in covered_keys or any(
+            pattern.search(model_name) for pattern in cover_patterns
         )
 
     groups_by_key: dict[str, list[GroupCoverage]] = defaultdict(list)
@@ -105,13 +104,10 @@ def build_unplaced_models(
     providers_by_name: dict[str, dict[tuple[str, str], UnplacedModelProvider]] = (
         defaultdict(dict)
     )
-    aliases_by_name: dict[str, set[str]] = defaultdict(set)
     for item in list_ready_channel_items(channels):
-        aliases = item.match_aliases or [item.model_name]
-        if is_covered(aliases):
+        if is_covered(item.model_name):
             continue
-        public_name = public_name_from_aliases(aliases, item.model_name)
-        provider = providers_by_name[public_name].setdefault(
+        provider = providers_by_name[item.model_name].setdefault(
             (item.protocol_config_id, item.credential_id),
             UnplacedModelProvider(
                 site_id=item.site_id or "",
@@ -125,7 +121,6 @@ def build_unplaced_models(
         )
         if item.protocol is not None and item.protocol not in provider.protocols:
             provider.protocols.append(item.protocol)
-        aliases_by_name[public_name].update(aliases)
 
     names_by_key: dict[str, list[str]] = defaultdict(list)
     for name in sorted(providers_by_name):
@@ -138,7 +133,6 @@ def build_unplaced_models(
             UnplacedModelView(
                 model_name=name,
                 match_key=key,
-                match_aliases=sorted(aliases_by_name[name]),
                 similar_group_ids=[group.id for group in similar_groups],
                 similar_group_names=[group.name for group in similar_groups],
                 similar_model_names=[
@@ -201,8 +195,7 @@ class GroupPlacementMixin:
             joined=[
                 change
                 for change in report.added
-                if change.source
-                in {ModelGroupMemberSource.AUTO, ModelGroupMemberSource.PLACEMENT}
+                if change.source == ModelGroupMemberSource.PLACEMENT
                 and change.group_id not in created_ids
             ],
             unplaced=report.pending,

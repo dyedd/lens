@@ -179,7 +179,6 @@ export function toForm(site: Site): FormState {
     channel_proxy: site.channel_proxy,
     model_sync_include_rule_ids: site.model_sync_include_rule_ids,
     model_sync_exclude_rule_ids: site.model_sync_exclude_rule_ids,
-    model_name_prefixes: site.model_name_prefixes,
     headersJson: headerDraftsToJson(headerRulesToDraft(site.headers)),
     paramsJson: paramDraftsToJson(
       paramOverrideRulesToDraft(site.param_override),
@@ -237,7 +236,6 @@ export function toPayload(form: FormState): SitePayload {
     ),
     model_sync_include_rule_ids: rebuilt.model_sync_include_rule_ids,
     model_sync_exclude_rule_ids: rebuilt.model_sync_exclude_rule_ids,
-    model_name_prefixes: rebuilt.model_name_prefixes,
     base_urls: baseUrls,
     credentials: credentials.map((item, index) => ({
       id: persistedCredentialId(item.id),
@@ -262,7 +260,7 @@ export function toPayload(form: FormState): SitePayload {
         : protocolConfig.protocols;
       const protocolConfigProtocols = configuredProtocols.length
         ? configuredProtocols
-        : (["auto"] as ProtocolKind[]);
+        : (["openai_chat"] as ProtocolKind[]);
       const models = protocolConfig.models
         .flatMap((model) => {
           const effectiveProtocols = model.protocols.filter((protocol) =>

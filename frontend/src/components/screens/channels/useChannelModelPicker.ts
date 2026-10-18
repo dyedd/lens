@@ -191,21 +191,25 @@ export function useChannelModelPicker({
             model.model_name === item.model_name,
         );
         if (existingIndex >= 0) {
+          // Re-importing a bound model refreshes its upstream metadata without
+          // discarding the protocol and key bindings configured on that row.
           models[existingIndex] = {
             ...models[existingIndex],
-            protocols: ["auto"],
-            protocolIds: {},
             upstream_missing: false,
             upstream_context_window: item.context_window,
           };
           imported += 1;
           continue;
         }
+        const defaultProtocols: ProtocolKind[] =
+          config.protocols.length > 0
+            ? (config.protocols as ProtocolKind[])
+            : ["openai_chat"];
         const [newModel] = buildModels(
           config,
           [item.credential_id],
           item.model_name,
-          ["auto"],
+          defaultProtocols,
           item.context_window,
           item.manualContextWindow ?? null,
         );

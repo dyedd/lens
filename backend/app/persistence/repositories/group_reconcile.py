@@ -66,12 +66,11 @@ def _naive_utc_now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def _matches_group(state: _GroupMemberState, names: list[str]) -> bool:
-    """Whether the group's rules, or its name, accept any of a model's aliases."""
+def _matches_group(state: _GroupMemberState, model_name: str) -> bool:
+    """Whether the group's rules, or its name, accept a model name."""
     if state.patterns:
-        return any(pattern.search(name) for pattern in state.patterns for name in names)
-    name_key = state.entity.name.casefold()
-    return any(name.casefold() == name_key for name in names)
+        return any(pattern.search(model_name) for pattern in state.patterns)
+    return model_name.casefold() == state.entity.name.casefold()
 
 
 def _row_key(row: ModelGroupItemEntity) -> MemberKey:
@@ -330,17 +329,6 @@ class GroupReconcileMixin:
             for row in list(state.members):
                 if ModelGroupMemberSource(row.source) not in _AUTO_SOURCES:
                     continue
-                lookup = run.lookups.get(row.channel_id)
-                channel_model = (
-                    lookup.models_by_key.get((row.credential_id, row.model_name))
-                    if lookup is not None
-                    else None
-                )
-                aliases = (
-                    list(channel_model.match_aliases) or [row.model_name]
-                    if channel_model is not None
-                    else [row.model_name]
-                )
                 dead_target = (
                     evaluate_model_group_item(
                         ModelGroupItemInput(
@@ -352,7 +340,7 @@ class GroupReconcileMixin:
                     ).state
                     == ModelGroupItemState.INVALID
                 )
-                if dead_target or not _matches_group(state, aliases):
+                if dead_target or not _matches_group(state, row.model_name):
                     run.report.removed.append(run.describe(state, row))
                     run.delete(state, row)
             run.add(
@@ -360,7 +348,7 @@ class GroupReconcileMixin:
                 [
                     item
                     for item in run.ready_items
-                    if _matches_group(state, item.match_aliases or [item.model_name])
+                    if _matches_group(state, item.model_name)
                 ],
                 ModelGroupMemberSource.PLACEMENT,
             )
@@ -408,34 +396,23 @@ class GroupReconcileMixin:
         }
         target = run.groups.get(into_group_id) if into_group_id else None
         item_name_keys = {
-            id(item): {
-                name.casefold() for name in (item.match_aliases or [item.model_name])
-            }
-            for item in run.ready_items
+            id(item): item.model_name.casefold() for item in run.ready_items
         }
         for view in build_unplaced_models(coverage, channels):
             is_requested = placement_names is None or view.model_name in placement_names
             if not is_requested:
                 run.report.pending.append(view)
                 continue
-            view_names = view.match_aliases or [view.model_name]
-            view_name_keys = {name.casefold() for name in view_names}
+            view_name_key = view.model_name.casefold()
             items = [
                 item
                 for item in run.ready_items
-                if item_name_keys[id(item)] & view_name_keys
+                if item_name_keys[id(item)] == view_name_key
             ]
             if target is not None:
                 run.add(target, items, ModelGroupMemberSource.PLACEMENT)
                 continue
-            same_named = next(
-                (
-                    groups_by_name[key]
-                    for key in view_name_keys
-                    if key in groups_by_name
-                ),
-                None,
-            )
+            same_named = groups_by_name.get(view_name_key)
             # A group with rules decides membership alone, never by its name.
             if same_named is not None and not same_named.patterns:
                 run.add(same_named, items, ModelGroupMemberSource.PLACEMENT)

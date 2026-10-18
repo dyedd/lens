@@ -47,7 +47,7 @@ export type SiteModel = {
   enabled: boolean;
   sort_order: number;
   upstream_missing: boolean;
-  /** Admin override; null falls back to the upstream or model-name value. */
+  /** Admin override; null falls back to the upstream-reported value. */
   context_window: number | null;
   /** Context window the upstream model list reports. */
   upstream_context_window: number | null;
@@ -89,8 +89,6 @@ export type Site = {
   model_sync_include_rule_ids: string[];
   /** Library regex rules; sync never onboards matching upstream models. */
   model_sync_exclude_rule_ids: string[];
-  /** Vendor prefixes like "openai" that alias "openai/gpt-5" to "gpt-5". */
-  model_name_prefixes: string[];
   base_urls: SiteBaseUrl[];
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];
@@ -131,7 +129,6 @@ export type SitePayload = {
   param_override: ParamOverrideRule[];
   model_sync_include_rule_ids: string[];
   model_sync_exclude_rule_ids: string[];
-  model_name_prefixes: string[];
   base_urls: SiteBaseUrlInput[];
   credentials: SiteCredentialInput[];
   protocols: SiteProtocolConfigInput[];

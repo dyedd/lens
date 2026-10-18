@@ -116,22 +116,21 @@ def _extract_anthropic_output(raw_payload: dict[str, Any]) -> str:
 
 
 def _extract_gemini_output(raw_payload: dict[str, Any]) -> str:
-    candidates = raw_payload.get("candidates")
-    if not isinstance(candidates, list):
+    steps = raw_payload.get("steps")
+    if not isinstance(steps, list):
         return ""
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
+    for step in steps:
+        if not isinstance(step, dict) or step.get("type") != "model_output":
             continue
-        content = candidate.get("content")
-        if not isinstance(content, dict):
-            continue
-        parts_list = content.get("parts")
-        if not isinstance(parts_list, list):
+        content = step.get("content")
+        if not isinstance(content, list):
             continue
         parts = [
-            str(part.get("text")).strip()
-            for part in parts_list
-            if isinstance(part, dict) and part.get("text")
+            str(block.get("text")).strip()
+            for block in content
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and block.get("text")
         ]
         if parts:
             return "\n".join(parts)

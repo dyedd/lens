@@ -88,7 +88,7 @@ async def resolve_routing_plan(
         use_model_matching=False,
         cursor_key=f"{protocol.value}:{resolved_group.id}",
         parsed_model=parsed_model,
-        fallback_group_ids=list(matched_group.fallback_group_ids),
+        fallback_group_ids=list(resolved_group.fallback_group_ids),
     )
 
 

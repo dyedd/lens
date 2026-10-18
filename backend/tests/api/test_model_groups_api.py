@@ -30,7 +30,7 @@ def _member(
     }
 
 
-@pytest.mark.parametrize("protocol", [ProtocolKind.OPENAI_IMAGE, ProtocolKind.AUTO])
+@pytest.mark.parametrize("protocol", [ProtocolKind.OPENAI_IMAGE])
 def test_model_group_model_test_uses_persisted_image_credential(
     client,
     admin_headers,
@@ -96,8 +96,6 @@ def test_model_group_model_test_uses_persisted_image_credential(
         "model_name": "gpt-image-1",
         "prompt": "draw a lens",
     }
-    if protocol == ProtocolKind.AUTO:
-        request_payload["protocol"] = "openai_image"
     injected_response = client.post(
         f"/api/admin/model-groups/{group['id']}/model-tests",
         headers=admin_headers,
@@ -232,6 +230,25 @@ def test_model_group_rejects_missing_fallback_group(
     )
 
     assert_error(response, 400, "Fallback model group not found")
+
+
+def test_delete_group_rejects_a_fallback_reference(
+    client, admin_headers, create_model_group
+) -> None:
+    fallback = create_model_group(name="fallback")
+    primary = create_model_group(name="primary")
+    updated = client.put(
+        f"/api/admin/model-groups/{primary['id']}",
+        headers=admin_headers,
+        json={"fallback_group_ids": [fallback["id"]]},
+    )
+    assert updated.status_code == 200, updated.text
+
+    response = client.delete(
+        f"/api/admin/model-groups/{fallback['id']}", headers=admin_headers
+    )
+
+    assert_error(response, 409, "referenced as a fallback")
 
 
 def test_model_group_derives_client_protocols_from_member(
@@ -770,6 +787,28 @@ def test_group_candidates_list_available_channel_models(
         "gpt-4o-mini",
     ]
     assert payload["evaluated_items"] == []
+
+
+def test_place_models_without_group_reports_unplaced_conflicts(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    create_model_group(name="claude-opus-4.5")
+    create_site(valid_site_payload(model_name="claude-opus-4-5"))
+
+    response = client.post(
+        "/api/admin/model-group-placements",
+        headers=admin_headers,
+        json={"model_names": ["claude-opus-4-5"]},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["created"] == []
+    assert payload["joined"] == []
+    assert [item["model_name"] for item in payload["unplaced"]] == ["claude-opus-4-5"]
 
 
 def test_place_models_into_existing_group_joins_conflicted_model(

@@ -22,7 +22,10 @@ def upgrade() -> None:
     model_rows = conn.execute(
         sa.text(
             "SELECT protocol_config_id, credential_id, protocol, model_name "
-            "FROM site_discovered_models"
+            "FROM site_discovered_models "
+            # Old manual rows may have no protocol; they cannot be routed or
+            # synced, and site_protocol_config_sync_targets.protocol is NOT NULL.
+            "WHERE protocol IS NOT NULL"
         )
     ).mappings()
     for row in model_rows:

@@ -149,7 +149,7 @@ def _completed_frames() -> list[dict[str, Any]]:
     ]
 
 
-def test_auto_channel_preserves_responses_stream_and_logs_usage(
+def test_responses_channel_preserves_responses_stream_and_logs_usage(
     client,
     admin_headers,
     monkeypatch,
@@ -162,12 +162,14 @@ def test_auto_channel_preserves_responses_stream_and_logs_usage(
     frames = _completed_frames()
     _stub_upstream(monkeypatch, captured, sse_frames=frames)
     _enable_body_logging(monkeypatch, app_state)
-    create_site(valid_site_payload(protocols=["auto"], model_name="responses-model"))
+    create_site(
+        valid_site_payload(protocols=["openai_responses"], model_name="responses-model")
+    )
     create_model_group(
         name="auto-model",
         items=[
             {
-                "channel_id": "pc-1_auto",
+                "channel_id": "pc-1_openai_responses",
                 "credential_id": "cred-1",
                 "model_name": "responses-model",
                 "enabled": True,
@@ -193,7 +195,7 @@ def test_auto_channel_preserves_responses_stream_and_logs_usage(
     request_log = logs["items"][0]
     assert request_log["success"] is True
     assert request_log["protocol"] == "openai_responses"
-    assert request_log["channel_id"] == "pc-1_auto"
+    assert request_log["channel_id"] == "pc-1_openai_responses"
     assert request_log["input_tokens"] == 5
     assert request_log["output_tokens"] == 2
     assert request_log["cache_read_input_tokens"] == 2

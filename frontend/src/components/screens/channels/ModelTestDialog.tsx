@@ -259,18 +259,7 @@ export function ModelTestDialog({
                               : "Pending"
                             : "-"}
                       </span>
-                      {item.protocols.length === 1 && item.protocol ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="w-28 shrink-0 truncate text-right text-muted-foreground">
-                              {protocolLabel(item.protocol, locale)}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {protocolLabel(item.protocol, locale)}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
+                      {item.protocols.length > 1 ? (
                         <Select
                           value={item.protocol ?? ""}
                           onValueChange={(value) =>
@@ -298,7 +287,7 @@ export function ModelTestDialog({
                             ))}
                           </SelectContent>
                         </Select>
-                      )}
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -376,10 +365,6 @@ export function ModelTestDialog({
                   <Detail
                     label={isChinese ? "上游" : "Upstream"}
                     value={target?.upstreamName || "-"}
-                  />
-                  <Detail
-                    label={isChinese ? "端点" : "Endpoint"}
-                    value={protocol ? protocolLabel(protocol, locale) : "-"}
                   />
                   <Detail
                     label={isChinese ? "方法" : "Method"}
