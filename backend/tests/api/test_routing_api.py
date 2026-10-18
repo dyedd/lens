@@ -137,6 +137,12 @@ def test_site_save_places_channel_model_into_routable_failover_group(
     create_site,
     create_gateway_key,
 ) -> None:
+    created_group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "gpt-4o"},
+    )
+    assert created_group.status_code == 201, created_group.text
     create_site(_site_with_key("Placed", "placed"))
     used_keys = _capture_upstream_keys(monkeypatch)
 
@@ -145,14 +151,24 @@ def test_site_save_places_channel_model_into_routable_failover_group(
 
     assert response.status_code == 200, response.text
     assert used_keys == ["Bearer placed-secret"]
-    assert (group["strategy"], group["match_models"]) == ("failover", ["gpt-4o"])
+    assert (group["strategy"], group["match_models"]) == ("failover", [])
+    assert len(group["match_rule_ids"]) == 1
+    rules = client.get("/api/admin/regex-rules", headers=admin_headers).json()
+    assert (
+        next(
+            rule["pattern"]
+            for rule in rules
+            if rule["id"] == group["match_rule_ids"][0]
+        )
+        == "^gpt-4o"
+    )
 
 
 @pytest.mark.parametrize(
     "model_fields",
     [
         pytest.param({"enabled": False}, id="disabled"),
-        pytest.param({"source": "synced", "upstream_missing": True}, id="missing"),
+        pytest.param({"upstream_missing": True}, id="missing"),
     ],
 )
 def test_model_without_group_is_not_routed(
@@ -223,6 +239,12 @@ def test_disabled_saved_member_keeps_rule_from_routing_to_it(
     create_site,
     create_gateway_key,
 ) -> None:
+    created_group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "gpt-4o"},
+    )
+    assert created_group.status_code == 201, created_group.text
     create_site(_site_with_key("Excluded", "excluded"))
     group = _group_named(client, admin_headers, "gpt-4o")
     update_response = client.put(
@@ -255,6 +277,12 @@ def test_removed_rule_member_stays_excluded_until_restored(
     create_site,
     create_gateway_key,
 ) -> None:
+    created_group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "gpt-4o"},
+    )
+    assert created_group.status_code == 201, created_group.text
     create_site(_site_with_key("First", "first"))
     group = _group_named(client, admin_headers, "gpt-4o")
     excluded = client.put(
@@ -291,6 +319,12 @@ def test_editor_save_keeps_rule_members_added_while_it_was_open(
     admin_headers,
     create_site,
 ) -> None:
+    created_group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "gpt-4o"},
+    )
+    assert created_group.status_code == 201, created_group.text
     create_site(_site_with_key("First", "first"))
     group = _group_named(client, admin_headers, "gpt-4o")
     create_site(_site_with_key("Second", "second"))
@@ -327,6 +361,12 @@ def test_rule_members_join_at_the_group_insert_position(
     admin_headers,
     create_site,
 ) -> None:
+    created_group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "gpt-4o"},
+    )
+    assert created_group.status_code == 201, created_group.text
     create_site(_site_with_key("First", "first"))
     group = _group_named(client, admin_headers, "gpt-4o")
     client.put(

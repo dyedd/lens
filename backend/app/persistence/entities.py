@@ -77,15 +77,6 @@ class SiteEntity(Base):
     param_override: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    model_sync_enabled: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
-    model_sync_include_rule_ids_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
-    model_sync_exclude_rule_ids_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
 
 
 class SiteBaseUrlEntity(Base):
@@ -139,13 +130,30 @@ class SiteProtocolConfigEntity(Base):
     )
 
 
+class SiteProtocolConfigSyncTargetEntity(Base):
+    __tablename__ = "site_protocol_config_sync_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "protocol_config_id",
+            "credential_id",
+            "protocol",
+            "model_name",
+            name="uq_site_protocol_config_sync_targets_target",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    protocol_config_id: Mapped[str] = mapped_column(
+        String(80), nullable=False, index=True
+    )
+    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    protocol: Mapped[str] = mapped_column(String(40), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+
 class SiteDiscoveredModelEntity(Base):
     __tablename__ = "site_discovered_models"
     __table_args__ = (
-        CheckConstraint(
-            "source IN ('manual', 'synced')",
-            name="ck_site_discovered_models_source",
-        ),
         UniqueConstraint(
             "protocol_config_id",
             "credential_id",
@@ -164,7 +172,6 @@ class SiteDiscoveredModelEntity(Base):
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
     protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
     upstream_missing: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )

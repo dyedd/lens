@@ -39,8 +39,8 @@ export function cronjobDescription(locale: Locale, task: CronjobItem) {
       "Sync model prices from LiteLLM",
     ],
     channel_model_sync: [
-      "按渠道自动同步配置更新上游模型",
-      "Update upstream models from channel auto-sync settings",
+      "按渠道配置自动同步上游模型",
+      "Update upstream models from channel configuration",
     ],
     credential_rate_sync: [
       "同步 Sub2API 有效倍率与 NewAPI 分组参考倍率",
