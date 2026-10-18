@@ -43,6 +43,7 @@ def _create_failover_group(
     create_site: Any,
     create_model_group: Any,
     first_context_window: int | None = None,
+    second_context_window: int | None = None,
 ) -> dict[str, Any]:
     """Create two sites with a failover model group for upstream error tests."""
     first_site = valid_site_payload(
@@ -54,15 +55,15 @@ def _create_failover_group(
     )
     first_site["protocols"][0]["models"][0]["context_window"] = first_context_window
     create_site(first_site)
-    create_site(
-        valid_site_payload(
-            name="Second",
-            base_id="bb",
-            credential_id="cb",
-            protocol_config_id="pb",
-            model_name="m-b",
-        )
+    second_site = valid_site_payload(
+        name="Second",
+        base_id="bb",
+        credential_id="cb",
+        protocol_config_id="pb",
+        model_name="m-b",
     )
+    second_site["protocols"][0]["models"][0]["context_window"] = second_context_window
+    create_site(second_site)
     group = create_model_group(
         name="fail-group",
         items=[
@@ -1353,6 +1354,55 @@ def test_routing_skips_channel_model_with_too_small_context_window(
     assert short.status_code == 200, short.text
     assert long.status_code == 200, long.text
     assert attempted == ["m-a", "m-b"]
+
+
+def test_request_longer_than_every_context_window_still_reaches_upstreams(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """Members too small by configuration still decide for themselves."""
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    _create_failover_group(
+        client=client,
+        admin_headers=admin_headers,
+        create_site=create_site,
+        create_model_group=create_model_group,
+        first_context_window=1_000,
+        second_context_window=1_000,
+    )
+
+    attempted: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        model = json.loads(body_bytes)["model"]
+        attempted.append(model)
+        return _chat_completion_response(model, upstream.url)
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "fail-group",
+            "messages": [{"role": "user", "content": "context " * 2_000}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert attempted == ["m-a"]
 
 
 def test_context_window_exceeded_error_fails_over_to_next_channel(
