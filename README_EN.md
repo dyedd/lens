@@ -253,7 +253,7 @@ Open `/groups`, create a model group, add upstream models, and choose a routing 
 - **Multimodal fallback**: Configure ordered backup model groups for a model group; for multimodal requests, backup groups are tried once the primary group's candidates are exhausted
 - **Context windows**: A channel model's context comes from its manual setting, then the upstream model list, then its name (e.g. `-200k`, `[1m]`); otherwise the group's default context applies (detected from the group name when empty). The gateway skips members too small for the estimated request tokens; if none fit, upstreams still decide, and context-length errors keep failing over
 
-**Protocol conversion**: Conversion runs only when a member's upstream protocol differs from the client protocol. Supported pairs are Anthropic → OpenAI Chat / Responses, OpenAI Responses → OpenAI Chat, and OpenAI Chat → OpenAI Responses.
+**Protocol conversion**: Conversion runs only when a member's upstream protocol differs from the client protocol. Any two of the four chat protocols — OpenAI Chat, OpenAI Responses, Anthropic, and Gemini — can be converted into each other (12 client/upstream combinations); same-protocol requests are forwarded unchanged.
 
 ### 3. Issue Gateway Keys
 
