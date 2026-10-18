@@ -133,7 +133,7 @@ export function DashboardSidebar({
                     loading="eager"
                     className="size-7 shrink-0 rounded-md object-contain"
                   />
-                  <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight">
+                  <span className="min-w-0 truncate text-sm font-semibold tracking-tight">
                     {siteName}
                   </span>
                   {versionText ? (
@@ -158,7 +158,7 @@ export function DashboardSidebar({
                 {updateReleaseUrl ? (
                   <Badge
                     asChild
-                    variant="destructive"
+                    variant="default"
                     className={updateBadgeClassName}
                   >
                     <a href={updateReleaseUrl} target="_blank" rel="noreferrer">
@@ -167,7 +167,7 @@ export function DashboardSidebar({
                   </Badge>
                 ) : (
                   <Badge
-                    variant="destructive"
+                    variant="default"
                     className={updateBadgeClassName}
                     tabIndex={0}
                   >

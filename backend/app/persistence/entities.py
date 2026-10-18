@@ -77,6 +77,17 @@ class SiteEntity(Base):
     param_override: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
+    # Library regex rules that auto-onboard matching upstream models.
+    model_sync_include_rule_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
+    model_sync_exclude_rule_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
+    # Vendor prefixes to strip when matching upstream names to public names.
+    model_name_prefixes_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
 
 
 class SiteBaseUrlEntity(Base):
@@ -130,27 +141,6 @@ class SiteProtocolConfigEntity(Base):
     )
 
 
-class SiteProtocolConfigSyncTargetEntity(Base):
-    __tablename__ = "site_protocol_config_sync_targets"
-    __table_args__ = (
-        UniqueConstraint(
-            "protocol_config_id",
-            "credential_id",
-            "protocol",
-            "model_name",
-            name="uq_site_protocol_config_sync_targets_target",
-        ),
-    )
-
-    id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    protocol_config_id: Mapped[str] = mapped_column(
-        String(80), nullable=False, index=True
-    )
-    credential_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    protocol: Mapped[str] = mapped_column(String(40), nullable=False)
-    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
-
-
 class SiteDiscoveredModelEntity(Base):
     __tablename__ = "site_discovered_models"
     __table_args__ = (
@@ -194,9 +184,11 @@ class ModelGroupEntity(Base):
     route_group_id: Mapped[str] = mapped_column(
         String(80), nullable=False, default="", index=True
     )
-    match_models_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
+    # How the group came to exist: manual or auto-created by placement.
+    origin: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="manual", server_default="manual"
     )
+    # Library regex rules; when set they replace name matching for this group.
     match_rule_ids_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )

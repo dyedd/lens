@@ -180,7 +180,7 @@ export function RegexRulePicker({
                 )}
                 onClick={() => detach(ruleId)}
               >
-                <X className="size-3" />
+                <X className="size-3.5" />
               </button>
             </Badge>
           );
@@ -244,7 +244,7 @@ export function RegexRulePicker({
                   className="flex-col items-start gap-0.5 text-xs"
                 >
                   <span className="font-medium">{rule.name}</span>
-                  <span className="break-all font-mono text-[11px] text-muted-foreground">
+                  <span className="break-all font-mono text-xs text-muted-foreground">
                     {rule.pattern}
                   </span>
                 </CommandItem>

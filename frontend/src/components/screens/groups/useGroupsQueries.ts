@@ -48,12 +48,9 @@ export function useGroupsQueries({
     staleTime: 2 * 60_000,
   });
   // Every member is evaluated; candidates then offer only models outside the
-  // group, which is what the rule preview may add. The draft match rules are
-  // evaluated by the backend so the preview matches what saving does.
+  // group, which is what adding a source can bring in.
   const candidatePayload: ModelGroupCandidatesPayload = useMemo(
     () => ({
-      match_models: form.match_models,
-      match_rule_ids: form.match_rule_ids,
       items: form.items
         .map((item) => ({
           channel_id: item.channel_id,
@@ -65,7 +62,7 @@ export function useGroupsQueries({
           modelGroupItemKey(left).localeCompare(modelGroupItemKey(right)),
         ),
     }),
-    [form.items, form.match_models, form.match_rule_ids],
+    [form.items],
   );
   const candidateQuery = useQuery({
     queryKey: ["group-candidates", editingId, candidatePayload],
@@ -195,7 +192,6 @@ export function useGroupFilters(
       return [
         group.name,
         ...group.channel_names,
-        ...group.match_models,
         ...group.items.map((item) => item.model_name),
       ]
         .join(" ")

@@ -40,7 +40,7 @@ export function ToolbarSearchInput({
         placeholder={placeholder}
         autoComplete="off"
         enterKeyHint="search"
-        className="h-8 bg-background pl-9 pr-9"
+        className="h-8 pl-9 pr-9"
       />
       {value ? (
         <Button

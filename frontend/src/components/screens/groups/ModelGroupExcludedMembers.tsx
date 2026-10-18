@@ -29,18 +29,20 @@ export function ModelGroupExcludedMembers({
 
   return (
     <section
-      className="flex shrink-0 flex-col gap-2"
+      className="flex shrink-0 flex-col gap-2 border-t border-border/60 pt-4"
       aria-label={isZh ? "已排除" : "Excluded"}
     >
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium">{isZh ? "已排除" : "Excluded"}</h3>
+        <h3 className="text-sm font-semibold">
+          {isZh ? "已排除" : "Excluded"}
+        </h3>
         <span className="text-xs tabular-nums text-muted-foreground">
           {excludedMembers.length}
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
         {isZh
-          ? "这些模型不会被匹配规则或自动放置再加入本组；恢复后重新成为成员。"
+          ? "这些模型不会被规则或同名匹配的归组流程再加入本组；恢复后重新成为成员。"
           : "Match rules and placement will not add these back. Restore one to make it a member again."}
       </p>
       <ul className="flex flex-col rounded-md bg-muted/35 p-1">

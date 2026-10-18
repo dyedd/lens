@@ -55,10 +55,15 @@ export function useChannelModelPicker({
   form,
   setForm,
   locale,
+  onGroupPlacement,
 }: {
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
   locale: Locale;
+  /** Remembers the group a batch of imported models should join after save. */
+  onGroupPlacement?: (
+    placement: { group_id: string; model_names: string[] } | null,
+  ) => void;
 }) {
   const [fetching, setFetching] = useState(false);
 
@@ -170,8 +175,8 @@ export function useChannelModelPicker({
     }
   }
 
-  /** Adds picked upstream models and records them as sync targets. */
-  function importRemoteModels(items: PickerModelItem[]) {
+  /** Adds picked upstream models to the channel form. */
+  function importRemoteModels(items: PickerModelItem[], groupId = "") {
     let imported = 0;
     const protocolConfigs = rebuildProtocolConfigs(form).map((config) => {
       const picked = items.filter(
@@ -208,30 +213,18 @@ export function useChannelModelPicker({
           imported += 1;
         }
       }
-      const sync_targets = config.sync_targets.slice();
-      for (const item of picked) {
-        if (
-          sync_targets.some(
-            (target) =>
-              target.credential_id === item.credential_id &&
-              target.protocol === "auto" &&
-              target.model_name === item.model_name,
-          )
-        ) {
-          continue;
-        }
-        sync_targets.push({
-          credential_id: item.credential_id,
-          protocol: "auto",
-          model_name: item.model_name,
-        });
-      }
-      return { ...config, models, sync_targets };
+      return { ...config, models };
     });
     setForm((current) => ({
       ...current,
       protocolConfigs,
     }));
+    if (groupId && imported) {
+      onGroupPlacement?.({
+        group_id: groupId,
+        model_names: [...new Set(items.map((item) => item.model_name))],
+      });
+    }
     return imported;
   }
 

@@ -31,7 +31,7 @@ type Props = {
 };
 
 const ACTION_CLASS =
-  "mt-1 h-7 w-full justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted hover:text-foreground";
+  "mt-1 h-7 w-full justify-start gap-2 px-2 text-xs text-foreground/70 shadow-none hover:bg-muted hover:text-foreground";
 
 /** Renders the shared "bulk" popover for selected rows. */
 export function BulkActionsPopover({
@@ -76,7 +76,7 @@ export function BulkActionsPopover({
         align={placement === "toolbar" ? "start" : "end"}
         className={cn("w-[240px] p-2", isInDialog && "z-[100]")}
       >
-        <p className="flex h-7 items-center px-2 text-[11px] text-muted-foreground">
+        <p className="flex h-7 items-center px-2 text-xs text-muted-foreground">
           {titleForLocale(locale, `已选 ${count} 项`, `${count} selected`)}
         </p>
         {onSetEnabled ? (
@@ -84,11 +84,11 @@ export function BulkActionsPopover({
             <Button
               type="button"
               variant="ghost"
-              className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-[11px] text-foreground/70 shadow-none hover:bg-muted"
+              className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-xs text-foreground/70 shadow-none hover:bg-muted"
               disabled={!enabledChoice || isBusy}
               onClick={() => onSetEnabled(enabledChoice === "enabled")}
             >
-              <ToggleLeft className="size-3" />
+              <ToggleLeft className="size-3.5" />
               {titleForLocale(locale, "设置", "Set")}
             </Button>
             <Select
@@ -97,7 +97,7 @@ export function BulkActionsPopover({
                 setEnabledChoice(value as "enabled" | "disabled")
               }
             >
-              <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+              <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                 <SelectValue
                   placeholder={titleForLocale(locale, "状态", "Status")}
                 />

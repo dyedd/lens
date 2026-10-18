@@ -39,6 +39,7 @@ from app.persistence.entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
+from app.persistence.regex_rule_references import validate_rule_ids
 
 from .import_sites import build_site_batch_import_result, prepare_site_batch
 from .mapping import SiteChannelProjectionMixin, SiteConfigLoadersMixin
@@ -124,14 +125,18 @@ class SiteOperationsMixin:
         credential_id: str,
         *,
         upstream_names: set[str],
-        target_keys: set[tuple[ProtocolKind, str]],
+        onboard_names: set[str] | None = None,
         upstream_context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
-        """Materialize selected upstream targets and flag missing models.
+        """Refresh tracked upstream models and materialize onboarding matches.
 
-        Context windows the upstream reports are refreshed on every bound row.
+        Every stored row keeps syncing: upstream context windows refresh,
+        vanished names are flagged, and restores clear the flag. Rows are
+        never deleted here; ``onboard_names`` only adds upstream models that
+        the site's onboarding rules match and that are not tracked yet.
         """
         reported_context_windows = upstream_context_windows or {}
+        rule_names = onboard_names or set()
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
@@ -177,20 +182,11 @@ class SiteOperationsMixin:
             next_sort_order = (
                 max((row.sort_order for row in config_rows), default=-1) + 1
             )
-            existing_by_key = {
-                (row.protocol, row.model_name): row for row in credential_models
-            }
-            desired_keys = {
-                (protocol.value, model_name) for protocol, model_name in target_keys
-            }
+            existing_names = {row.model_name for row in credential_models}
             added: set[str] = set()
-            missing: set[str] = set()
-            checked_at = datetime.now(UTC).replace(tzinfo=None)
-            for protocol_value, model_name in sorted(desired_keys):
-                row = existing_by_key.get((protocol_value, model_name))
-                if row is not None:
+            for model_name in sorted(rule_names):
+                if model_name in existing_names or model_name not in upstream_names:
                     continue
-                is_missing = model_name not in upstream_names
                 session.add(
                     SiteDiscoveredModelEntity(
                         id=str(uuid.uuid4()),
@@ -199,26 +195,20 @@ class SiteOperationsMixin:
                         model_name=model_name,
                         enabled=1,
                         sort_order=next_sort_order,
-                        protocol=protocol_value,
-                        upstream_missing=int(is_missing),
-                        upstream_missing_since=checked_at if is_missing else None,
+                        protocol=ProtocolKind.AUTO.value,
+                        upstream_missing=0,
+                        upstream_missing_since=None,
                         upstream_context_window=reported_context_windows.get(
                             model_name
                         ),
                     )
                 )
                 next_sort_order += 1
-                (missing if is_missing else added).add(model_name)
+                added.add(model_name)
 
-            stale_rows = [
-                row
-                for row in credential_models
-                if (row.protocol, row.model_name) not in desired_keys
-            ]
-            for row in stale_rows:
-                await session.delete(row)
-
+            missing: set[str] = set()
             restored: set[str] = set()
+            checked_at = datetime.now(UTC).replace(tzinfo=None)
             has_backfill = False
             has_context_changes = False
             for row in credential_models:
@@ -227,11 +217,6 @@ class SiteOperationsMixin:
                     if row.upstream_context_window != reported:
                         row.upstream_context_window = reported
                         has_context_changes = True
-                if (
-                    row in stale_rows
-                    or (row.protocol, row.model_name) not in desired_keys
-                ):
-                    continue
                 is_missing = row.model_name not in upstream_names
                 if is_missing == bool(row.upstream_missing):
                     if is_missing and row.upstream_missing_since is None:
@@ -242,14 +227,7 @@ class SiteOperationsMixin:
                 row.upstream_missing_since = checked_at if is_missing else None
                 (missing if is_missing else restored).add(row.model_name)
 
-            if (
-                stale_rows
-                or added
-                or missing
-                or restored
-                or has_backfill
-                or has_context_changes
-            ):
+            if added or missing or restored or has_backfill or has_context_changes:
                 await session.commit()
             return UpstreamModelChanges(
                 added=sorted(added), missing=sorted(missing), restored=sorted(restored)
@@ -326,6 +304,13 @@ class ChannelStore(
                 session, payload.name, exclude_site_id=site_id
             )
             enabled = bool(site.enabled)
+        await validate_rule_ids(
+            session,
+            [
+                *payload.model_sync_include_rule_ids,
+                *payload.model_sync_exclude_rule_ids,
+            ],
+        )
         await self._upsert_site_payload(session, site_id, payload, enabled=enabled)
 
     async def import_sites(

@@ -3,7 +3,6 @@ import type { ModelGroup } from "@/lib/api/groups";
 import type { FormItem, FormState, MemberStatusFilter } from "./groupTypes";
 import { foldGroupMembers, groupFoldedMembersByChannel } from "./groupView";
 import {
-  insertNewMembers,
   modelFoldKey,
   modelGroupChannelKey,
   modelGroupItemKey,
@@ -177,17 +176,17 @@ export function useGroupMembers(
       if (!restoredItems.length) return current;
       return {
         ...current,
-        items: insertNewMembers(
-          current.items,
-          // Exclusions are stored disabled; bringing one back turns it on.
-          restoredItems.map((item) => ({
+        // Exclusions are stored disabled; bringing one back turns it on.
+        // Restored members join at the end, like every new member.
+        items: [
+          ...current.items,
+          ...restoredItems.map((item) => ({
             ...item,
             enabled: true,
             state: null,
             reasons: [],
           })),
-          current.new_member_position,
-        ),
+        ],
         excluded_items: current.excluded_items.filter(
           (item) => formItemMemberKey(item) !== foldKey,
         ),

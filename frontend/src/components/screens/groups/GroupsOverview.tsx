@@ -89,6 +89,8 @@ type Props = {
   visibleGroups: GroupRow[];
   unplacedModels: UnplacedModel[];
   joinableGroupIds: Set<string>;
+  /** Join targets for the panel's multi-select bulk action. */
+  joinableGroups: Array<{ id: string; name: string }>;
   isLoading: boolean;
   search: string;
   strategyFilter: "all" | RoutingStrategy;
@@ -121,7 +123,10 @@ type Props = {
   onCreateGroupForModels: (name: string, modelNames: string[]) => void;
   onCreateOwnGroups: (modelNames: string[]) => Promise<boolean>;
   onAutoPlace: () => void;
-  onRemoveUnplacedModels: (modelNames: string[]) => Promise<boolean>;
+  onRemoveUnplacedModels: (
+    modelNames: string[],
+    excludeFromOnboarding: boolean,
+  ) => Promise<boolean>;
   onOpenSyncRuns: () => void;
 };
 
@@ -131,6 +136,7 @@ export function GroupsOverview({
   visibleGroups,
   unplacedModels,
   joinableGroupIds,
+  joinableGroups,
   isLoading,
   search,
   strategyFilter,
@@ -195,6 +201,7 @@ export function GroupsOverview({
           unplacedModels={unplacedModels}
           busyId={busyId}
           joinableGroupIds={joinableGroupIds}
+          joinableGroups={joinableGroups}
           onAddModelsToGroup={onAddModelsToGroup}
           onCreateGroupForModels={onCreateGroupForModels}
           onCreateOwnGroups={onCreateOwnGroups}
@@ -218,7 +225,7 @@ export function GroupsOverview({
                 onSearchChange(event.target.value);
                 resetPage();
               }}
-              className="bg-background pl-8"
+              className="pl-8"
             />
           </div>
 
@@ -232,7 +239,7 @@ export function GroupsOverview({
                   {locale === "zh-CN" ? "筛选" : "Filter"}
                 </span>
                 {activeFilterCount ? (
-                  <span className="text-[10px] tabular-nums">
+                  <span className="text-xs tabular-nums">
                     {activeFilterCount}
                   </span>
                 ) : null}
@@ -241,7 +248,7 @@ export function GroupsOverview({
             <PopoverContent align="start" className="w-[240px] p-2">
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {locale === "zh-CN" ? "策略" : "Strategy"}
                   </p>
                   <Select
@@ -251,7 +258,7 @@ export function GroupsOverview({
                       resetPage();
                     }}
                   >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -269,7 +276,7 @@ export function GroupsOverview({
                 </div>
                 {familyOptions.length ? (
                   <div className="space-y-1">
-                    <p className="px-1 text-[10px] text-muted-foreground">
+                    <p className="px-1 text-xs text-muted-foreground">
                       {locale === "zh-CN" ? "厂商" : "Family"}
                     </p>
                     <Select
@@ -279,7 +286,7 @@ export function GroupsOverview({
                         resetPage();
                       }}
                     >
-                      <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -297,7 +304,7 @@ export function GroupsOverview({
                 ) : null}
                 {protocolOptions.length ? (
                   <div className="space-y-1">
-                    <p className="px-1 text-[10px] text-muted-foreground">
+                    <p className="px-1 text-xs text-muted-foreground">
                       {locale === "zh-CN" ? "协议" : "Protocol"}
                     </p>
                     <Select
@@ -307,7 +314,7 @@ export function GroupsOverview({
                         resetPage();
                       }}
                     >
-                      <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -356,12 +363,12 @@ export function GroupsOverview({
               {sortOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-[10px]"
+                  className="h-6 gap-2 px-2 py-0 text-xs"
                   onSelect={() => onSortChange(option.value)}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
                   {sortBy === option.value ? (
-                    <Check className="size-3 text-muted-foreground" />
+                    <Check className="size-3.5 text-muted-foreground" />
                   ) : null}
                 </DropdownMenuItem>
               ))}
@@ -417,7 +424,7 @@ export function GroupsOverview({
           <Button
             type="button"
             size="sm"
-            className="h-7 gap-1 text-xs"
+            className="gap-1 text-xs"
             onClick={onCreate}
           >
             <Plus className="size-3.5" />
@@ -457,7 +464,7 @@ export function GroupsOverview({
           title={locale === "zh-CN" ? "合并模型组" : "Merge groups"}
           description={
             locale === "zh-CN"
-              ? `将「${mergeRequest?.source.name ?? ""}」的名称、匹配规则和成员并入「${mergeRequest?.target.name ?? ""}」，引用改指向目标组，然后删除「${mergeRequest?.source.name ?? ""}」。`
+              ? `将「${mergeRequest?.source.name ?? ""}」的成员并入「${mergeRequest?.target.name ?? ""}」，引用改指向目标组，然后删除「${mergeRequest?.source.name ?? ""}」。`
               : `Move the name, match rules and members of "${mergeRequest?.source.name ?? ""}" into "${mergeRequest?.target.name ?? ""}", repoint references, then delete "${mergeRequest?.source.name ?? ""}".`
           }
           footer={

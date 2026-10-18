@@ -32,14 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
-import { useRegexRules } from "@/hooks/useRegexRules";
 import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
-import type { RegexRule } from "@/lib/api/regexRules";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
 import { protocolLabel } from "@/lib/protocols";
 import type {
@@ -55,8 +48,6 @@ import {
   STRATEGY_OPTIONS,
   strategyLabel,
 } from "./modelGroupFormatting";
-
-const MATCH_MODEL_PREVIEW_LIMIT = 2;
 
 type Props = {
   locale: "zh-CN" | "en-US";
@@ -119,14 +110,12 @@ function GroupMembersPopover({
             ? `${group.site_count} 个渠道 · ${group.credential_count} 个密钥`
             : `${group.site_count} channels · ${group.credential_count} keys`}
           {group.problem_member_count > 0 ? (
-            <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
-              {group.problem_member_count}
-            </Badge>
+            <Badge variant="destructive">{group.problem_member_count}</Badge>
           ) : null}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[420px] p-2">
-        <p className="px-1 pb-1.5 text-[11px] text-muted-foreground">
+        <p className="px-1 pb-1.5 text-xs text-muted-foreground">
           {group.strategy === "failover"
             ? locale === "zh-CN"
               ? "按顺序切换"
@@ -149,13 +138,13 @@ function GroupMembersPopover({
                   {formatCredentialIdentity(member, locale)}
                 </div>
                 {member.model_name !== group.name ? (
-                  <div className="truncate font-mono text-[11px] text-muted-foreground">
+                  <div className="truncate font-mono text-xs text-muted-foreground">
                     {member.model_name}
                   </div>
                 ) : null}
               </div>
               {member.source !== "manual" ? (
-                <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+                <Badge variant="outline">
                   {formatMemberSource(member.source, locale)}
                 </Badge>
               ) : null}
@@ -176,67 +165,6 @@ function GroupMembersPopover({
   );
 }
 
-function GroupMatchRules({
-  group,
-  rulesById,
-}: {
-  group: GroupRow;
-  rulesById: Map<string, RegexRule>;
-}) {
-  const matchRules = group.match_rule_ids.flatMap(
-    (id) => rulesById.get(id) ?? [],
-  );
-  if (!group.match_models.length && !matchRules.length) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-  const hiddenCount = group.match_models.length - MATCH_MODEL_PREVIEW_LIMIT;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {group.match_models.length ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex flex-wrap gap-1">
-              {group.match_models
-                .slice(0, MATCH_MODEL_PREVIEW_LIMIT)
-                .map((name) => (
-                  <Badge
-                    key={name}
-                    variant="outline"
-                    className="font-mono font-normal"
-                  >
-                    {name}
-                  </Badge>
-                ))}
-              {hiddenCount > 0 ? (
-                <Badge variant="secondary">+{hiddenCount}</Badge>
-              ) : null}
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap">
-            {group.match_models.join("\n")}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      {matchRules.map((rule) => (
-        <Tooltip key={rule.id}>
-          <TooltipTrigger asChild>
-            <Badge variant="secondary" className="max-w-40 font-normal">
-              <span className="truncate">{rule.name}</span>
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent
-            side="top"
-            className="max-w-sm flex-col items-start gap-0.5"
-          >
-            <span className="font-medium">{rule.name}</span>
-            <span className="break-all font-mono">{rule.pattern}</span>
-          </TooltipContent>
-        </Tooltip>
-      ))}
-    </div>
-  );
-}
-
 /** Renders the model group table. */
 export function GroupsTable({
   locale,
@@ -254,8 +182,6 @@ export function GroupsTable({
   onDelete,
   onTest,
 }: Props) {
-  const regexRules = useRegexRules();
-  const rulesById = new Map(regexRules.rules.map((rule) => [rule.id, rule]));
   const allSelected =
     items.length > 0 && items.every((item) => selected.has(item.id));
   const someSelected = items.some((item) => selected.has(item.id));
@@ -284,9 +210,6 @@ export function GroupsTable({
           </TableHead>
           <TableHead>{locale === "zh-CN" ? "策略" : "Strategy"}</TableHead>
           <TableHead>{locale === "zh-CN" ? "成员" : "Members"}</TableHead>
-          <TableHead>
-            {locale === "zh-CN" ? "匹配规则" : "Match rules"}
-          </TableHead>
           <TableHead>{locale === "zh-CN" ? "协议" : "Protocols"}</TableHead>
           <TableHead className="text-center">
             {locale === "zh-CN" ? "状态" : "Status"}
@@ -298,7 +221,7 @@ export function GroupsTable({
         {loading && items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={8}
+              colSpan={7}
               className="h-32 text-center text-muted-foreground"
             >
               {loadingLabel}
@@ -308,7 +231,7 @@ export function GroupsTable({
         {!loading && items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={8}
+              colSpan={7}
               className="h-32 text-center text-muted-foreground"
             >
               {emptyLabel}
@@ -350,6 +273,11 @@ export function GroupsTable({
                   <span className="min-w-0 truncate font-mono text-xs font-medium">
                     {group.name}
                   </span>
+                  {group.origin === "auto" ? (
+                    <Badge variant="secondary" className="shrink-0">
+                      {locale === "zh-CN" ? "自动" : "Auto"}
+                    </Badge>
+                  ) : null}
                   {group.similar_groups.length ? (
                     <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild>
@@ -364,7 +292,7 @@ export function GroupsTable({
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
-                        <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                        <DropdownMenuLabel className="text-xs text-muted-foreground">
                           {locale === "zh-CN" ? "合并到…" : "Merge into…"}
                         </DropdownMenuLabel>
                         {group.similar_groups.map((target) => (
@@ -423,9 +351,6 @@ export function GroupsTable({
               </TableCell>
               <TableCell className="py-1.5">
                 <GroupMembersPopover group={group} locale={locale} />
-              </TableCell>
-              <TableCell className="py-1.5">
-                <GroupMatchRules group={group} rulesById={rulesById} />
               </TableCell>
               <TableCell className="py-1.5">
                 {protocols.length ? (

@@ -32,7 +32,6 @@ interface ModelGroupSelectedMemberListProps {
 type SelectedMemberRowProps = {
   locale: "zh-CN" | "en-US";
   member: FoldedMember;
-  index: number;
   canReorder: boolean;
   showChannelName: boolean;
   isDragging: boolean;
@@ -46,7 +45,6 @@ type SelectedMemberRowProps = {
 function SelectedMemberRow({
   locale,
   member,
-  index,
   canReorder,
   showChannelName,
   isDragging,
@@ -59,7 +57,6 @@ function SelectedMemberRow({
   return (
     <FoldedMemberRow
       member={member}
-      index={index}
       isDragging={isDragging}
       isBusy={false}
       canReorder={canReorder}
@@ -102,7 +99,6 @@ function RoundRobinMemberList({
           key={member.key}
           locale={locale}
           member={member}
-          index={index}
           canReorder={canReorder}
           showChannelName
           isDragging={canReorder && draggingIndex === index}
@@ -182,22 +178,28 @@ function FailoverMemberList({
         >
           <div
             className={cn(
-              "flex min-h-9 min-w-0 items-center gap-2 rounded-md bg-secondary/50 px-2 py-1.5",
+              "flex min-h-8 min-w-0 items-center gap-1.5 rounded-md bg-muted/35 px-2 py-1",
               draggingChannelIndex === channelIndex && "opacity-60",
             )}
           >
             {canReorder ? (
               <span
                 draggable
-                className="cursor-grab text-muted-foreground active:cursor-grabbing"
+                aria-hidden="true"
+                className="grid size-5 shrink-0 cursor-grab place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground active:cursor-grabbing"
               >
-                <GripVertical size={14} />
+                <GripVertical className="size-3.5" />
               </span>
             ) : null}
-            <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-              {channelGroup.channel_name ||
-                channelGroup.channel_id ||
-                (locale === "zh-CN" ? "未知渠道" : "Unknown channel")}
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="truncate text-xs font-medium text-foreground">
+                {channelGroup.channel_name ||
+                  channelGroup.channel_id ||
+                  (locale === "zh-CN" ? "未知渠道" : "Unknown channel")}
+              </span>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                {channelGroup.members.length}
+              </span>
             </div>
             <Switch
               checked={channelGroup.members.some(
@@ -234,7 +236,6 @@ function FailoverMemberList({
                 key={member.key}
                 locale={locale}
                 member={member}
-                index={memberIndex}
                 canReorder={canReorder}
                 showChannelName={false}
                 isDragging={

@@ -11,13 +11,13 @@ if TYPE_CHECKING:
 async def run_model_group_reconcile(
     state: AppState, *, should_raise: bool = False
 ) -> None:
-    """Save rule members and place uncovered models.
+    """Join same-named members, place uncovered models, and retire missing ones.
 
     Callers run this after their own change is committed, so a reconcile
     failure is logged instead of turning a saved change into an error.
-    Startup raises instead: groups whose members all come from rules have
-    no saved rows until the first reconcile after the upgrade, so serving
-    without one would route those groups nowhere.
+    Startup raises instead: a group created before its channel models exist
+    has no saved members until the first reconcile, so serving without one
+    would route those groups nowhere.
     """
     try:
         report = await state.group_repo.reconcile_group_members()

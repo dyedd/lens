@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { lazyComponent } from "@/lib/lazyComponent";
 import type {
   AggregatedModel,
@@ -75,6 +76,10 @@ export function ChannelsDialogs({
 }: Props) {
   const isDialogOpen = editor.isDialogOpen;
   const [remoteOpen, setRemoteOpen] = useState(false);
+  const groupsQuery = useModelGroupsQuery();
+  const groupOptions = (groupsQuery.data ?? [])
+    .filter((group) => !group.route_group_id)
+    .map((group) => ({ id: group.id, name: group.name }));
 
   useEffect(() => {
     if (!isDialogOpen || !fetchOnOpen) return;
@@ -129,6 +134,9 @@ export function ChannelsDialogs({
           onTest={modelTest.openAggregateModelTest}
           testing={modelTest.testingModel}
           onAddBinding={editor.addBinding}
+          onboardingRuleIds={editor.form.model_sync_include_rule_ids}
+          onExcludeModels={editor.excludeModelsFromOnboarding}
+          groupOptions={groupOptions}
           onOpenRemote={() => setRemoteOpen(true)}
           initialStatusFilter={modelsStatusFilter}
           isNested={isModelsNested}
@@ -142,7 +150,10 @@ export function ChannelsDialogs({
           loading={picker.fetching}
           onOpenChange={setRemoteOpen}
           onLoad={picker.discoverRemoteCatalog}
-          onImport={picker.importRemoteModels}
+          onImport={(items, groupId) =>
+            picker.importRemoteModels(items, groupId)
+          }
+          groupOptions={groupOptions}
         />
       ) : null}
       {transfer.batchImportOpen ? (

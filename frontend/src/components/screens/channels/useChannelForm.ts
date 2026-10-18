@@ -1,6 +1,9 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import type { RegexRule } from "@/lib/api/regexRules";
 import type { Site } from "@/lib/api/sites";
 import {
   headerDraftsFromJson,
@@ -36,6 +39,11 @@ function parseModelNames(value: string) {
         .filter(Boolean),
     ),
   );
+}
+
+/** Escapes a literal model name for an anchored regex pattern. */
+function escapeRegExp(name: string) {
+  return name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function validateChannelForm(
@@ -138,10 +146,15 @@ function useUnsavedChannelGuard(
 
 /** Owns the channel editor form and its local mutations. */
 export function useChannelForm(locale: Locale) {
+  const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [formSnapshot, setFormSnapshot] = useState("");
+  const [pendingGroupPlacement, setPendingGroupPlacement] = useState<{
+    group_id: string;
+    model_names: string[];
+  } | null>(null);
   const submittedBaseUrls = useMemo(() => formBaseUrlsForPayload(form), [form]);
   const duplicatedProtocolConfigKeys = useMemo(
     () => duplicateProtocolConfigKeys(form.protocolConfigs, submittedBaseUrls),
@@ -174,11 +187,13 @@ export function useChannelForm(locale: Locale) {
   }
   function openCreate() {
     setEditingSiteId(null);
+    setPendingGroupPlacement(null);
     applyPreparedForm(emptyForm());
     setIsDialogOpen(true);
   }
   function openEdit(site: Site) {
     setEditingSiteId(site.id);
+    setPendingGroupPlacement(null);
     applyPreparedForm(toForm(site));
     setIsDialogOpen(true);
   }
@@ -221,25 +236,12 @@ export function useChannelForm(locale: Locale) {
         // Group keys delete every same-name model in this config; per-member
         // keys (from an expanded row) delete just that credential's copy.
         const isGroupKey = isAggregateModelGroupKey(key);
-        const removed = new Set(
-          config.models
-            .filter((model) =>
-              isGroupKey
-                ? aggregateModelGroupKey(config, model.model_name) === key
-                : protocolConfigModelKey(config, model) === key,
-            )
-            .map((model) => `${model.credential_id}:${model.model_name}`),
-        );
         return {
           ...config,
           models: config.models.filter((model) =>
             isGroupKey
               ? aggregateModelGroupKey(config, model.model_name) !== key
               : protocolConfigModelKey(config, model) !== key,
-          ),
-          sync_targets: config.sync_targets.filter(
-            (target) =>
-              !removed.has(`${target.credential_id}:${target.model_name}`),
           ),
         };
       }),
@@ -315,7 +317,11 @@ export function useChannelForm(locale: Locale) {
     }));
   }
 
-  function addBinding(modelNames: string, protocols: ProtocolKind[]) {
+  function addBinding(
+    modelNames: string,
+    protocols: ProtocolKind[],
+    groupId = "",
+  ) {
     const names = parseModelNames(modelNames);
     if (!names.length || !protocols.length) return false;
     setForm((current) => ({
@@ -328,33 +334,84 @@ export function useChannelForm(locale: Locale) {
           buildModels(config, credentialIds, name, protocols),
         );
         if (!newModels.length) return config;
-        const existingTargets = new Set(
-          config.sync_targets.map(
-            (target) =>
-              `${target.credential_id}:${target.protocol}:${target.model_name}`,
-          ),
-        );
-        const sync_targets = [...config.sync_targets];
-        for (const model of newModels) {
-          for (const protocol of model.protocols) {
-            const targetKey = `${model.credential_id}:${protocol}:${model.model_name}`;
-            if (existingTargets.has(targetKey)) continue;
-            existingTargets.add(targetKey);
-            sync_targets.push({
-              credential_id: model.credential_id,
-              protocol,
-              model_name: model.model_name,
-            });
-          }
-        }
         return {
           ...config,
           models: [...config.models, ...newModels],
-          sync_targets,
         };
       }),
     }));
+    if (groupId) {
+      setPendingGroupPlacement({ group_id: groupId, model_names: names });
+    }
     return true;
+  }
+
+  /** References ``^name$`` exclude rules so sync keeps removed models out. */
+  async function excludeModelsFromOnboarding(modelNames: string[]) {
+    const names = [
+      ...new Set(modelNames.map((name) => name.trim()).filter(Boolean)),
+    ];
+    if (!names.length) return false;
+    try {
+      const library = await apiRequest<RegexRule[]>("/admin/regex-rules");
+      const idByPattern = new Map(
+        library.map((rule) => [rule.pattern, rule.id]),
+      );
+      const takenNames = new Set(
+        library.map((rule) => rule.name.toLowerCase()),
+      );
+      const ruleIds: string[] = [];
+      for (const name of names) {
+        const pattern = `^${escapeRegExp(name)}$`;
+        let ruleId = idByPattern.get(pattern);
+        if (!ruleId) {
+          const baseName = `排除：${name}`.slice(0, 60);
+          let ruleName = baseName;
+          let suffix = 2;
+          while (takenNames.has(ruleName.toLowerCase())) {
+            const suffixText = ` (${suffix})`;
+            ruleName = `${baseName.slice(0, 60 - suffixText.length)}${suffixText}`;
+            suffix += 1;
+          }
+          takenNames.add(ruleName.toLowerCase());
+          const created = await apiRequest<RegexRule>("/admin/regex-rules", {
+            method: "POST",
+            body: JSON.stringify({
+              name: ruleName,
+              pattern,
+              description:
+                locale === "zh-CN"
+                  ? "删除模型时生成，阻止同步再次自动接入"
+                  : "Created when a model was removed so sync never onboards it again",
+            }),
+          });
+          ruleId = created.id;
+          idByPattern.set(pattern, ruleId);
+        }
+        ruleIds.push(ruleId);
+      }
+      setForm((current) => ({
+        ...current,
+        model_sync_exclude_rule_ids: [
+          ...current.model_sync_exclude_rule_ids,
+          ...ruleIds.filter(
+            (id) => !current.model_sync_exclude_rule_ids.includes(id),
+          ),
+        ],
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["regex-rules"] });
+      return true;
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          locale === "zh-CN"
+            ? "添加排除规则失败"
+            : "Failed to add exclusion rules",
+        ),
+      );
+      return false;
+    }
   }
 
   return {
@@ -376,6 +433,9 @@ export function useChannelForm(locale: Locale) {
     removeAggregateModel,
     toggleAggregateEnabled,
     addBinding,
+    pendingGroupPlacement,
+    setPendingGroupPlacement,
+    excludeModelsFromOnboarding,
     addBaseUrl,
     updateBaseUrl,
     removeBaseUrl,

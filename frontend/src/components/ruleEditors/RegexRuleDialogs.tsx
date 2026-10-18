@@ -101,11 +101,11 @@ export function RegexRuleEditorDialog({
             : titleForLocale(locale, "新建规则", "New rule")
         }
         description={
-          rule?.groups.length
+          rule && rule.groups.length + rule.sites.length > 0
             ? titleForLocale(
                 locale,
-                `修改会同步应用到 ${rule.groups.length} 个模型组`,
-                `Changes apply to the ${rule.groups.length} groups that use this rule`,
+                `修改会同步应用到 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道`,
+                `Changes apply to ${rule.groups.length} groups and ${rule.sites.length} channels`,
               )
             : undefined
         }
@@ -167,7 +167,7 @@ export function RegexRuleEditorDialog({
                 setDraft({ ...draft, pattern: event.target.value })
               }
               placeholder="^claude-(opus|sonnet)"
-              className="font-mono"
+              className="font-mono placeholder:font-sans"
             />
             <p
               className={
@@ -247,13 +247,13 @@ export function DeleteRegexRuleDialog({
         usageLines.length
           ? titleForLocale(
               locale,
-              `删除规则「${rule.name}」？将从 ${rule.groups.length} 个模型组中移除。`,
-              `Delete rule "${rule.name}"? It will be removed from ${rule.groups.length} groups.`,
+              `删除规则「${rule.name}」？将从 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道中移除。`,
+              `Delete rule "${rule.name}"? It will be removed from ${rule.groups.length} groups and ${rule.sites.length} channels.`,
             )
           : titleForLocale(
               locale,
-              `删除规则「${rule.name}」？没有渠道或模型组使用它。`,
-              `Delete rule "${rule.name}"? No channel or group uses it.`,
+              `删除规则「${rule.name}」？没有模型组或渠道使用它。`,
+              `Delete rule "${rule.name}"? No group or channel uses it.`,
             )
       }
       isBusy={isDeleting}

@@ -5,6 +5,8 @@ import {
   type SetStateAction,
   useState,
 } from "react";
+import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
@@ -48,14 +50,31 @@ function editorTitle(editingSiteId: string | null, locale: Locale) {
 /** Renders model shortcuts and the current model count. */
 function ChannelModelSection({
   locale,
+  form,
+  setForm,
   modelCounts,
   onFetchModels,
   onManageModels,
 }: Pick<
   ChannelEditorDialogProps,
-  "locale" | "modelCounts" | "onFetchModels" | "onManageModels"
+  | "locale"
+  | "form"
+  | "setForm"
+  | "modelCounts"
+  | "onFetchModels"
+  | "onManageModels"
 >) {
   const isZh = locale === "zh-CN";
+  const [prefixDraft, setPrefixDraft] = useState("");
+  function addPrefix() {
+    const prefix = prefixDraft.trim().replace(/\/+$/, "");
+    setPrefixDraft("");
+    if (!prefix || form.model_name_prefixes.includes(prefix)) return;
+    setForm((current) => ({
+      ...current,
+      model_name_prefixes: [...current.model_name_prefixes, prefix],
+    }));
+  }
   return (
     <div className="min-w-0 space-y-2.5 rounded-md bg-muted/35 p-2.5">
       <div className="flex items-center justify-between gap-3">
@@ -63,11 +82,93 @@ function ChannelModelSection({
           <div className="text-xs font-medium">
             {isZh ? "模型同步" : "Model sync"}
           </div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
+          <div className="mt-0.5 text-xs text-muted-foreground">
             {isZh
-              ? "输入或获取的模型都会按上游列表持续同步。"
-              : "Entered and fetched models stay synchronized with the upstream catalog."}
+              ? "输入或获取的模型都会按上游列表持续同步；匹配自动接入规则的新模型会在同步时自动加入。"
+              : "Entered and fetched models stay synchronized with the upstream catalog; new models matching the onboarding rules join on each sync."}
           </div>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <div className="flex items-start gap-2">
+          <span className="w-14 shrink-0 pt-1 text-xs leading-6 text-muted-foreground">
+            {isZh ? "自动接入" : "Auto-onboard"}
+          </span>
+          <RegexRulePicker
+            locale={locale}
+            label={isZh ? "自动接入规则" : "Onboarding rules"}
+            value={form.model_sync_include_rule_ids}
+            onChange={(ruleIds) =>
+              setForm((current) => ({
+                ...current,
+                model_sync_include_rule_ids: ruleIds,
+              }))
+            }
+          />
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="w-14 shrink-0 pt-1 text-xs leading-6 text-muted-foreground">
+            {isZh ? "排除" : "Exclude"}
+          </span>
+          <RegexRulePicker
+            locale={locale}
+            label={isZh ? "排除规则" : "Exclusion rules"}
+            value={form.model_sync_exclude_rule_ids}
+            onChange={(ruleIds) =>
+              setForm((current) => ({
+                ...current,
+                model_sync_exclude_rule_ids: ruleIds,
+              }))
+            }
+          />
+        </div>
+      </div>
+      <div className="flex items-start gap-2">
+        <span className="w-14 shrink-0 pt-1 text-xs leading-6 text-muted-foreground">
+          {isZh ? "命名前缀" : "Prefixes"}
+        </span>
+        <div className="flex min-h-7 flex-1 flex-wrap items-center gap-1 rounded-md border border-input/40 px-2 py-0.5 focus-within:border-primary/60 focus-within:ring-[1px] focus-within:ring-primary/40">
+          {form.model_name_prefixes.map((prefix) => (
+            <Badge
+              key={prefix}
+              variant="secondary"
+              className="gap-0.5 pr-0.5 font-mono text-foreground"
+            >
+              {prefix}/
+              <button
+                type="button"
+                className="grid size-4 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                aria-label={isZh ? `移除 ${prefix}` : `Remove ${prefix}`}
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    model_name_prefixes: current.model_name_prefixes.filter(
+                      (item) => item !== prefix,
+                    ),
+                  }))
+                }
+              >
+                ×
+              </button>
+            </Badge>
+          ))}
+          <input
+            value={prefixDraft}
+            onChange={(event) => setPrefixDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "Enter" || event.key === ",") {
+                event.preventDefault();
+                addPrefix();
+              }
+            }}
+            onBlur={addPrefix}
+            aria-label={isZh ? "模型命名前缀" : "Model name prefix"}
+            placeholder={
+              isZh ? "如 openai，留空表示不处理" : "e.g. openai, empty disables"
+            }
+            className="h-6 min-w-24 flex-1 bg-transparent font-mono text-xs outline-none placeholder:font-sans placeholder:text-muted-foreground"
+          />
         </div>
       </div>
       <div className="flex h-7 items-center justify-between gap-2">
@@ -183,6 +284,8 @@ export function ChannelEditorDialog({
               />
               <ChannelModelSection
                 locale={locale}
+                form={form}
+                setForm={setForm}
                 modelCounts={modelCounts}
                 onFetchModels={onFetchModels}
                 onManageModels={onManageModels}

@@ -43,12 +43,12 @@ export function ParamRuleRows({ title, rules, locale, onChange }: Props) {
   return (
     <div className="space-y-2">
       <div className="flex h-9 items-center justify-between gap-3">
-        <h4 className="text-xs font-medium text-foreground/88">{title}</h4>
+        <h4 className="text-sm font-semibold">{title}</h4>
         <Button
           type="button"
           variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+          size="default"
+          className="gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
           onClick={() => onChange([...rules, { ...EMPTY_RULE }])}
         >
           <Plus className="size-3.5" />

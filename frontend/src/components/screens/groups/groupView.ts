@@ -27,8 +27,6 @@ import type {
 import {
   buildGroupDisplayMembers,
   buildModelMatchKey,
-  buildRuleMatcher,
-  insertNewMembers,
   modelFoldKey,
   modelGroupChannelKey,
   modelGroupItemKey,
@@ -71,32 +69,6 @@ export function candidatePayloadToFormItems(
  * the same form when nothing changes. `matchedModelNames` is the backend's
  * evaluation of the form's current rules.
  */
-export function applyMatchRulesToForm(
-  form: FormState,
-  candidates: ModelGroupCandidateItem[],
-  matchedModelNames: string[],
-): FormState {
-  if (form.route_group_id) return form;
-  const isMatched = buildRuleMatcher(form.match_models, matchedModelNames);
-  const keptItems = form.items.filter(
-    (item) => item.source !== "rule" || isMatched(item.model_name),
-  );
-  const blockedKeys = new Set(
-    [...keptItems, ...form.excluded_items].map((item) =>
-      modelGroupItemKey(item),
-    ),
-  );
-  const ruleItems = candidates
-    .filter((candidate) => isMatched(candidate.model_name))
-    .flatMap((candidate) => candidatePayloadToFormItems(candidate, "rule"))
-    .filter((item) => !blockedKeys.has(modelGroupItemKey(item)));
-  if (keptItems.length === form.items.length && !ruleItems.length) return form;
-  return {
-    ...form,
-    items: insertNewMembers(keptItems, ruleItems, form.new_member_position),
-  };
-}
-
 /** Summarize how the edited form changes the saved members. */
 export function buildMemberChangeSummary(
   group: ModelGroup | undefined,
@@ -158,7 +130,6 @@ export function modelGroupToForm(group: ModelGroup): FormState {
     name: group.name,
     strategy: group.strategy,
     route_group_id: group.route_group_id ?? "",
-    match_models: group.match_models,
     match_rule_ids: group.match_rule_ids,
     param_override: paramOverrideRulesToDraft(group.param_override),
     headers: headerRulesToDraft(group.headers),
@@ -167,7 +138,6 @@ export function modelGroupToForm(group: ModelGroup): FormState {
       group.context_window === null
         ? ""
         : formatContextWindow(group.context_window),
-    new_member_position: group.new_member_position,
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -193,19 +163,11 @@ export function formToModelGroupPayload(form: FormState) {
     name: form.name.trim(),
     strategy: form.strategy,
     route_group_id: routeGroupId,
-    match_models: routeGroupId
-      ? []
-      : [
-          ...new Set(
-            form.match_models.map((name) => name.trim()).filter(Boolean),
-          ),
-        ],
     match_rule_ids: routeGroupId ? [] : form.match_rule_ids,
     param_override: paramOverrideDraftToRules(form.param_override),
     headers: headerDraftToRules(form.headers),
     fallback_group_ids: form.fallback_group_ids,
     context_window: parseContextWindowInput(form.context_window) ?? null,
-    new_member_position: form.new_member_position,
     items: form.items.map(formItemToPayload),
     excluded_items: form.excluded_items.map(formItemToPayload),
   };
@@ -216,9 +178,7 @@ function buildSimilarGroupsById(groups: ModelGroup[]) {
   const keysByGroupId = new Map<string, Set<string>>();
   for (const group of groups) {
     if (group.route_group_id?.trim()) continue;
-    const keys = new Set(
-      [group.name, ...group.match_models].map(buildModelMatchKey),
-    );
+    const keys = new Set([group.name].map(buildModelMatchKey));
     keys.delete("");
     keysByGroupId.set(group.id, keys);
     for (const key of keys) {

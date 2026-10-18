@@ -27,10 +27,10 @@ from app.persistence.entities import (
     SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
-    SiteProtocolConfigSyncTargetEntity,
 )
 
 from ...core.context_windows import coerce_context_window
+from ...core.model_aliases import model_name_aliases
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 from ..site_loader import fetch_site_rows
 from .endpoint_credentials import credential_ids_for_url
@@ -148,7 +148,6 @@ class ChannelRowMappingMixin:
         rows: list[SiteProtocolConfigEntity],
         models_by_protocol_config: dict[str, list[SiteModel]],
         credentials_by_site: dict[str, list[SiteCredential]],
-        targets_by_protocol_config: dict[str, list[SiteProtocolConfigSyncTargetEntity]],
     ) -> dict[str, list[SiteProtocolConfig]]:
         result: dict[str, list[SiteProtocolConfig]] = defaultdict(list)
         for row in rows:
@@ -169,14 +168,6 @@ class ChannelRowMappingMixin:
                         row.base_url_id,
                     ),
                     models=models,
-                    sync_targets=[
-                        {
-                            "credential_id": target.credential_id,
-                            "protocol": target.protocol,
-                            "model_name": target.model_name,
-                        }
-                        for target in targets_by_protocol_config.get(row.id, [])
-                    ],
                 )
             )
         return result
@@ -208,6 +199,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     ChannelConfig(
                         id=compose_runtime_channel_id(protocol_config.id, protocol),
                         site_id=site.id,
+                        site_tags=list(site.tags),
                         name=site.name,
                         protocol=protocol,
                         base_url=bound_base_url.url,
@@ -225,7 +217,9 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         ],
                         keys=keys,
                         models=self._build_channel_models(
-                            protocol_models, credentials_by_id
+                            protocol_models,
+                            credentials_by_id,
+                            site.model_name_prefixes,
                         ),
                         proxy_mode=site.proxy_mode,
                         channel_proxy=site.channel_proxy,
@@ -275,7 +269,9 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
         self,
         models: list[SiteModel],
         credentials_by_id: dict[str, SiteCredential],
+        model_name_prefixes: list[str] | None = None,
     ) -> list[ChannelDiscoveredModel]:
+        prefixes = model_name_prefixes or []
         items: list[ChannelDiscoveredModel] = []
         for model in models:
             credential = credentials_by_id.get(model.credential_id)
@@ -288,6 +284,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         or (credential.name if credential is not None else "")
                     ),
                     model_name=model.model_name,
+                    match_aliases=model_name_aliases(model.model_name, prefixes),
                     enabled=model.enabled,
                     upstream_missing=model.upstream_missing,
                     upstream_missing_since=model.upstream_missing_since,
@@ -402,16 +399,10 @@ class SiteConfigLoadersMixin:
         models_by_protocol_config = self._group_models(
             rows.discovered_models, credentials_by_id
         )
-        targets_by_protocol_config: dict[
-            str, list[SiteProtocolConfigSyncTargetEntity]
-        ] = defaultdict(list)
-        for target in rows.sync_targets:
-            targets_by_protocol_config[target.protocol_config_id].append(target)
         protocols_by_site = self._group_protocols(
             rows.protocol_configs,
             models_by_protocol_config,
             credentials_by_site,
-            targets_by_protocol_config,
         )
 
         return [
@@ -425,6 +416,13 @@ class SiteConfigLoadersMixin:
                 channel_proxy=row.channel_proxy,
                 headers=load_header_rules(row.headers_json),
                 param_override=load_param_rules(row.param_override),
+                model_sync_include_rule_ids=json.loads(
+                    row.model_sync_include_rule_ids_json
+                ),
+                model_sync_exclude_rule_ids=json.loads(
+                    row.model_sync_exclude_rule_ids_json
+                ),
+                model_name_prefixes=json.loads(row.model_name_prefixes_json),
                 base_urls=base_urls_by_site.get(row.id, []),
                 credentials=credentials_by_site.get(row.id, []),
                 protocols=protocols_by_site.get(row.id, []),
