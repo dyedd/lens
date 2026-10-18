@@ -179,11 +179,3 @@ class UnifiedRequest:
     response_format: ResponseFormat | None = None
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     user_id: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class RequestIntent:
-    """Conversion-time options the client body does not carry."""
-
-    model: str = ""
-    replay_reasoning: bool = False

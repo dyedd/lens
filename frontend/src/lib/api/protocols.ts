@@ -1,5 +1,4 @@
 export type ProtocolKind =
-  | "auto"
   | "openai_chat"
   | "openai_responses"
   | "openai_embedding"

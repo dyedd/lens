@@ -21,11 +21,6 @@ type Props = {
 /** Mirrors backend protocol_reachability: every chat protocol converts for the others. */
 function protocolNote(protocol: ProtocolKind, locale: Locale) {
   const zh = locale === "zh-CN";
-  if (protocol === "auto") {
-    return zh
-      ? "按客户端协议原样透传，不转换"
-      : "Pass through in the client's protocol, no conversion";
-  }
   if (
     protocol === "openai_chat" ||
     protocol === "openai_responses" ||
@@ -47,24 +42,17 @@ export function ProtocolDropdown({
   onChange,
 }: Props) {
   const selected = new Set(value);
-  const selectedLabel = selected.has("auto")
-    ? protocolLabel("auto", locale)
-    : ([...PROTOCOL_LIST] as ProtocolKind[])
-        .filter((protocol) => selected.has(protocol))
-        .map((protocol) => protocolLabel(protocol, locale))
-        .join(", ");
+  const selectedLabel = ([...PROTOCOL_LIST] as ProtocolKind[])
+    .filter((protocol) => selected.has(protocol))
+    .map((protocol) => protocolLabel(protocol, locale))
+    .join(", ");
 
   function toggle(protocol: ProtocolKind) {
-    if (protocol === "auto") {
-      onChange(["auto"]);
-      return;
-    }
     if (selected.has(protocol)) {
-      const next = value.filter((item) => item !== protocol);
-      onChange(next.length ? next : ["auto"]);
+      onChange(value.filter((item) => item !== protocol));
       return;
     }
-    onChange([...value.filter((item) => item !== "auto"), protocol]);
+    onChange([...value, protocol]);
   }
 
   return (
@@ -93,7 +81,7 @@ export function ProtocolDropdown({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="z-[100] w-72 gap-0 p-1">
-        {(["auto", ...PROTOCOL_LIST] as ProtocolKind[]).map((protocol) => (
+        {PROTOCOL_LIST.map((protocol) => (
           <Button
             key={protocol}
             type="button"

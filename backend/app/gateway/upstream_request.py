@@ -69,27 +69,16 @@ def build_upstream_request(
         from ..core.model_name_parser import parse_model_name
 
         model_name = str(body.get("model") or "")
-        model_name = parse_model_name(model_name).base_model
+        model_name = parse_model_name(model_name).base_model.removeprefix("models/")
         context_model_name = model_name
         if not model_name:
             raise HTTPException(status_code=400, detail="Gemini request requires model")
 
-        operation = "streamGenerateContent" if body.get("stream") else "generateContent"
-        payload = {
-            key: value for key, value in body.items() if key not in {"model", "stream"}
-        }
-        query_params = {"key": api_key}
-        if body.get("stream"):
-            # Without alt=sse Google answers a stream request with a buffered
-            # JSON array, which the SSE reader cannot parse.
-            query_params["alt"] = "sse"
-        url = append_url_path(
-            _protocol_base_url(channel),
-            "models",
-            f"{model_name}:{operation}",
-            query_params=query_params,
-        )
+        payload = dict(body)
+        payload["model"] = model_name
+        url = append_url_path(_protocol_base_url(channel), "interactions")
         default_headers = {
+            **build_upstream_auth_headers(channel, api_key),
             "content-type": "application/json",
             "accept": "application/json",
         }
@@ -124,9 +113,9 @@ def build_upstream_request(
 
 
 def build_upstream_auth_headers(channel: ChannelConfig, api_key: str) -> dict[str, str]:
-    """Build protocol-native auth headers; Gemini sends its key as a query param."""
+    """Build protocol-native auth headers."""
     if channel.protocol == ProtocolKind.GEMINI:
-        return {}
+        return {"x-goog-api-key": api_key}
     if channel.protocol == ProtocolKind.ANTHROPIC:
         return {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION}
     return {"authorization": f"Bearer {api_key}"}

@@ -11,7 +11,6 @@ export const PROTOCOL_LIST: ProtocolKind[] = [
 ];
 
 const PROTOCOL_LABELS: Record<ProtocolKind, { zh: string; en: string }> = {
-  auto: { zh: "Auto", en: "Auto" },
   openai_chat: { zh: "OpenAI Chat", en: "OpenAI Chat" },
   openai_responses: { zh: "OpenAI Responses", en: "OpenAI Responses" },
   openai_embedding: { zh: "OpenAI Embedding", en: "OpenAI Embedding" },

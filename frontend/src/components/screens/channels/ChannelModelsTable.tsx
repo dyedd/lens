@@ -91,7 +91,7 @@ export function ChannelModelsTable({
             {locale === "zh-CN" ? "API Key" : "Keys"}
           </TableHead>
           <TableHead className="w-[180px]">
-            {locale === "zh-CN" ? "转发协议" : "Forwarding"}
+            {locale === "zh-CN" ? "上游协议" : "Upstream protocol"}
           </TableHead>
           <TableHead className="w-[92px]">
             {locale === "zh-CN" ? "上下文" : "Context"}

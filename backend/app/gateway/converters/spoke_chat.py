@@ -45,9 +45,6 @@ def parse_chat_request(body: Mapping[str, Any]) -> UnifiedRequest:
 
     request = UnifiedRequest(model=_optional_string(body.get("model")) or "")
     request.stream = _optional_bool(body.get("stream")) or False
-    request.replay_reasoning = (
-        _optional_bool(body.get("_lens_replay_reasoning")) or False
-    )
     request.include_usage = _stream_includes_usage(body.get("stream_options"))
     request.generation = _chat_generation_config(body)
     request.tools = _chat_tools(body.get("tools"))
@@ -58,6 +55,12 @@ def parse_chat_request(body: Mapping[str, Any]) -> UnifiedRequest:
     request.passthrough = _chat_passthrough(body)
 
     for message in messages:
+        role = message.get("role") if isinstance(message, Mapping) else None
+        if isinstance(role, str) and role in {"system", "developer"}:
+            # System prompts live beside the message history in the unified
+            # request, matching the Anthropic and Gemini representations.
+            request.system.extend(_chat_content_parts(message.get("content")))
+            continue
         request.messages.extend(_chat_message(message))
     return request
 
@@ -251,9 +254,7 @@ def _chat_message(message: Any) -> list[Message]:
                 ],
             )
         ]
-    if role == "developer":
-        role = "system"
-    if role not in {"system", "user", "assistant"}:
+    if role not in {"user", "assistant"}:
         raise ValueError(f"Unsupported Chat message role: {role}")
 
     parts: list[ContentPart] = _chat_content_parts(message.get("content"))
@@ -266,10 +267,9 @@ def _chat_message(message: Any) -> list[Message]:
             if not isinstance(raw_tool_calls, list):
                 raise ValueError("Chat assistant tool_calls must be an array")
             parts.extend(_chat_tool_calls(raw_tool_calls))
-    message_role = MessageRole.SYSTEM if role == "system" else MessageRole(role)
     return [
         Message(
-            role=message_role,
+            role=MessageRole(role),
             parts=parts,
             plain_text_content=isinstance(message.get("content"), str),
         )

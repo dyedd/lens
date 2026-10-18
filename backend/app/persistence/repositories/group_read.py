@@ -125,9 +125,6 @@ def _build_item_view(
         rate_source=credential.rate_source if credential is not None else "none",
         rate_multiplier=credential.rate_multiplier if credential is not None else None,
         model_name=item.model_name,
-        match_aliases=(
-            list(channel_model.match_aliases) if channel_model is not None else []
-        ),
         enabled=item.enabled,
         source=item.source,
         sort_order=sort_order,

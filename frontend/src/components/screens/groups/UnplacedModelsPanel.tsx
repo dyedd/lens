@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/Tooltip";
 import type { UnplacedModel } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
-import { protocolLabel } from "@/lib/protocols";
 import type { SimilarGroupView } from "./groupTypes";
 import { formatCredentialIdentity } from "./modelGroupFormatting";
 
@@ -116,11 +115,6 @@ function UnplacedModelName({
           {model.providers.map((provider) => (
             <li key={`${provider.site_id}:${provider.credential_id}`}>
               {formatCredentialIdentity(provider, locale)}
-              {provider.protocols.length
-                ? ` · ${provider.protocols
-                    .map((protocol) => protocolLabel(protocol, locale))
-                    .join("/")}`
-                : ""}
             </li>
           ))}
         </ul>

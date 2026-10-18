@@ -29,7 +29,7 @@ def can_reach_protocol(
     upstream_protocol: ProtocolKind, client_protocol: ProtocolKind
 ) -> bool:
     """Return whether an upstream protocol can serve a client protocol."""
-    if upstream_protocol == ProtocolKind.AUTO or upstream_protocol == client_protocol:
+    if upstream_protocol == client_protocol:
         return True
     return (upstream_protocol, client_protocol) in SUPPORTED_CONVERSIONS
 
@@ -42,8 +42,7 @@ def infer_client_protocols(
     return [
         client_protocol
         for client_protocol in ProtocolKind
-        if client_protocol != ProtocolKind.AUTO
-        and any(
+        if any(
             can_reach_protocol(upstream_protocol, client_protocol)
             for upstream_protocol in upstream_set
         )

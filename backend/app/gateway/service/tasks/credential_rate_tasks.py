@@ -114,9 +114,9 @@ def _rate_channel(
         raise CredentialRateSyncError("Credential rate channel is no longer available")
 
     # Rate endpoints only need the base URL and key, so a config without
-    # models or protocols still resolves through a transient Auto channel.
+    # models or protocols still resolves through a transient native channel.
     rate_config = protocol_config.model_copy(
-        update={"protocols": protocol_config.protocols or [ProtocolKind.AUTO]}
+        update={"protocols": protocol_config.protocols or [ProtocolKind.OPENAI_CHAT]}
     )
     rate_site = site.model_copy(update={"protocols": [rate_config]})
     for channel in state.channel_store.flatten_site(rate_site):

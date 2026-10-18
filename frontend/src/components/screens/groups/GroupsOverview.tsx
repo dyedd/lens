@@ -49,7 +49,6 @@ import type {
   RoutingStrategy,
   UnplacedModel,
 } from "@/lib/api/groups";
-import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
 import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
 import { GroupsTable } from "./GroupsTable";
@@ -98,15 +97,12 @@ type Props = {
   activeFilterCount: number;
   familyOptions: ModelPrefixOption[];
   familyFilter: SelectedModelPrefix;
-  protocolOptions: Array<{ value: ProtocolKind; label: string }>;
-  protocolFilter: "all" | ProtocolKind;
   busyId: string | null;
   testingModel: boolean;
   onSearchChange: (value: string) => void;
   onStrategyChange: (value: "all" | RoutingStrategy) => void;
   onSortChange: (value: GroupSort) => void;
   onFamilyChange: (value: SelectedModelPrefix) => void;
-  onProtocolChange: (value: "all" | ProtocolKind) => void;
   onReset: () => void;
   onRefresh: () => void;
   onCreate: () => void;
@@ -144,15 +140,12 @@ export function GroupsOverview({
   activeFilterCount,
   familyOptions,
   familyFilter,
-  protocolOptions,
-  protocolFilter,
   busyId,
   testingModel,
   onSearchChange,
   onStrategyChange,
   onSortChange,
   onFamilyChange,
-  onProtocolChange,
   onReset,
   onRefresh,
   onCreate,
@@ -295,34 +288,6 @@ export function GroupsOverview({
                         </SelectItem>
                         {familyOptions.map((option) => (
                           <SelectItem key={option.key} value={option.key}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : null}
-                {protocolOptions.length ? (
-                  <div className="space-y-1">
-                    <p className="px-1 text-xs text-muted-foreground">
-                      {locale === "zh-CN" ? "协议" : "Protocol"}
-                    </p>
-                    <Select
-                      value={protocolFilter}
-                      onValueChange={(value) => {
-                        onProtocolChange(value as "all" | ProtocolKind);
-                        resetPage();
-                      }}
-                    >
-                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {locale === "zh-CN" ? "全部协议" : "All protocols"}
-                        </SelectItem>
-                        {protocolOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
                             {option.label}
                           </SelectItem>
                         ))}

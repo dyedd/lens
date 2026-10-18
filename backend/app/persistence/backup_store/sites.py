@@ -132,7 +132,6 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "model_sync_exclude_rule_ids": json.loads(
                     row.model_sync_exclude_rule_ids_json
                 ),
-                "model_name_prefixes": json.loads(row.model_name_prefixes_json),
                 "base_urls": base_urls_by_site.get(row.id, []),
                 "credentials": credentials_by_site.get(row.id, []),
                 "protocols": protocol_configs_by_site.get(row.id, []),
@@ -192,9 +191,6 @@ async def replace_sites(
                 ),
                 model_sync_exclude_rule_ids_json=json.dumps(
                     site.model_sync_exclude_rule_ids, ensure_ascii=True
-                ),
-                model_name_prefixes_json=json.dumps(
-                    site.model_name_prefixes, ensure_ascii=True
                 ),
             )
         )
