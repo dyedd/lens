@@ -9,8 +9,8 @@ function LoadingMark({ className }: { className?: string }) {
       )}
       aria-hidden="true"
     >
-      <span className="absolute inset-0 rounded-full border-2 border-muted-foreground/20" />
-      <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-muted-foreground border-r-muted-foreground animate-spin" />
+      <span className="absolute inset-0 rounded-full border-2 border-primary/[0.18]" />
+      <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-primary border-r-primary animate-spin" />
       <span className="absolute inset-1 rounded-full border border-border/60 bg-background" />
       <img
         src="/logo.svg"
@@ -30,9 +30,7 @@ export function AppLoadingScreen({ label = "Loading..." }: { label?: string }) {
     <div className="flex min-h-dvh items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-3 text-center">
         <LoadingMark />
-        <div className="text-base font-medium text-muted-foreground">
-          {label}
-        </div>
+        <div className="text-base font-medium text-primary">{label}</div>
       </div>
     </div>
   );
