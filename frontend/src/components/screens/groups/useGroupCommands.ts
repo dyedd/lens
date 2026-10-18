@@ -400,19 +400,18 @@ export function useGroupCommands({
       "unplaced-removal",
       locale === "zh-CN" ? "删除渠道模型失败" : "Failed to remove models",
       async () => {
-        const { deleted, disabled } =
-          await apiRequest<UnplacedModelRemovalResponse>(
-            "/admin/unplaced-model-removals",
-            { method: "POST", body: JSON.stringify(payload) },
-          );
+        const { deleted } = await apiRequest<UnplacedModelRemovalResponse>(
+          "/admin/unplaced-model-removals",
+          { method: "POST", body: JSON.stringify(payload) },
+        );
         await Promise.all([
           invalidateGroupData(),
           queryClient.invalidateQueries({ queryKey: ["sites"] }),
         ]);
         toast.success(
           locale === "zh-CN"
-            ? `已删除 ${deleted} 个、停用 ${disabled} 个渠道模型`
-            : `Removed ${deleted} and disabled ${disabled} channel models`,
+            ? `已删除 ${deleted} 个渠道模型及其同步目标`
+            : `Removed ${deleted} channel models and their sync targets`,
         );
       },
     );

@@ -115,7 +115,7 @@ export function ChannelRemoteModelsDialog({
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [filter, query, rows]);
   const selectableNames = visibleRows
-    .filter((row) => row.status === "new")
+    .filter((row) => row.status !== "absent")
     .map((row) => row.name);
   const allSelected =
     selectableNames.length > 0 &&
@@ -151,8 +151,8 @@ export function ChannelRemoteModelsDialog({
     onImport(items);
     toast.success(
       locale === "zh-CN"
-        ? `已添加 ${selected.size} 个模型。保存渠道后生效。`
-        : `Added ${selected.size} models. Save the channel to apply.`,
+        ? `已添加 ${selected.size} 个模型，保存后会按上游列表更新。`
+        : `Added ${selected.size} models; they will follow the upstream list after the channel is saved.`,
     );
     onOpenChange(false);
   }
@@ -171,8 +171,8 @@ export function ChannelRemoteModelsDialog({
         }
         description={
           locale === "zh-CN"
-            ? "已汇总所有地址和 API Key 的模型列表。选中的模型会作为手动模型加入，不受自动同步影响。"
-            : "Models from every URL and API key are listed here. Selected models are added manually and are not changed by auto-sync."
+            ? "已汇总所有地址和 API Key 的模型列表。选中的模型会加入渠道，后续按上游列表自动更新。"
+            : "Models from every URL and API key are listed here. Selected models are added to the channel and follow the upstream catalog."
         }
         footer={
           <>
@@ -319,7 +319,7 @@ export function ChannelRemoteModelsDialog({
                       <TableCell>
                         <Checkbox
                           checked={selected.has(row.name)}
-                          disabled={row.status !== "new"}
+                          disabled={row.status === "absent"}
                           onCheckedChange={(checked) =>
                             toggleName(row.name, checked === true)
                           }

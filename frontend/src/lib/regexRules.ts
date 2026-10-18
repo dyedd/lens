@@ -18,12 +18,12 @@ export function compileRegexRulePattern(pattern: string) {
   }
 }
 
-/** Format how many channels and groups use a rule. */
+/** Format how many groups use a rule. */
 export function formatRegexRuleUsage(rule: RegexRule, locale: Locale) {
   return titleForLocale(
     locale,
-    `${rule.sites.length} 渠道 · ${rule.groups.length} 模型组`,
-    `${rule.sites.length} channels · ${rule.groups.length} groups`,
+    `${rule.groups.length} 个模型组`,
+    `${rule.groups.length} groups`,
   );
 }
 
@@ -40,12 +40,9 @@ function formatReferenceNames(
     : names;
 }
 
-/** List the channels and groups that use a rule, one line per kind. */
+/** List the groups that use a rule. */
 export function listRegexRuleUsageLines(rule: RegexRule, locale: Locale) {
   return [
-    rule.sites.length
-      ? `${titleForLocale(locale, "渠道：", "Channels: ")}${formatReferenceNames(rule.sites, locale)}`
-      : "",
     rule.groups.length
       ? `${titleForLocale(locale, "模型组：", "Groups: ")}${formatReferenceNames(rule.groups, locale)}`
       : "",

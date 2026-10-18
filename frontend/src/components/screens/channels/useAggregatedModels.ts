@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { SiteModelInput } from "@/lib/api/sites";
 import {
   activeBaseUrlValue,
   protocolConfigSelectedCredentialIds,
@@ -21,7 +20,6 @@ import type {
 type ModelGroupSeed = {
   modelName: string;
   protocols: Set<ProtocolKind>;
-  sources: Set<SiteModelInput["source"]>;
   enabled: boolean;
   upstreamMissing: boolean;
   contextWindow: number | null;
@@ -68,7 +66,6 @@ export function useAggregatedModels(
         const created: ModelGroupSeed = {
           modelName,
           protocols: new Set(),
-          sources: new Set(),
           enabled: false,
           upstreamMissing: false,
           contextWindow: null,
@@ -85,7 +82,6 @@ export function useAggregatedModels(
         for (const protocol of model.protocols) {
           group.protocols.add(protocol);
         }
-        group.sources.add(model.source);
         group.enabled = group.enabled || model.enabled;
         group.upstreamMissing = group.upstreamMissing || model.upstream_missing;
         group.contextWindow ??= model.context_window;
@@ -98,7 +94,6 @@ export function useAggregatedModels(
           credentialId: model.credential_id,
           credentialName: names.name,
           credentialTitle: names.title,
-          source: model.source,
         });
         group.testKey ??= memberKey;
       }
@@ -109,7 +104,6 @@ export function useAggregatedModels(
         baseUrl,
         credentialCount,
         protocols: Array.from(group.protocols),
-        source: group.sources.has("manual") ? "manual" : "synced",
         enabled: group.enabled,
         upstreamMissing: group.upstreamMissing,
         contextWindow: group.contextWindow,

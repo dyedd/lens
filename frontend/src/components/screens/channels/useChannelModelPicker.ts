@@ -170,29 +170,69 @@ export function useChannelModelPicker({
     }
   }
 
-  /** Adds picked upstream models as manual models of the keys serving them. */
+  /** Adds picked upstream models and records them as sync targets. */
   function importRemoteModels(items: PickerModelItem[]) {
     let imported = 0;
     const protocolConfigs = rebuildProtocolConfigs(form).map((config) => {
-      const newModels = items
-        .filter((item) => item.protocol_config_id === config.id)
-        .flatMap((item) =>
-          buildModels(
-            config,
-            [item.credential_id],
-            item.model_name,
-            ["auto"],
-            "manual",
-            item.context_window,
-            item.manualContextWindow ?? null,
-          ),
+      const picked = items.filter(
+        (item) => item.protocol_config_id === config.id,
+      );
+      if (!picked.length) return config;
+      const models = config.models.slice();
+      for (const item of picked) {
+        const existingIndex = models.findIndex(
+          (model) =>
+            model.credential_id === item.credential_id &&
+            model.model_name === item.model_name,
         );
-      imported += newModels.length;
-      return newModels.length
-        ? { ...config, models: [...config.models, ...newModels] }
-        : config;
+        if (existingIndex >= 0) {
+          models[existingIndex] = {
+            ...models[existingIndex],
+            protocols: ["auto"],
+            protocolIds: {},
+            upstream_missing: false,
+            upstream_context_window: item.context_window,
+          };
+          imported += 1;
+          continue;
+        }
+        const [newModel] = buildModels(
+          config,
+          [item.credential_id],
+          item.model_name,
+          ["auto"],
+          item.context_window,
+          item.manualContextWindow ?? null,
+        );
+        if (newModel) {
+          models.push(newModel);
+          imported += 1;
+        }
+      }
+      const sync_targets = config.sync_targets.slice();
+      for (const item of picked) {
+        if (
+          sync_targets.some(
+            (target) =>
+              target.credential_id === item.credential_id &&
+              target.protocol === "auto" &&
+              target.model_name === item.model_name,
+          )
+        ) {
+          continue;
+        }
+        sync_targets.push({
+          credential_id: item.credential_id,
+          protocol: "auto",
+          model_name: item.model_name,
+        });
+      }
+      return { ...config, models, sync_targets };
     });
-    setForm((current) => ({ ...current, protocolConfigs }));
+    setForm((current) => ({
+      ...current,
+      protocolConfigs,
+    }));
     return imported;
   }
 
