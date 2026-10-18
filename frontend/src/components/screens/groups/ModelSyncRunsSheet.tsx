@@ -95,7 +95,7 @@ function buildRunSections(
     },
     {
       key: "removed",
-      title: isZh ? "不再匹配规则" : "No longer matched",
+      title: isZh ? "已移除的成员" : "Removed members",
       lines: run.groups.removed.map((change) => formatChange(change, locale)),
     },
     {
@@ -229,7 +229,7 @@ export function ModelSyncRunsSheet({
                               {section.lines.map((line) => (
                                 <li
                                   key={line}
-                                  className="break-all font-mono text-[11px] text-muted-foreground"
+                                  className="break-all font-mono text-xs text-muted-foreground"
                                 >
                                   {line}
                                 </li>

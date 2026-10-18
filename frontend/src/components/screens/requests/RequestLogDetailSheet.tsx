@@ -174,7 +174,6 @@ function AttemptGroup({
         <DetailRow
           label={titleForLocale(locale, "耗时", "Latency")}
           value={formatMs(attempt.duration_ms)}
-          mono
         />
       ) : null}
       {attempt.error_message?.trim() ? (
@@ -224,7 +223,7 @@ function JsonSection({
           {titleForLocale(locale, "无内容", "No content")}
         </p>
       ) : (
-        <pre className="max-h-[320px] overflow-auto rounded-lg border border-border/60 bg-muted/35 p-3 text-xs leading-5 text-foreground/86">
+        <pre className="max-h-[320px] overflow-auto rounded-md bg-muted/35 p-3 text-xs leading-5 text-foreground/86">
           <code>{formatted}</code>
         </pre>
       )}
@@ -426,7 +425,6 @@ export function RequestLogDetailSheet({
                   <DetailRow
                     label={titleForLocale(locale, "倍率", "Rate")}
                     value={`${record.rate_multiplier}x`}
-                    mono
                   />
                 )}
               </DetailBlock>
@@ -435,57 +433,47 @@ export function RequestLogDetailSheet({
                 <DetailRow
                   label={titleForLocale(locale, "费用", "Cost")}
                   value={formatMoney(record.total_cost_usd)}
-                  mono
                 />
                 {record.billing_mode === "non_tokens" ? (
                   <DetailRow
                     label={titleForLocale(locale, "图片数", "Images")}
                     value={formatCount(record.billing_units)}
-                    mono
                   />
                 ) : (
                   <>
                     <DetailRow
                       label={titleForLocale(locale, "总 Token", "Total tokens")}
                       value={formatCount(record.total_tokens)}
-                      mono
                     />
                     <DetailRow
                       label={titleForLocale(locale, "输入", "Input")}
                       value={formatCount(record.input_tokens)}
-                      mono
                     />
                     <DetailRow
                       label={titleForLocale(locale, "图片输入", "Image input")}
                       value={formatCount(record.image_input_tokens)}
-                      mono
                     />
                     <DetailRow
                       label={titleForLocale(locale, "输出", "Output")}
                       value={formatCount(record.output_tokens)}
-                      mono
                     />
                     <DetailRow
                       label={titleForLocale(locale, "缓存读取", "Cache read")}
                       value={formatCount(record.cache_read_input_tokens)}
-                      mono
                     />
                     <DetailRow
                       label={titleForLocale(locale, "缓存写入", "Cache write")}
                       value={formatCount(record.cache_write_input_tokens)}
-                      mono
                     />
                     <DetailRow
                       label={titleForLocale(locale, "首字", "First token")}
                       value={formatMs(record.first_token_latency_ms)}
-                      mono
                     />
                   </>
                 )}
                 <DetailRow
                   label={titleForLocale(locale, "耗时", "Latency")}
                   value={formatMs(record.latency_ms)}
-                  mono
                 />
               </DetailBlock>
 

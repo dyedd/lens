@@ -84,7 +84,7 @@ export function SettingsFieldRow({
         <div className="min-w-0 flex-1">
           <FieldLabel htmlFor={htmlFor}>{title}</FieldLabel>
           {description ? (
-            <FieldDescription className="text-[11px]">
+            <FieldDescription className="text-xs">
               {description}
             </FieldDescription>
           ) : null}

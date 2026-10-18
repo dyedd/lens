@@ -80,8 +80,8 @@ function Detail({ label, value }: { label: string; value: string }) {
 function DebugBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1.5">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <pre className="max-h-52 overflow-auto rounded-md border border-border/60 bg-background p-3 font-mono text-[11px] leading-5 whitespace-pre-wrap break-all text-foreground/80">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <pre className="max-h-52 overflow-auto rounded-md border border-border/60 bg-background p-3 font-mono text-xs leading-5 whitespace-pre-wrap break-all text-foreground/80">
         {value || "-"}
       </pre>
     </div>

@@ -149,14 +149,14 @@ export function RequestHeatmap({
               {monthLabels.map((month) => (
                 <div
                   key={month.key}
-                  className="text-[11px] leading-none text-muted-foreground"
+                  className="text-xs leading-none text-muted-foreground"
                   style={{ gridColumn: `${month.column} / span 4` }}
                 >
                   {month.label}
                 </div>
               ))}
             </div>
-            <div className="grid grid-rows-7 gap-1 text-[11px] leading-none text-muted-foreground">
+            <div className="grid grid-rows-7 gap-1 text-xs leading-none text-muted-foreground">
               <span className="flex items-center">
                 {isChineseLocale ? "一" : "M"}
               </span>
@@ -213,7 +213,7 @@ export function RequestHeatmap({
             </div>
           </div>
         </div>
-        <div className="mt-3 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+        <div className="mt-3 flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
           <span>{labels.low}</span>
           <span className="size-3 rounded-[3px] bg-muted-foreground/20 ring-1 ring-foreground/5" />
           <span className="size-3 rounded-[3px] bg-primary/20 ring-1 ring-foreground/5" />

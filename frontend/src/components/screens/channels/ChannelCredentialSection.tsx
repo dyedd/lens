@@ -85,7 +85,7 @@ function CredentialKeyCell({
         }}
         placeholder="sk-..."
         aria-label={isZh ? "API Key" : "API key"}
-        className="h-7 min-w-0 flex-1 pl-2 pr-12 font-mono text-[11px]"
+        className="h-7 min-w-0 flex-1 pl-2 pr-12 font-mono text-xs"
         spellCheck={false}
       />
       <div className="absolute right-1 flex items-center gap-0.5">
@@ -108,9 +108,9 @@ function CredentialKeyCell({
               }
             >
               {showKey ? (
-                <EyeOff className="size-3" />
+                <EyeOff className="size-3.5" />
               ) : (
-                <Eye className="size-3" />
+                <Eye className="size-3.5" />
               )}
             </Button>
           </TooltipTrigger>
@@ -135,9 +135,9 @@ function CredentialKeyCell({
               onClick={() => void copyKey(credential.api_key, credential.id)}
             >
               {copiedId === credential.id ? (
-                <Check className="size-3 text-emerald-500" />
+                <Check className="size-3.5 stroke-1 text-muted-foreground" />
               ) : (
-                <Copy className="size-3 stroke-1" />
+                <Copy className="size-3.5 stroke-1" />
               )}
             </Button>
           </TooltipTrigger>
@@ -288,7 +288,7 @@ export function ChannelCredentialSection({
         required={required && scopedKeys.length === 0}
         spellCheck={false}
         wrap="off"
-        className="h-24 resize-none overflow-auto whitespace-pre font-mono text-xs [field-sizing:fixed]"
+        className="h-24 resize-none overflow-auto whitespace-pre font-mono text-xs [field-sizing:fixed] placeholder:font-sans"
         placeholder={
           isZh
             ? "每行输入一个 API Key，按 Enter 添加；Shift+Enter 换行"
@@ -300,7 +300,7 @@ export function ChannelCredentialSection({
       />
       {scopedKeys.length > 0 ? (
         <div className="mt-2 space-y-1.5">
-          <div className="text-[11px] leading-4 text-muted-foreground">
+          <div className="text-xs leading-4 text-muted-foreground">
             {isZh
               ? `${scopedKeys.length} 个 API Key`
               : `${scopedKeys.length} keys`}
@@ -317,7 +317,7 @@ export function ChannelCredentialSection({
                   className="space-y-1.5 border-b border-border/40 px-2.5 py-1.5 text-xs last:border-b-0"
                 >
                   <div className="flex h-7 items-center gap-2">
-                    <span className="w-10 shrink-0 truncate text-[11px] text-muted-foreground tabular-nums">
+                    <span className="w-10 shrink-0 truncate text-xs text-muted-foreground tabular-nums">
                       {credentialLabel({ name: "" }, index, locale)}
                     </span>
                     <Input
@@ -353,7 +353,7 @@ export function ChannelCredentialSection({
                       >
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-background">
+                      <SelectContent>
                         <SelectItem value="none">
                           {isZh ? "不查询倍率" : "No rate"}
                         </SelectItem>
@@ -418,7 +418,7 @@ export function ChannelCredentialSection({
                         {credential.rate_last_error ? (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="min-w-0 truncate text-[11px] text-destructive">
+                              <span className="min-w-0 truncate text-xs text-destructive">
                                 {credential.rate_last_error}
                               </span>
                             </TooltipTrigger>
@@ -427,7 +427,7 @@ export function ChannelCredentialSection({
                             </TooltipContent>
                           </Tooltip>
                         ) : credential.rate_multiplier === null ? (
-                          <span className="truncate text-[11px] text-muted-foreground">
+                          <span className="truncate text-xs text-muted-foreground">
                             {canSyncRates
                               ? isZh
                                 ? "未同步"

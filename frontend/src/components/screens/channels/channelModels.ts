@@ -326,7 +326,6 @@ export const emptyProtocolConfig = (
   credential_ids: [...credentialIds],
   protocols: [],
   models: [],
-  sync_targets: [],
 });
 
 /** Creates a channel editor form with one URL and protocol config. */
@@ -348,6 +347,9 @@ export const emptyForm = (): FormState => {
     protocolConfigs: [emptyProtocolConfig(baseUrlId)],
     proxy_mode: "inherit",
     channel_proxy: "",
+    model_sync_include_rule_ids: [],
+    model_sync_exclude_rule_ids: [],
+    model_name_prefixes: [],
     headersJson: "",
     paramsJson: "",
   };

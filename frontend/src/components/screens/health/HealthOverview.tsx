@@ -113,14 +113,14 @@ export function HealthOverview({
             {HEALTH_HOURS.map((option) => (
               <DropdownMenuItem
                 key={option.value}
-                className="h-6 gap-2 px-2 py-0 text-[10px]"
+                className="h-6 gap-2 px-2 py-0 text-xs"
                 onSelect={() => onHoursChange(option.value)}
               >
                 <span className="flex-1 truncate">
                   {locale === "zh-CN" ? option.zh : option.en}
                 </span>
                 {hours === option.value ? (
-                  <Check className="size-3 text-muted-foreground" />
+                  <Check className="size-3.5 text-muted-foreground" />
                 ) : null}
               </DropdownMenuItem>
             ))}
@@ -144,7 +144,7 @@ export function HealthOverview({
                   : titleForLocale(locale, "搜索渠道...", "Search channels...")
               }
               onChange={(event) => onSearchChange(event.target.value)}
-              className="bg-background pl-8"
+              className="pl-8"
             />
           </div>
 
@@ -158,7 +158,7 @@ export function HealthOverview({
                   {titleForLocale(locale, "筛选", "Filter")}
                 </span>
                 {activeFilterCount ? (
-                  <span className="text-[10px] tabular-nums">
+                  <span className="text-xs tabular-nums">
                     {activeFilterCount}
                   </span>
                 ) : null}
@@ -167,14 +167,14 @@ export function HealthOverview({
             <PopoverContent align="start" className="w-[240px] p-2">
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {titleForLocale(locale, "维度", "Dimension")}
                   </p>
                   <Select
                     value={mode}
                     onValueChange={(value) => onModeChange(value as HealthMode)}
                   >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

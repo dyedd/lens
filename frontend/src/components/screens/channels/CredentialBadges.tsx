@@ -45,7 +45,7 @@ export function CredentialBadges({ keys, totalCount, details, locale }: Props) {
             ))
           )}
           {!coversAllKeys && hiddenCount > 0 ? (
-            <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
               +{hiddenCount}
             </span>
           ) : null}

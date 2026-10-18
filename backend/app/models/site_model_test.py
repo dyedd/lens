@@ -4,7 +4,7 @@ from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
 from .sites import SiteCredentialInput, require_non_empty_text
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import ContextWindow, StrictBaseModel, validate_regex_pattern
+from .validation import ContextWindow, StrictBaseModel
 
 
 class SiteModelFetchRequest(StrictBaseModel):
@@ -13,15 +13,12 @@ class SiteModelFetchRequest(StrictBaseModel):
     headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
-    match_regex: str = ""
     credentials: list[SiteCredentialInput] = Field(default_factory=list, max_length=20)
     credential_ids: list[str] = Field(default_factory=list, max_length=20)
 
     _canonicalize_base_url = field_validator("base_url", mode="before")(
         canonicalize_base_url
     )
-
-    validate_match_regex = field_validator("match_regex")(validate_regex_pattern)
 
 
 class SiteModelFetchItem(StrictBaseModel):

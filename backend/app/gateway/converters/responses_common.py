@@ -126,6 +126,16 @@ def encode_reasoning_item(item: Mapping[str, Any]) -> str:
     return _encode_standard_reasoning_item(_standard_reasoning_item(item))
 
 
+def is_reasoning_envelope(value: Any) -> bool:
+    """Return whether a signature carries a Lens Responses reasoning item.
+
+    Anthropic rejects a thinking block whose signature it did not mint, so a
+    client history that passed through a Responses channel must be cleaned
+    before it reaches an Anthropic upstream.
+    """
+    return isinstance(value, str) and value.startswith(_REASONING_ENVELOPE_PREFIX)
+
+
 def decode_reasoning_item(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, str) or not value.startswith(_REASONING_ENVELOPE_PREFIX):
         return None

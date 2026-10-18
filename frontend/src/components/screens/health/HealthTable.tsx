@@ -178,15 +178,15 @@ export function HealthTable({
             <TableCell>
               <Badge
                 variant="secondary"
-                className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground"
+                className="h-5 px-1.5 text-xs font-normal text-muted-foreground"
               >
                 {healthTierLabel(item.tier, locale)}
               </Badge>
             </TableCell>
-            <TableCell className="font-mono tabular-nums">
+            <TableCell className="tabular-nums">
               {formatSuccessRate(item.success_count, item.total_count)}
             </TableCell>
-            <TableCell className="font-mono tabular-nums text-muted-foreground">
+            <TableCell className="tabular-nums text-muted-foreground">
               {item.total_count.toLocaleString()}
             </TableCell>
             <TableCell>

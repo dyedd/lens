@@ -91,7 +91,7 @@ export function RequestsScreen() {
               type="button"
               variant="outline"
               size="icon-lg"
-              className="fixed right-4 bottom-4 z-40 rounded-full shadow-sm sm:right-6 sm:bottom-6"
+              className="fixed right-4 bottom-4 z-40 rounded-full sm:right-6 sm:bottom-6"
               onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             >
               <ArrowUp />
