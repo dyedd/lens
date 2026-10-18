@@ -19,29 +19,38 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     conn = op.get_bind()
-    model_rows = conn.execute(
-        sa.text(
-            "SELECT protocol_config_id, credential_id, protocol, model_name "
-            "FROM site_discovered_models "
-            # Old manual rows may have no protocol; they cannot be routed or
-            # synced, and site_protocol_config_sync_targets.protocol is NOT NULL.
-            "WHERE protocol IS NOT NULL"
-        )
-    ).mappings()
+    model_rows = list(
+        conn.execute(
+            sa.text(
+                "SELECT protocol_config_id, credential_id, protocol, model_name "
+                "FROM site_discovered_models "
+                # Old manual rows may have no protocol; they cannot be routed or
+                # synced, and site_protocol_config_sync_targets.protocol is NOT NULL.
+                "WHERE protocol IS NOT NULL"
+            )
+        ).mappings()
+    )
     for row in model_rows:
+        params = {"id": str(uuid.uuid4()), **dict(row)}
+        exists = conn.execute(
+            sa.text(
+                "SELECT 1 FROM site_protocol_config_sync_targets "
+                "WHERE protocol_config_id = :protocol_config_id "
+                "AND credential_id = :credential_id "
+                "AND protocol = :protocol "
+                "AND model_name = :model_name"
+            ),
+            params,
+        ).first()
+        if exists is not None:
+            continue
         conn.execute(
             sa.text(
                 "INSERT INTO site_protocol_config_sync_targets "
                 "(id, protocol_config_id, credential_id, protocol, model_name) "
-                "SELECT :id, :protocol_config_id, :credential_id, :protocol, :model_name "
-                "WHERE NOT EXISTS ("
-                "SELECT 1 FROM site_protocol_config_sync_targets AS target "
-                "WHERE target.protocol_config_id = :protocol_config_id "
-                "AND target.credential_id = :credential_id "
-                "AND target.protocol = :protocol "
-                "AND target.model_name = :model_name)"
+                "VALUES (:id, :protocol_config_id, :credential_id, :protocol, :model_name)"
             ),
-            {"id": str(uuid.uuid4()), **dict(row)},
+            params,
         )
     with op.batch_alter_table("site_discovered_models") as batch:
         batch.drop_constraint("ck_site_discovered_models_source", type_="check")
