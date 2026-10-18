@@ -354,7 +354,6 @@ export function foldGroupMembers(
         rate_source: evaluatedItem.rate_source,
         context_window: evaluatedItem.context_window,
         context_window_source: evaluatedItem.context_window_source,
-        protocols: [],
         subItems: [],
         source: evaluatedItem.source,
         enabled_item_count: 0,
@@ -375,12 +374,6 @@ export function foldGroupMembers(
     if (evaluatedItem.state === "invalid") member.invalid_item_count += 1;
     if (evaluatedItem.state === "unavailable") {
       member.unavailable_item_count += 1;
-    }
-    if (
-      evaluatedItem.protocol &&
-      !member.protocols.includes(evaluatedItem.protocol)
-    ) {
-      member.protocols.push(evaluatedItem.protocol);
     }
   }
 

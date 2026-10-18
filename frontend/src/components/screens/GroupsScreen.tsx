@@ -146,15 +146,12 @@ export function GroupsScreen() {
         activeFilterCount={filters.activeFilterCount}
         familyOptions={filters.familyOptions}
         familyFilter={filters.effectiveFamilyFilter}
-        protocolOptions={filters.protocolOptions}
-        protocolFilter={filters.effectiveProtocolFilter}
         busyId={commands.busyId}
         testingModel={modelTest.testingModel}
         onSearchChange={filters.setSearch}
         onStrategyChange={filters.setStrategyFilter}
         onSortChange={filters.setSortBy}
         onFamilyChange={filters.setFamilyFilter}
-        onProtocolChange={filters.setProtocolFilter}
         onReset={filters.resetFilters}
         onRefresh={() =>
           void queries.queryClient.invalidateQueries({ queryKey: ["groups"] })

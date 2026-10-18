@@ -42,7 +42,6 @@ import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import { useRegexRules } from "@/hooks/useRegexRules";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import { protocolLabel, protocolOptions } from "@/lib/protocols";
 import { compileRegexRulePattern } from "@/lib/regexRules";
 import { AddChannelModelsDialog } from "./AddChannelModelsDialog";
 import { ChannelModelsTable } from "./ChannelModelsTable";
@@ -53,8 +52,7 @@ import type {
 } from "./channelTypes";
 import { ProtocolDropdown } from "./ProtocolDropdown";
 
-type ProtocolFilter = "all" | ProtocolKind;
-type ModelSort = "name-asc" | "name-desc" | "status-desc" | "protocol-asc";
+type ModelSort = "name-asc" | "name-desc" | "status-desc";
 
 type Props = {
   open: boolean;
@@ -123,10 +121,11 @@ function ChannelModelsBody({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<ModelStatusFilter>(initialStatusFilter);
-  const [protocolFilter, setProtocolFilter] = useState<ProtocolFilter>("all");
   const [sortBy, setSortBy] = useState<ModelSort>("name-asc");
   const [newOpen, setNewOpen] = useState(false);
-  const [bulkProtocols, setBulkProtocols] = useState<ProtocolKind[]>(["auto"]);
+  const [bulkProtocols, setBulkProtocols] = useState<ProtocolKind[]>([
+    "openai_chat",
+  ]);
   const [removeRequest, setRemoveRequest] = useState<string[] | null>(null);
   const [excludeOnRemove, setExcludeOnRemove] = useState(true);
 
@@ -141,20 +140,10 @@ function ChannelModelsBody({
       if (statusFilter === "enabled" && !model.enabled) return false;
       if (statusFilter === "disabled" && model.enabled) return false;
       if (statusFilter === "missing" && !model.upstreamMissing) return false;
-      if (
-        protocolFilter !== "all" &&
-        !model.protocols.includes(protocolFilter)
-      ) {
-        return false;
-      }
       if (!keyword) return true;
       return (
         model.modelName.toLowerCase().includes(keyword) ||
-        (hasMultipleBaseUrls &&
-          model.baseUrl.toLowerCase().includes(keyword)) ||
-        model.protocols.some((protocol) =>
-          protocolLabel(protocol, locale).toLowerCase().includes(keyword),
-        )
+        (hasMultipleBaseUrls && model.baseUrl.toLowerCase().includes(keyword))
       );
     });
     return filtered.sort((left, right) => {
@@ -167,29 +156,9 @@ function ChannelModelsBody({
           left.modelName.localeCompare(right.modelName, locale)
         );
       }
-      if (sortBy === "protocol-asc") {
-        const leftLabel = left.protocols
-          .map((protocol) => protocolLabel(protocol, locale))
-          .join(",");
-        const rightLabel = right.protocols
-          .map((protocol) => protocolLabel(protocol, locale))
-          .join(",");
-        return (
-          leftLabel.localeCompare(rightLabel, locale) ||
-          left.modelName.localeCompare(right.modelName, locale)
-        );
-      }
       return left.modelName.localeCompare(right.modelName, locale);
     });
-  }, [
-    hasMultipleBaseUrls,
-    locale,
-    models,
-    protocolFilter,
-    query,
-    sortBy,
-    statusFilter,
-  ]);
+  }, [hasMultipleBaseUrls, locale, models, query, sortBy, statusFilter]);
 
   const selection = useRowSelection(visibleModels, modelKey);
   const selectedKeys = useMemo(
@@ -197,8 +166,7 @@ function ChannelModelsBody({
     [selection.selectedRows],
   );
   const selectedCount = selectedKeys.length;
-  const activeFilterCount =
-    Number(statusFilter !== "all") + Number(protocolFilter !== "all");
+  const activeFilterCount = Number(statusFilter !== "all");
   const sortOptions = modelSortOptions(locale);
   const libraryRules = useRegexRules().rules;
   const onboardingPatterns = useMemo(
@@ -331,34 +299,6 @@ function ChannelModelsBody({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1">
-                  <p className="px-1 text-xs text-muted-foreground">
-                    {locale === "zh-CN" ? "协议" : "Protocol"}
-                  </p>
-                  <Select
-                    value={protocolFilter}
-                    onValueChange={(value) =>
-                      setProtocolFilter(value as ProtocolFilter)
-                    }
-                  >
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="z-[100]">
-                      <SelectItem value="all">
-                        {locale === "zh-CN" ? "全部协议" : "All protocols"}
-                      </SelectItem>
-                      <SelectItem value="auto">
-                        {protocolLabel("auto", locale)}
-                      </SelectItem>
-                      {protocolOptions(locale).map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
                 {activeFilterCount ? (
                   <div className="flex justify-end border-t border-border/60 pt-2">
                     <Button
@@ -366,10 +306,7 @@ function ChannelModelsBody({
                       size="sm"
                       variant="ghost"
                       className="h-7 px-2 text-xs shadow-none"
-                      onClick={() => {
-                        setStatusFilter("all");
-                        setProtocolFilter("all");
-                      }}
+                      onClick={() => setStatusFilter("all")}
                     >
                       {locale === "zh-CN" ? "重置" : "Reset"}
                     </Button>
@@ -563,10 +500,6 @@ function modelSortOptions(
     {
       value: "status-desc",
       label: locale === "zh-CN" ? "启用优先" : "Enabled first",
-    },
-    {
-      value: "protocol-asc",
-      label: locale === "zh-CN" ? "协议升序" : "Protocol A-Z",
     },
   ];
 }

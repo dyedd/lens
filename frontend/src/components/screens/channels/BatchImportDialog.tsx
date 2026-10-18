@@ -24,7 +24,6 @@ import {
 import { Textarea } from "@/components/ui/Textarea";
 import type { ForeignSiteFormat } from "@/lib/api/foreignImports";
 import type { SiteBatchImportResult } from "@/lib/api/sites";
-import { protocolLabel } from "@/lib/protocols";
 import { importReasonLabel, importStatusLabel } from "./channelBatchImport";
 import type { Locale } from "./channelTypes";
 
@@ -430,13 +429,6 @@ export function BatchImportDialog({
                                   <span className="truncate text-xs text-muted-foreground">
                                     {site.base_urls[0] ?? ""}
                                   </span>
-                                </span>
-                                <span className="hidden shrink-0 items-center gap-1 sm:flex">
-                                  {site.protocols.map((protocol) => (
-                                    <Badge key={protocol} variant="secondary">
-                                      {protocolLabel(protocol, locale)}
-                                    </Badge>
-                                  ))}
                                 </span>
                               </label>
                             );

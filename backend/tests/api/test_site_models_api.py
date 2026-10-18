@@ -90,7 +90,7 @@ def test_fetch_site_models_uses_selected_credentials(
             "gemini",
             "/v1beta/models",
             {"key": "upstream-secret", "pageSize": "1000"},
-            {},
+            {"x-goog-api-key": "upstream-secret"},
             {
                 "models": [
                     {"name": "models/model-a", "inputTokenLimit": 200_000},
@@ -279,14 +279,26 @@ def test_test_site_model_returns_sanitized_probe_debug(
     assert "upstream-secret" not in response.text
 
 
-def test_test_gemini_probe_debug_hides_query_key(
+def test_test_gemini_probe_debug_hides_api_key(
     client, admin_headers, app_state, monkeypatch
 ) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["key"] == "upstream-secret"
+        assert request.url.path.endswith("/v1beta/interactions")
+        assert request.headers["x-goog-api-key"] == "upstream-secret"
         return httpx.Response(
             200,
-            json={"candidates": [{"content": {"parts": [{"text": "OK"}]}}]},
+            json={
+                "id": "interaction_1",
+                "object": "interaction",
+                "model": "test-model",
+                "status": "completed",
+                "steps": [
+                    {
+                        "type": "model_output",
+                        "content": [{"type": "text", "text": "OK"}],
+                    }
+                ],
+            },
             request=request,
         )
 
@@ -305,9 +317,7 @@ def test_test_gemini_probe_debug_hides_query_key(
         run_async(upstream_client.aclose())
 
     assert response.status_code == 200
-    assert response.json()["debug"]["request"]["path"] == (
-        "/v1beta/models/test-model:generateContent"
-    )
+    assert response.json()["debug"]["request"]["path"] == "/v1beta/interactions"
     assert "upstream-secret" not in response.text
 
 
@@ -742,15 +752,15 @@ def test_channel_model_sync_retires_members_missing_past_the_grace_period(
     )
     payload["protocols"][0]["models"] = [
         _model("manual-only"),
-        _model("gpt-old", protocol="auto", upstream_missing=True),
+        _model("gpt-old", protocol="openai_chat", upstream_missing=True),
         _model(
             "gpt-old",
             credential_id="cred-b",
-            protocol="auto",
+            protocol="openai_chat",
             upstream_missing=True,
         ),
-        _model("gpt-new", protocol="auto"),
-        _model("gpt-new", credential_id="cred-b", protocol="auto"),
+        _model("gpt-new", protocol="openai_chat"),
+        _model("gpt-new", credential_id="cred-b", protocol="openai_chat"),
     ]
     saved = client.put(
         f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
@@ -942,8 +952,8 @@ def test_channel_model_sync_onboards_only_rule_matched_models(
         ).add(model["protocol"])
     assert protocols_by_model == {
         ("cred-a", "manual-only"): {"openai_chat"},
-        ("cred-a", "new-model"): {"auto"},
-        ("cred-b", "new-model"): {"auto"},
+        ("cred-a", "new-model"): {"openai_chat"},
+        ("cred-b", "new-model"): {"openai_chat"},
     }
 
 

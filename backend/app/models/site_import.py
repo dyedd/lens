@@ -37,12 +37,22 @@ class SiteImportModelInput(StrictBaseModel):
     protocol: ProtocolKind | None = None
     enabled: bool = True
 
+    @field_validator("protocol", mode="before")
+    @classmethod
+    def _normalize_legacy_protocol(cls, value: object) -> object:
+        return ProtocolKind.OPENAI_CHAT if value == "auto" else value
+
 
 class SiteImportProtocolInput(StrictBaseModel):
-    protocol: ProtocolKind = ProtocolKind.AUTO
+    protocol: ProtocolKind = ProtocolKind.OPENAI_CHAT
     base_url_ref: str
     credential_refs: list[str] = Field(min_length=1)
     models: list[SiteImportModelInput] = Field(default_factory=list)
+
+    @field_validator("protocol", mode="before")
+    @classmethod
+    def _normalize_legacy_protocol(cls, value: object) -> object:
+        return ProtocolKind.OPENAI_CHAT if value == "auto" else value
 
     _validate_base_url_ref = field_validator("base_url_ref")(require_non_empty_text)
     _canonicalize_credential_refs = field_validator("credential_refs")(

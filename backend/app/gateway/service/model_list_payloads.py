@@ -18,9 +18,7 @@ OPENAI_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
     }
 )
 
-ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(
-    protocol for protocol in ProtocolKind if protocol != ProtocolKind.AUTO
-)
+ALL_MODEL_LIST_PROTOCOLS: frozenset[ProtocolKind] = frozenset(ProtocolKind)
 
 
 def build_openai_models_payload(
@@ -56,10 +54,7 @@ def build_gemini_models_payload(
                 "baseModelId": name,
                 "version": "001",
                 "displayName": name,
-                "supportedGenerationMethods": [
-                    "generateContent",
-                    "streamGenerateContent",
-                ],
+                "supportedGenerationMethods": ["interactions"],
             }
             for name in names
         ]

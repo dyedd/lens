@@ -16,9 +16,7 @@ def body_has_multimodal_content(
             {"image_url", "video_url", "input_audio", "file"}
         ),
         ProtocolKind.OPENAI_RESPONSES: frozenset({"input_image", "input_file"}),
-        ProtocolKind.GEMINI: frozenset(
-            {"inlineData", "inline_data", "fileData", "file_data"}
-        ),
+        ProtocolKind.GEMINI: frozenset({"image", "document", "audio", "video"}),
     }.get(protocol)
     if not markers:
         return False

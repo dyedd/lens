@@ -27,6 +27,7 @@ __all__ = [
     "convert_request",
     "convert_response",
     "convert_stream_iterator",
+    "needs_protocol_conversion",
     "repair_chat_tool_call_stream",
     "strip_foreign_reasoning",
 ]
@@ -66,13 +67,13 @@ def _spokes() -> dict[ProtocolKind, Spoke]:
         parse_chat_response,
     )
     from .spoke_chat_stream import parse_chat_stream, serialize_chat_stream
-    from .spoke_gemini import (
-        build_gemini_request,
-        build_gemini_response,
-        parse_gemini_request,
-        parse_gemini_response,
-        parse_gemini_stream,
-        serialize_gemini_stream,
+    from .spoke_gemini_interactions import (
+        build_gemini_interaction_request,
+        build_gemini_interaction_response,
+        parse_gemini_interaction_request,
+        parse_gemini_interaction_response,
+        parse_gemini_interaction_stream,
+        serialize_gemini_interaction_stream,
     )
     from .spoke_responses import (
         build_responses_request,
@@ -109,12 +110,12 @@ def _spokes() -> dict[ProtocolKind, Spoke]:
             build_stream=serialize_anthropic_stream,
         ),
         ProtocolKind.GEMINI: Spoke(
-            parse_request=parse_gemini_request,
-            build_request=build_gemini_request,
-            parse_response=parse_gemini_response,
-            build_response=build_gemini_response,
-            parse_stream=parse_gemini_stream,
-            build_stream=serialize_gemini_stream,
+            parse_request=parse_gemini_interaction_request,
+            build_request=build_gemini_interaction_request,
+            parse_response=parse_gemini_interaction_response,
+            build_response=build_gemini_interaction_response,
+            parse_stream=parse_gemini_interaction_stream,
+            build_stream=serialize_gemini_interaction_stream,
         ),
     }
 
@@ -127,6 +128,31 @@ def spoke_for(protocol: ProtocolKind) -> Spoke:
     if spoke is None:
         raise ValueError(f"Unsupported conversion protocol: {protocol.value}")
     return spoke
+
+
+def needs_protocol_conversion(
+    client_protocol: ProtocolKind, channel_protocol: ProtocolKind
+) -> bool:
+    """Whether a request must pass through the conversion layer."""
+    return client_protocol != channel_protocol
+
+
+def _build_upstream_request(
+    channel_protocol: ProtocolKind, request: Any
+) -> dict[str, Any]:
+    return spoke_for(channel_protocol).build_request(request)
+
+
+def _parse_upstream_response(
+    channel_protocol: ProtocolKind, body: dict[str, Any]
+) -> Any:
+    return spoke_for(channel_protocol).parse_response(body)
+
+
+def _parse_upstream_stream(
+    channel_protocol: ProtocolKind, raw_iterator: AsyncIterator[bytes]
+) -> AsyncIterator[Any]:
+    return spoke_for(channel_protocol).parse_stream(raw_iterator)
 
 
 def _check_reachable(
@@ -152,7 +178,7 @@ def convert_request(
     request.replay_reasoning = preserve_reasoning
     if target_model:
         request.model = target_model
-    result = spoke_for(channel_protocol).build_request(request)
+    result = _build_upstream_request(channel_protocol, request)
     if target_model:
         result["model"] = target_model
     # Upstream transport reads this flag to pick the streaming endpoint, so it
@@ -220,7 +246,7 @@ def convert_response(
     """Convert an upstream response into the client protocol."""
     _check_reachable(client_protocol, channel_protocol)
     body = json.loads(response_body)
-    response = spoke_for(channel_protocol).parse_response(body)
+    response = _parse_upstream_response(channel_protocol, body)
     if not response.model:
         response.model = original_model
     converted = spoke_for(client_protocol).build_response(response)
@@ -238,7 +264,7 @@ async def convert_stream_iterator(
     """Convert an upstream byte stream into the client protocol stream."""
     _check_reachable(client_protocol, channel_protocol)
     del include_usage
-    events = spoke_for(channel_protocol).parse_stream(raw_iterator)
+    events = _parse_upstream_stream(channel_protocol, raw_iterator)
     stream = spoke_for(client_protocol).build_stream(events, original_model)
     async for chunk in stream:
         yield chunk

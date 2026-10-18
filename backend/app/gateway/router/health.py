@@ -4,7 +4,6 @@ from collections.abc import Iterable
 from time import monotonic
 
 from ...models.channels import ChannelConfig
-from ...models.protocols import ProtocolKind
 from ...models.routing import ChannelCredentialHealth, ChannelHealth, ModelHealth
 from .cooldown import (
     CooldownLedger,
@@ -307,15 +306,14 @@ def _target_credential_key(target: RouteTarget) -> CredentialKey:
 
 
 def _fault_protocols(channel: ChannelConfig) -> tuple[str, ...]:
-    if channel.protocol != ProtocolKind.AUTO:
-        return ("",)
-    return ("", *(protocol.value for protocol in ProtocolKind))
+    del channel
+    return ("",)
 
 
 def _most_restrictive_state(
     states: Iterable[CooldownState | None],
 ) -> CooldownState | None:
-    """Admin views show an auto channel by its most restrictive client protocol."""
+    """Admin views show a channel by its most restrictive client protocol."""
     return max(
         (state for state in states if state is not None),
         key=lambda state: (state.cooled_until, state.last_failure_at),

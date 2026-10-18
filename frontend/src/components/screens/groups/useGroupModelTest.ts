@@ -8,7 +8,6 @@ import type {
   ModelGroupItem,
   ModelGroupModelTestPayload,
 } from "@/lib/api/groups";
-import { PROTOCOL_LIST } from "@/lib/protocols";
 import type { GroupRow } from "./groupTypes";
 import {
   credentialDisplayLabel,
@@ -30,7 +29,7 @@ export function useGroupModelTest(locale: "zh-CN" | "en-US") {
     prompts,
     prepareRequest: (target, protocol, prompt) => {
       const { item } = target;
-      if (item.protocol !== "auto" && item.protocol !== protocol) return null;
+      if (item.protocol !== protocol) return null;
       const payload: ModelGroupModelTestPayload = {
         channel_id: item.channel_id,
         credential_id: item.credential_id,
@@ -63,7 +62,7 @@ export function useGroupModelTest(locale: "zh-CN" | "en-US") {
         target: { groupId: group.id, item, credentialName },
         modelName: item.model_name,
         credentialName,
-        protocols: item.protocol === "auto" ? PROTOCOL_LIST : [item.protocol],
+        protocols: [item.protocol],
       });
     }
     setTargetGroup(group);

@@ -1,7 +1,6 @@
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site } from "@/lib/api/sites";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
-import { PROTOCOL_LIST } from "@/lib/protocols";
 import { protocolConfigSelectedCredentialIds } from "./channelForm";
 import { formBaseUrlsForPayload } from "./channelFormConversion";
 import type {
@@ -118,7 +117,6 @@ export function modelSupportedProtocols(
   model: Pick<FormModel, "protocols"> | null | undefined,
 ): ProtocolKind[] {
   if (model?.protocols && model.protocols.length > 0) {
-    if (model.protocols.includes("auto")) return PROTOCOL_LIST;
     return Array.from(new Set(model.protocols));
   }
   return [];
@@ -349,7 +347,6 @@ export const emptyForm = (): FormState => {
     channel_proxy: "",
     model_sync_include_rule_ids: [],
     model_sync_exclude_rule_ids: [],
-    model_name_prefixes: [],
     headersJson: "",
     paramsJson: "",
   };
