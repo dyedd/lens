@@ -68,21 +68,6 @@ function remapModelsToCredentials(
   );
 }
 
-function remapSyncTargets(
-  targets: FormProtocolConfig["sync_targets"],
-  credentialIds: string[],
-) {
-  if (!targets.length || !credentialIds.length) return [];
-  const unique = new Map<string, FormProtocolConfig["sync_targets"][number]>();
-  for (const target of targets) {
-    const key = `${target.protocol}:${target.model_name}`;
-    if (!unique.has(key)) unique.set(key, target);
-  }
-  return Array.from(unique.values()).flatMap((target) =>
-    credentialIds.map((credential_id) => ({ ...target, credential_id })),
-  );
-}
-
 /** Rebuilds one protocol config per base URL with the keys it can use. */
 export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
   const urls = form.base_urls.filter((item) => item.url.trim());
@@ -116,11 +101,6 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
         ? protocols
         : (existing?.protocols ?? source?.protocols ?? []),
       models: coalesceFormModels(models),
-      sync_targets: existing
-        ? existing.sync_targets.filter((target) =>
-            credentialIds.includes(target.credential_id),
-          )
-        : remapSyncTargets(source?.sync_targets ?? [], credentialIds),
     };
   });
 }
@@ -186,10 +166,6 @@ export function toForm(site: Site): FormState {
       credential_ids: credentialIds,
       protocols: protocolConfig.protocols,
       models,
-      sync_targets: protocolConfig.sync_targets.map((target) => ({
-        ...target,
-        credential_id: persistedCredentialId(target.credential_id),
-      })),
     };
   });
   const draft: FormState = {
@@ -201,6 +177,9 @@ export function toForm(site: Site): FormState {
     protocolConfigs,
     proxy_mode: site.proxy_mode,
     channel_proxy: site.channel_proxy,
+    model_sync_include_rule_ids: site.model_sync_include_rule_ids,
+    model_sync_exclude_rule_ids: site.model_sync_exclude_rule_ids,
+    model_name_prefixes: site.model_name_prefixes,
     headersJson: headerDraftsToJson(headerRulesToDraft(site.headers)),
     paramsJson: paramDraftsToJson(
       paramOverrideRulesToDraft(site.param_override),
@@ -256,6 +235,9 @@ export function toPayload(form: FormState): SitePayload {
     param_override: paramOverrideDraftToRules(
       paramDraftsFromJson(rebuilt.paramsJson) ?? [],
     ),
+    model_sync_include_rule_ids: rebuilt.model_sync_include_rule_ids,
+    model_sync_exclude_rule_ids: rebuilt.model_sync_exclude_rule_ids,
+    model_name_prefixes: rebuilt.model_name_prefixes,
     base_urls: baseUrls,
     credentials: credentials.map((item, index) => ({
       id: persistedCredentialId(item.id),
@@ -301,47 +283,12 @@ export function toPayload(form: FormState): SitePayload {
           }));
         })
         .filter((model) => model.credential_id && model.model_name);
-      const materializedModelKeys = new Set(
-        models.map((model) => `${model.credential_id}:${model.model_name}`),
-      );
-      const syncTargets = new Map<
-        string,
-        { credential_id: string; protocol: ProtocolKind; model_name: string }
-      >();
-      for (const target of protocolConfig.sync_targets) {
-        const credential_id = persistedCredentialId(target.credential_id);
-        const model_name = target.model_name.trim();
-        if (
-          !credential_id ||
-          !model_name ||
-          !selectedCredentialIds.includes(credential_id) ||
-          materializedModelKeys.has(`${credential_id}:${model_name}`)
-        ) {
-          continue;
-        }
-        syncTargets.set(`${credential_id}:${target.protocol}:${model_name}`, {
-          credential_id,
-          protocol: target.protocol,
-          model_name,
-        });
-      }
-      for (const model of models) {
-        syncTargets.set(
-          `${model.credential_id}:${model.protocol}:${model.model_name}`,
-          {
-            credential_id: model.credential_id,
-            protocol: model.protocol,
-            model_name: model.model_name,
-          },
-        );
-      }
       return [
         {
           id: protocolConfig.id,
           base_url_id: protocolConfig.base_url_id,
           protocols: protocolConfigProtocols,
           models,
-          sync_targets: Array.from(syncTargets.values()),
         },
       ];
     }),

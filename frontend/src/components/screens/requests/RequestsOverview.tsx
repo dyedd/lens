@@ -194,7 +194,7 @@ export function RequestsOverview({
                 "Search model, channel, key, or error...",
               )}
               onChange={(event) => onKeywordChange(event.target.value)}
-              className="bg-background pl-8"
+              className="pl-8"
             />
           </div>
 
@@ -208,7 +208,7 @@ export function RequestsOverview({
                   {titleForLocale(locale, "筛选", "Filter")}
                 </span>
                 {activeFilterCount ? (
-                  <span className="text-[10px] tabular-nums">
+                  <span className="text-xs tabular-nums">
                     {activeFilterCount}
                   </span>
                 ) : null}
@@ -217,7 +217,7 @@ export function RequestsOverview({
             <PopoverContent align="start" className="w-[260px] p-2">
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {titleForLocale(locale, "状态", "Status")}
                   </p>
                   <Select
@@ -226,7 +226,7 @@ export function RequestsOverview({
                       onStatusChange(value as StatusFilter)
                     }
                   >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -249,7 +249,7 @@ export function RequestsOverview({
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {titleForLocale(locale, "协议", "Protocol")}
                   </p>
                   <Select
@@ -258,7 +258,7 @@ export function RequestsOverview({
                       onProtocolChange(value as "all" | ProtocolKind)
                     }
                   >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -274,11 +274,11 @@ export function RequestsOverview({
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {titleForLocale(locale, "渠道", "Channel")}
                   </p>
                   <Select value={channelFilter} onValueChange={onChannelChange}>
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -295,14 +295,14 @@ export function RequestsOverview({
                 </div>
                 {showGatewayKeyFilter ? (
                   <div className="space-y-1">
-                    <p className="px-1 text-[10px] text-muted-foreground">
+                    <p className="px-1 text-xs text-muted-foreground">
                       {titleForLocale(locale, "网关密钥", "Gateway key")}
                     </p>
                     <Select
                       value={selectedGatewayKeyId}
                       onValueChange={onGatewayKeyChange}
                     >
-                      <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -324,14 +324,14 @@ export function RequestsOverview({
                 ) : null}
                 {familyOptions.length ? (
                   <div className="space-y-1">
-                    <p className="px-1 text-[10px] text-muted-foreground">
+                    <p className="px-1 text-xs text-muted-foreground">
                       {titleForLocale(locale, "厂商", "Family")}
                     </p>
                     <Select
                       value={effectiveModelPrefix}
                       onValueChange={onModelPrefixChange}
                     >
-                      <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -379,12 +379,12 @@ export function RequestsOverview({
               {sortOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-[10px]"
+                  className="h-6 gap-2 px-2 py-0 text-xs"
                   onSelect={() => onSortChange(option.value)}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
                   {sortMode === option.value ? (
-                    <Check className="size-3 text-muted-foreground" />
+                    <Check className="size-3.5 text-muted-foreground" />
                   ) : null}
                 </DropdownMenuItem>
               ))}

@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
+import type { ModelGroupPlacementResponse } from "@/lib/api/groups";
 import type { ChannelModelSyncResponse, Site } from "@/lib/api/sites";
 import { toPayload } from "./channelFormConversion";
 import type { FormState, Locale } from "./channelTypes";
@@ -13,6 +14,10 @@ type ChannelEditor = {
   setIsDialogOpen: (value: boolean) => void;
   applyPreparedForm: (form: FormState) => void;
   validateSiteForm: () => boolean;
+  pendingGroupPlacement: { group_id: string; model_names: string[] } | null;
+  setPendingGroupPlacement: (
+    value: { group_id: string; model_names: string[] } | null,
+  ) => void;
 };
 
 function countSyncedNames(
@@ -122,6 +127,43 @@ export function useChannelSave({
     }
   }
 
+  /** Joins imported models into the group chosen in the add dialog. */
+  async function placePendingModels() {
+    const placement = editor.pendingGroupPlacement;
+    if (!placement) return;
+    editor.setPendingGroupPlacement(null);
+    try {
+      const result = await apiRequest<ModelGroupPlacementResponse>(
+        "/admin/model-group-placements",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            model_names: placement.model_names,
+            group_id: placement.group_id,
+          }),
+        },
+      );
+      const joinedNames = new Set(
+        result.joined.map((change) => change.model_name),
+      );
+      if (joinedNames.size) {
+        toast.success(
+          locale === "zh-CN"
+            ? `已归入模型组：${[...joinedNames].join("、")}`
+            : `Joined model group: ${[...joinedNames].join(", ")}`,
+        );
+      }
+      await invalidateChannelData();
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          locale === "zh-CN" ? "归入模型组失败" : "Failed to join the group",
+        ),
+      );
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editor.validateSiteForm()) return;
@@ -140,6 +182,7 @@ export function useChannelSave({
             ? "渠道已创建"
             : "Channel created",
       );
+      await placePendingModels();
       if (site.enabled) void syncSiteModels(site.id);
       else void invalidateChannelData();
     } catch (error) {

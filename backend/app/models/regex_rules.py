@@ -85,4 +85,7 @@ class RegexRuleView(StrictBaseModel):
     name: str
     pattern: str
     description: str = ""
+    # Groups whose members are matched by the rule instead of the group name.
     groups: list[RegexRuleReferenceView] = Field(default_factory=list)
+    # Sites referencing the rule as onboarding or exclusion filter.
+    sites: list[RegexRuleReferenceView] = Field(default_factory=list)

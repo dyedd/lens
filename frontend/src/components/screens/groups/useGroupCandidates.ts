@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo } from "react";
+import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
 import { useRegexRules } from "@/hooks/useRegexRules";
 import type {
   ModelGroupCandidateItem,
@@ -6,127 +6,66 @@ import type {
 } from "@/lib/api/groups";
 import { compileRegexRulePattern } from "@/lib/regexRules";
 import type { FormState } from "./groupTypes";
-import {
-  applyMatchRulesToForm,
-  candidatePayloadToFormItems,
-  groupModelCandidates,
-} from "./groupView";
-import {
-  buildRuleMatcher,
-  modelFoldKey,
-  modelGroupItemKey,
-} from "./modelGroupFormatting";
+import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
+import { modelGroupItemKey } from "./modelGroupFormatting";
 
 type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;
-  /** False while the response still belongs to earlier rules or members. */
-  candidateResponseIsCurrent: boolean;
   candidateSearch: string;
   expandedChannels: string[];
-  form: FormState;
-  isCreating: boolean;
+  /** Rule ids the group joins by; empty means join by name. */
+  joinRuleIds: string[];
   locale: "zh-CN" | "en-US";
   setExpandedChannels: Dispatch<SetStateAction<string[]>>;
   setForm: Dispatch<SetStateAction<FormState>>;
 };
 
-/** Derive candidate groups, preview rule members, and add sources. */
+/** Derive candidate groups and add the sources an admin picks. */
 export function useGroupCandidates({
   candidateResponse,
-  candidateResponseIsCurrent,
   candidateSearch,
   expandedChannels,
-  form,
-  isCreating,
+  joinRuleIds,
   locale,
   setExpandedChannels,
   setForm,
 }: GroupCandidateOptions) {
-  const candidates = candidateResponse?.candidates;
-  const regexRules = useRegexRules();
-  const libraryRules = regexRules.rules;
-  const invalidMatchRules = libraryRules.filter(
-    (rule) =>
-      form.match_rule_ids.includes(rule.id) &&
-      !compileRegexRulePattern(rule.pattern),
-  );
-  const hasDeletedMatchRules =
-    regexRules.isLoaded &&
-    form.match_rule_ids.some(
-      (id) => !libraryRules.some((rule) => rule.id === id),
-    );
-  // The backend evaluates the draft rules the same way saving and reconcile
-  // do, so the preview never relies on browser regex semantics.
-  const matchedModelNames = candidateResponse?.matched_model_names;
-  const isRuleMatched = useMemo(
-    () => buildRuleMatcher(form.match_models, matchedModelNames ?? []),
-    [form.match_models, matchedModelNames],
-  );
-  // Members the rules cover, whatever their source; candidates only list
-  // models outside the group.
-  const ruleMatches = useMemo(
-    () => form.items.filter((item) => isRuleMatched(item.model_name)),
-    [form.items, isRuleMatched],
-  );
-
-  // A response for the current rules may add or drop rule members. Stale
-  // placeholder data is skipped so an earlier rule set cannot drop them.
-  useEffect(() => {
-    if (!candidateResponse || !candidateResponseIsCurrent) return;
-    setForm((current) =>
-      applyMatchRulesToForm(
-        current,
-        candidateResponse.candidates,
-        candidateResponse.matched_model_names,
-      ),
-    );
-  }, [candidateResponse, candidateResponseIsCurrent, setForm]);
-
-  // Rule edits change the candidate query, whose response re-previews members.
-  function changeMatchRules(
-    rules: Partial<Pick<FormState, "match_models" | "match_rule_ids">>,
-  ) {
-    setForm((current) => ({ ...current, ...rules }));
-  }
-
-  /** While creating, the default match rule follows the group name. */
-  function changeName(name: string) {
-    setForm((current) => {
-      const currentName = current.name.trim();
-      const followsName =
-        isCreating &&
-        !current.route_group_id &&
-        current.match_models.join("\n") === currentName;
-      const nextName = name.trim();
-      return {
-        ...current,
-        name,
-        match_models: followsName
-          ? nextName
-            ? [nextName]
-            : []
-          : current.match_models,
-      };
+  const [candidateRegex, setCandidateRegex] = useState(false);
+  const library = useRegexRules();
+  /** The group's rules compiled; empty keeps name matching. */
+  const joinPatterns = useMemo(() => {
+    const rulesById = new Map(library.rules.map((rule) => [rule.id, rule]));
+    return joinRuleIds.flatMap((ruleId) => {
+      const rule = rulesById.get(ruleId);
+      const pattern = rule ? compileRegexRulePattern(rule.pattern) : null;
+      return pattern ? [pattern] : [];
     });
+  }, [joinRuleIds, library.rules]);
+  const candidates = candidateResponse?.candidates;
+  function changeName(name: string) {
+    setForm((current) => ({ ...current, name }));
   }
 
   function changeRouteTarget(routeGroupId: string) {
     setForm((current) => ({
       ...current,
       route_group_id: routeGroupId,
-      match_models: routeGroupId ? [] : current.match_models,
-      match_rule_ids: routeGroupId ? [] : current.match_rule_ids,
       fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
     }));
     setExpandedChannels([]);
   }
 
   const filteredCandidates = useMemo(() => {
-    const keyword = candidateSearch.trim().toLowerCase();
+    const keyword = candidateSearch.trim();
+    const pattern =
+      candidateRegex && keyword ? compileRegexRulePattern(keyword) : null;
+    const lowered = keyword.toLowerCase();
     return (candidates ?? []).filter((candidate) =>
-      candidate.model_name.toLowerCase().includes(keyword),
+      pattern
+        ? pattern.test(candidate.model_name)
+        : candidate.model_name.toLowerCase().includes(lowered),
     );
-  }, [candidates, candidateSearch]);
+  }, [candidateRegex, candidates, candidateSearch]);
   const groupedCandidates = useMemo(
     () => groupModelCandidates(filteredCandidates, locale),
     [filteredCandidates, locale],
@@ -193,35 +132,31 @@ export function useGroupCandidates({
     });
   }
 
-  /** Whether saving would add this model back through the current rules. */
+  /** Adds every candidate the current search or regex shows. */
+  function addAllVisibleCandidates() {
+    for (const candidate of filteredCandidates) addCandidate(candidate);
+  }
+
+  /** Whether saving would join this model back by the group's rules or name. */
   function isAutoJoined(current: FormState, modelName: string) {
-    return buildRuleMatcher(
-      current.match_models,
-      matchedModelNames ?? [],
-    )(modelName);
+    if (joinPatterns.length) {
+      return joinPatterns.some((joinPattern) => joinPattern.test(modelName));
+    }
+    const name = current.name.trim();
+    return name !== "" && modelName.trim().toLowerCase() === name.toLowerCase();
   }
 
   return {
+    addAllVisibleCandidates,
     addCandidate,
-    changeMatchRules,
+    candidateRegex,
     changeName,
     changeRouteTarget,
     expandedChannels: visibleExpandedChannels,
     groupedCandidates,
-    hasDeletedMatchRules,
-    invalidMatchRules,
     isAutoJoined,
-    ruleMatchModelCount: new Set(ruleMatches.map((item) => item.model_name))
-      .size,
-    ruleMatchSourceCount: new Set(
-      ruleMatches.map((item) =>
-        modelFoldKey(
-          item.protocol_config_id,
-          item.credential_id,
-          item.model_name,
-        ),
-      ),
-    ).size,
+    setCandidateRegex,
+    visibleCandidateCount: filteredCandidates.length,
     toggleChannel,
   };
 }

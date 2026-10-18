@@ -298,8 +298,6 @@ def create_model_group(
             "name": name,
             "strategy": "round_robin",
             "route_group_id": route_group_id,
-            "match_models": [],
-            "match_rule_ids": [],
             "headers": [],
             "param_override": [],
             "items": items or [],
