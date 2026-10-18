@@ -5,6 +5,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import FrameType
@@ -14,9 +15,10 @@ from alembic.config import Config
 
 from .core.auth import validate_admin_password
 from .core.config import settings
-from .core.db import create_engine, create_session_factory
+from .core.db import create_engine, create_session_factory, to_async_database_url
 
 SOURCE_BACKEND_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_ADMIN_USERNAME = "admin"
 
 
 def _admin_password_argument(value: str) -> str:
@@ -120,6 +122,97 @@ def db_stamp(args: argparse.Namespace) -> None:
     command.stamp(_alembic_cfg(), args.revision)
 
 
+def _seed_initial_admin(
+    username: str = DEFAULT_ADMIN_USERNAME,
+    password: str | None = None,
+    *,
+    password_file: Path | None = None,
+) -> bool:
+    """Create the admin when none exists; return whether a new account was written."""
+    from .persistence.repositories import AdminRepository
+
+    generated = password is None
+    password = password or secrets.token_urlsafe(24)
+    # A password the operator supplied needs no file, and a generated one
+    # lands where the Docker deployment documents it; see README.md.
+    seed_file = password_file
+    if seed_file is None and generated:
+        seed_file = _data_dir() / "admin-password"
+    created = False
+    publish_initial_password = (
+        (lambda: _write_private_text(seed_file, f"{password}\n"))
+        if seed_file is not None
+        else None
+    )
+
+    async def _run() -> None:
+        nonlocal created
+        engine = create_engine(settings.database_url)
+        session_factory = create_session_factory(engine)
+        try:
+            created = await AdminRepository(session_factory).ensure_default_admin(
+                username,
+                password,
+                publish_initial_password=publish_initial_password,
+            )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(
+        _run(),
+        loop_factory=(
+            _selector_event_loop_factory if sys.platform == "win32" else None
+        ),
+    )
+    if created:
+        print(f"seeded admin: {username}")
+        if seed_file is not None:
+            print(f"initial admin password written to: {seed_file}")
+    return created
+
+
+def _pnpm_command(args: list[str]) -> str | list[str]:
+    # pnpm installs as a `.cmd` shim on Windows, which resolves through the shell
+    # but not as a bare executable.
+    if os.name == "nt":
+        return f"pnpm {' '.join(args)}"
+    return ["pnpm", *args]
+
+
+def _pnpm_popen(
+    frontend_dir: Path, args: list[str], env: dict[str, str]
+) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        _pnpm_command(args),
+        cwd=frontend_dir,
+        shell=os.name == "nt",
+        env=env,
+        # Give the frontend its own process group so stopping it also stops the
+        # pnpm and Vite processes it spawns.
+        start_new_session=os.name != "nt",
+    )
+
+
+def _run_pnpm(frontend_dir: Path, *args: str) -> None:
+    subprocess.run(
+        _pnpm_command(list(args)),
+        cwd=frontend_dir,
+        shell=os.name == "nt",
+        check=True,
+    )
+
+
+def _data_dir() -> Path:
+    """Return where the deployment keeps its data files, matching the Docker volume."""
+    # pydantic-settings resolves a relative SQLite path against the working
+    # directory, so the directory before it is what this process writes into.
+    database_url = to_async_database_url(settings.database_url)
+    sqlite_prefix = "sqlite+aiosqlite:///"
+    if sqlite_prefix in database_url:
+        return Path(database_url.split(sqlite_prefix, 1)[1]).parent.resolve()
+    return Path(os.getenv("LENS_DATA_DIR", "/app/data"))
+
+
 def serve(args: argparse.Namespace) -> None:
     """Start the Lens API server."""
     import uvicorn
@@ -134,132 +227,105 @@ def serve(args: argparse.Namespace) -> None:
     )
 
 
+def migrate(_args: argparse.Namespace | None) -> None:
+    """Upgrade the database, then write the admin or its initial password."""
+    command.upgrade(_alembic_cfg(), "head")
+    _seed_initial_admin()
+
+
+def setup(_args: argparse.Namespace) -> None:
+    """Migrate the database and build the UI for a source checkout."""
+    migrate(None)
+    frontend_dir = SOURCE_BACKEND_DIR.parent / "frontend"
+    if frontend_dir.is_dir():
+        _run_pnpm(frontend_dir, "build")
+
+
 def dev(_args: argparse.Namespace) -> None:
-    """Start the API and UI development servers together."""
-    repo_dir = _repo_dir()
-    frontend_dir = repo_dir / "frontend"
+    """Start Vite, which proxies the API to this Python process."""
+    import uvicorn
+
+    from .api import create_app
+
+    frontend_dir = _repo_dir() / "frontend"
     if not frontend_dir.is_dir():
         raise RuntimeError(f"Frontend directory does not exist: {frontend_dir}")
 
-    backend_host = "127.0.0.1"
-    backend_port = "18080"
-    frontend_port = "3000"  # keep in sync with server.port in frontend/vite.config.ts
-
-    backend = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "app.cli",
-            "serve",
-            "--host",
-            backend_host,
-            "--port",
-            backend_port,
-        ],
-        cwd=repo_dir,
-    )
-    # Vite proxies /api, /v1 and /v1beta to this target, so the backend port is
-    # defined here only; see frontend/vite.config.ts.
-    frontend_environment = {
-        **os.environ,
-        "LENS_DEV_BACKEND": f"http://{backend_host}:{backend_port}",
-    }
-    frontend_command = "pnpm dev" if os.name == "nt" else ["pnpm", "dev"]
-    frontend = subprocess.Popen(
-        frontend_command,
-        cwd=frontend_dir,
-        shell=os.name == "nt",
-        env=frontend_environment,
+    # Vite proxies /api, /v1 and /v1beta to this process, so it holds the only
+    # backend port; see frontend/vite.config.ts.
+    server = uvicorn.Server(
+        uvicorn.Config(
+            create_app(),
+            host="127.0.0.1",
+            port=settings.port,
+            loop=_uvicorn_loop_factory_path(),
+        )
     )
 
-    print(f"Lens dev UI: http://{backend_host}:{frontend_port}", flush=True)
-
-    processes = (backend, frontend)
-
-    def stop_processes() -> None:
-        if os.name == "nt":
-            for process in processes:
-                if process.poll() is None:
-                    subprocess.run(
-                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                    )
-            return
-
-        for process in processes:
-            if process.poll() is None:
-                process.terminate()
-        deadline = time.monotonic() + 8
-        while time.monotonic() < deadline and any(
-            process.poll() is None for process in processes
-        ):
-            time.sleep(0.1)
-        for process in processes:
-            if process.poll() is None:
-                process.kill()
-
-    def handle_signal(signum: int, _frame: FrameType | None) -> None:
-        stop_processes()
-        raise SystemExit(128 + signum)
+    def handle_signal(_signum: int, _frame: FrameType | None) -> None:
+        server.should_exit = True
 
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    thread = threading.Thread(target=asyncio.run, args=(server.serve(),), daemon=True)
+    thread.start()
+
+    frontend = _pnpm_popen(
+        frontend_dir,
+        ["dev"],
+        {
+            **os.environ,
+            # Vite exposes every VITE_* value to the client bundle, so only the
+            # proxy target is passed; see frontend/vite.config.ts.
+            "VITE_LENS_DEV_BACKEND": f"http://127.0.0.1:{settings.port}",
+        },
+    )
+
+    # Keep in sync with server.port in frontend/vite.config.ts.
+    print("Lens dev UI: http://127.0.0.1:3000", flush=True)
+
+    def stop_frontend() -> None:
+        if frontend.poll() is not None:
+            return
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(frontend.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            return
+
+        os.killpg(frontend.pid, signal.SIGTERM)
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline and frontend.poll() is None:
+            time.sleep(0.1)
+        if frontend.poll() is None:
+            os.killpg(frontend.pid, signal.SIGKILL)
+
     try:
         while True:
-            for process in processes:
-                return_code = process.poll()
-                if return_code is not None:
-                    raise SystemExit(return_code)
+            return_code = frontend.poll()
+            if return_code is not None:
+                raise SystemExit(return_code)
             time.sleep(0.25)
     finally:
-        stop_processes()
+        server.should_exit = True
+        stop_frontend()
+        thread.join(timeout=8)
 
 
 def seed_admin(args: argparse.Namespace) -> None:
     """Create the initial administrator when none exists."""
-    from .persistence.repositories import AdminRepository
-
-    password_file = Path(args.password_file) if args.password_file is not None else None
     password = secrets.token_urlsafe(24) if args.generate_password else args.password
     assert isinstance(password, str)
-
-    def publish_initial_password() -> None:
-        assert password_file is not None
-        _write_private_text(password_file, f"{password}\n")
-
-    async def _run() -> None:
-        engine = create_engine(settings.database_url)
-        session_factory = create_session_factory(engine)
-        store = AdminRepository(session_factory)
-        try:
-            created = await store.ensure_default_admin(
-                args.username,
-                password,
-                publish_initial_password=(
-                    publish_initial_password if password_file is not None else None
-                ),
-            )
-        finally:
-            await engine.dispose()
-        if created:
-            print(f"seeded admin: {args.username}")
-            if args.generate_password:
-                if password_file is not None:
-                    print(f"generated admin password written to: {password_file}")
-                else:
-                    print(f"generated admin password: {password}")
-        else:
-            print("admin user already exists; skipped seed")
-
-    asyncio.run(
-        _run(),
-        loop_factory=(
-            _selector_event_loop_factory if sys.platform == "win32" else None
-        ),
-    )
+    seed_file = Path(args.password_file) if args.password_file is not None else None
+    created = _seed_initial_admin(args.username, password, password_file=seed_file)
+    if not created:
+        print("admin user already exists; skipped seed")
+    elif args.generate_password and seed_file is None:
+        print(f"generated admin password: {password}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -323,14 +389,27 @@ def main(argv: list[str] | None = None) -> None:
     serve_parser.set_defaults(func=serve)
 
     dev_parser = subparsers.add_parser(
-        "dev", help="Start API and UI development servers"
+        "dev", help="Run the API and Vite development servers together"
     )
     dev_parser.set_defaults(func=dev)
+
+    migrate_parser = subparsers.add_parser(
+        "migrate",
+        help="Upgrade the database and create the admin with its initial password",
+    )
+    migrate_parser.set_defaults(func=migrate)
+
+    setup_parser = subparsers.add_parser(
+        "setup", help="Run migrate, then build the UI from a source checkout"
+    )
+    setup_parser.set_defaults(func=setup)
 
     seed_admin_parser = subparsers.add_parser(
         "seed-admin", help="Create an initial admin user when none exists"
     )
-    seed_admin_parser.add_argument("--username", required=True, help="Admin username")
+    seed_admin_parser.add_argument(
+        "--username", default=DEFAULT_ADMIN_USERNAME, help="Admin username"
+    )
     password_group = seed_admin_parser.add_mutually_exclusive_group(required=True)
     password_group.add_argument(
         "--password",
