@@ -26,7 +26,7 @@ from ....models.sites import (
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..tasks.model_discovery import fetch_upstream_models, filter_upstream_models
+from ..tasks.model_discovery import fetch_upstream_models
 from ..tasks.model_group_reconcile import run_model_group_reconcile
 from ..tasks.site_model_probe import run_site_model_probe
 from ..upstream_support import format_channel_error
@@ -145,9 +145,7 @@ async def fetch_site_models(
             param_override=[],
         )
         try:
-            upstream_models = filter_upstream_models(
-                await fetch_upstream_models(channel), payload.match_regex
-            )
+            upstream_models = await fetch_upstream_models(channel)
         except HTTPException as exc:
             errors.append(format_channel_error(exc.detail))
             continue
@@ -185,7 +183,7 @@ async def test_site_model(
 async def sync_channel_models(
     payload: ChannelModelSyncRequest, _: Any = Depends(get_current_admin)
 ) -> ChannelModelSyncResponse:
-    """Add new upstream models to sync-enabled sites and flag vanished ones."""
+    """Sync upstream models for enabled sites and flag vanished ones."""
     from ..tasks.model_sync import sync_channel_models as run_channel_model_sync
 
     return await run_channel_model_sync(app_state, site_ids=payload.site_ids)

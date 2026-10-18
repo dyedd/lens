@@ -161,7 +161,7 @@ export function ChannelsOverview({
                 onSearchChange(event.target.value);
                 resetPage();
               }}
-              className="bg-background pl-8"
+              className="pl-8"
             />
           </div>
 
@@ -175,7 +175,7 @@ export function ChannelsOverview({
                   {locale === "zh-CN" ? "筛选" : "Filter"}
                 </span>
                 {activeFilterCount ? (
-                  <span className="text-[10px] tabular-nums">
+                  <span className="text-xs tabular-nums">
                     {activeFilterCount}
                   </span>
                 ) : null}
@@ -184,7 +184,7 @@ export function ChannelsOverview({
             <PopoverContent align="start" className="w-[240px] p-2">
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <p className="px-1 text-[10px] text-muted-foreground">
+                  <p className="px-1 text-xs text-muted-foreground">
                     {locale === "zh-CN" ? "状态" : "Status"}
                   </p>
                   <Select
@@ -194,7 +194,7 @@ export function ChannelsOverview({
                       resetPage();
                     }}
                   >
-                    <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -212,7 +212,7 @@ export function ChannelsOverview({
                 </div>
                 {tags.length ? (
                   <div className="space-y-1">
-                    <p className="px-1 text-[10px] text-muted-foreground">
+                    <p className="px-1 text-xs text-muted-foreground">
                       {locale === "zh-CN" ? "标签" : "Tag"}
                     </p>
                     <Select
@@ -222,7 +222,7 @@ export function ChannelsOverview({
                         resetPage();
                       }}
                     >
-                      <SelectTrigger className="h-7 px-2 text-[11px] text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -271,12 +271,12 @@ export function ChannelsOverview({
               {sortOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-[10px]"
+                  className="h-6 gap-2 px-2 py-0 text-xs"
                   onSelect={() => onSortChange(option.value)}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
                   {sortBy === option.value ? (
-                    <Check className="size-3 text-muted-foreground" />
+                    <Check className="size-3.5 text-muted-foreground" />
                   ) : null}
                 </DropdownMenuItem>
               ))}
@@ -328,7 +328,7 @@ export function ChannelsOverview({
           <Button
             type="button"
             size="sm"
-            className="h-7 gap-1 text-xs"
+            className="gap-1 text-xs"
             onClick={onCreate}
           >
             <Plus className="size-3.5 stroke-1" />

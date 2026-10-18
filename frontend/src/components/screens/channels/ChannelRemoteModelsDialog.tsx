@@ -6,6 +6,13 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -36,7 +43,9 @@ type Props = {
   loading: boolean;
   onOpenChange: (open: boolean) => void;
   onLoad: () => Promise<RemoteModelCatalog | null>;
-  onImport: (items: PickerModelItem[]) => number;
+  onImport: (items: PickerModelItem[], groupId?: string) => number;
+  /** Execution groups an imported batch can join after the channel is saved. */
+  groupOptions: Array<{ id: string; name: string }>;
 };
 
 function statusLabel(status: CatalogRow["status"], locale: Locale) {
@@ -55,9 +64,11 @@ export function ChannelRemoteModelsDialog({
   onOpenChange,
   onLoad,
   onImport,
+  groupOptions,
 }: Props) {
   const [catalog, setCatalog] = useState<RemoteModelCatalog | null>(null);
   const [query, setQuery] = useState("");
+  const [targetGroupId, setTargetGroupId] = useState("__auto__");
   const [filter, setFilter] = useState<CatalogFilter>("new");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const onLoadRef = useRef(onLoad);
@@ -67,6 +78,7 @@ export function ChannelRemoteModelsDialog({
     if (!open) {
       setCatalog(null);
       setQuery("");
+      setTargetGroupId("__auto__");
       setFilter("new");
       setSelected(new Set());
       return;
@@ -126,7 +138,7 @@ export function ChannelRemoteModelsDialog({
     const items = (catalog?.items ?? []).filter((item) =>
       selected.has(item.model_name),
     );
-    onImport(items);
+    onImport(items, targetGroupId === "__auto__" ? undefined : targetGroupId);
     toast.success(
       locale === "zh-CN"
         ? `已添加 ${selected.size} 个模型，保存后会按上游列表更新。`
@@ -141,7 +153,7 @@ export function ChannelRemoteModelsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <AppDialogContent
-        className="max-w-2xl"
+        className="sm:max-w-3xl"
         title={
           locale === "zh-CN"
             ? `获取模型列表 - ${channelName}`
@@ -227,6 +239,33 @@ export function ChannelRemoteModelsDialog({
               />
               {locale === "zh-CN" ? "重新获取" : "Reload"}
             </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {locale === "zh-CN" ? "添加后归入" : "Join group"}
+            </span>
+            <Select value={targetGroupId} onValueChange={setTargetGroupId}>
+              <SelectTrigger
+                className="h-8 w-64"
+                aria-label={
+                  locale === "zh-CN" ? "添加后归入模型组" : "Group to join"
+                }
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__auto__">
+                  {locale === "zh-CN"
+                    ? "不指定（按同名自动归组）"
+                    : "Automatic"}
+                </SelectItem>
+                {groupOptions.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="max-h-[min(52vh,480px)] overflow-y-auto">
             <Table>

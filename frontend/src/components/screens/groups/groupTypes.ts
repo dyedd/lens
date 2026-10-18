@@ -4,7 +4,6 @@ import type {
   ModelGroupItemReason,
   ModelGroupItemState,
   ModelGroupMemberSource,
-  ModelGroupNewMemberPosition,
   RoutingStrategy,
 } from "@/lib/api/groups";
 import type { ProtocolKind } from "@/lib/api/protocols";
@@ -43,12 +42,11 @@ export type FormState = {
   name: string;
   strategy: RoutingStrategy;
   route_group_id: string;
-  match_models: string[];
+  /** Library regex rules; when set they replace name matching for this group. */
   match_rule_ids: string[];
   param_override: ParamOverrideRuleDraft[];
   headers: HeaderRuleDraft[];
   fallback_group_ids: string[];
-  new_member_position: ModelGroupNewMemberPosition;
   /** Default context window text, e.g. "1M"; empty means unknown. */
   context_window: string;
   items: FormItem[];
@@ -143,12 +141,10 @@ export const EMPTY_FORM: FormState = {
   name: "",
   strategy: "failover",
   route_group_id: "",
-  match_models: [],
   match_rule_ids: [],
   param_override: [{ path: "", action: "set", value: "" }],
   headers: [{ key: "", value: "", action: "override" }],
   fallback_group_ids: [],
-  new_member_position: "end",
   context_window: "",
   items: [],
   excluded_items: [],

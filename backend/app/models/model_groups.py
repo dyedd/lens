@@ -26,32 +26,6 @@ def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | Non
     return result
 
 
-MAX_MATCH_MODELS = 200
-MAX_MATCH_MODEL_NAME_LENGTH = 200
-
-
-def canonicalize_match_models(value: list[str] | None) -> list[str] | None:
-    """Trim, drop empty entries, and dedupe names case-insensitively in order."""
-    if value is None:
-        return None
-    result: list[str] = []
-    seen: set[str] = set()
-    for item in value:
-        name = item.strip()
-        if not name or name.casefold() in seen:
-            continue
-        if len(name) > MAX_MATCH_MODEL_NAME_LENGTH:
-            raise ValueError(
-                f"Match model names must be at most {MAX_MATCH_MODEL_NAME_LENGTH} "
-                "characters"
-            )
-        seen.add(name.casefold())
-        result.append(name)
-    if len(result) > MAX_MATCH_MODELS:
-        raise ValueError(f"At most {MAX_MATCH_MODELS} match models are allowed")
-    return result
-
-
 class ModelGroupItemState(str, Enum):
     READY = "ready"
     DISABLED = "disabled"
@@ -63,6 +37,7 @@ class ModelGroupMemberSource(str, Enum):
     """How a saved member joined its group."""
 
     MANUAL = "manual"
+    # Legacy value kept so backups written before name-based grouping still import.
     RULE = "rule"
     PLACEMENT = "placement"
 
@@ -73,6 +48,13 @@ class ModelGroupNewMemberPosition(str, Enum):
     END = "end"
     START = "start"
     RATE_ASC = "rate_asc"
+
+
+class ModelGroupOrigin(str, Enum):
+    """How a group came to exist: created by hand or by automatic placement."""
+
+    MANUAL = "manual"
+    AUTO = "auto"
 
 
 class ModelGroupItemReason(str, Enum):
@@ -92,7 +74,8 @@ class ModelGroup(StrictBaseModel):
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
-    match_models: list[str] = Field(default_factory=list)
+    origin: ModelGroupOrigin = ModelGroupOrigin.MANUAL
+    # Library regex rules; when set they replace name matching for this group.
     match_rule_ids: RegexRuleIds = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
@@ -120,14 +103,10 @@ class ModelGroup(StrictBaseModel):
         lambda value: _canonicalize_fallback_group_ids(value)
     )
 
-    _canonicalize_match_models = field_validator("match_models")(
-        canonicalize_match_models
-    )
-
     @model_validator(mode="after")
     def clear_route_group_match_rules(self) -> "ModelGroup":
         if self.route_group_id.strip():
-            self.match_models, self.match_rule_ids = [], []
+            self.match_rule_ids = []
         return self
 
 
@@ -147,6 +126,8 @@ class ModelGroupItem(StrictBaseModel):
 class ModelGroupItemView(ModelGroupItem):
     protocol_config_id: str
     site_id: str | None
+    # Names the channel model also answers to; used for name-based joining.
+    match_aliases: list[str] = Field(default_factory=list, exclude=True)
     rate_source: Literal["none", "sub2api", "newapi"] = "none"
     rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     state: ModelGroupItemState
@@ -176,7 +157,6 @@ class ModelGroupCreate(StrictBaseModel):
     name: str
     strategy: RoutingStrategy = RoutingStrategy.FAILOVER
     route_group_id: str = ""
-    match_models: list[str] = Field(default_factory=list)
     match_rule_ids: RegexRuleIds = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
@@ -196,14 +176,10 @@ class ModelGroupCreate(StrictBaseModel):
         lambda value: _canonicalize_fallback_group_ids(value)
     )
 
-    _canonicalize_match_models = field_validator("match_models")(
-        canonicalize_match_models
-    )
-
     @model_validator(mode="after")
     def clear_route_group_match_rules(self) -> "ModelGroupCreate":
         if self.route_group_id.strip():
-            self.match_models, self.match_rule_ids = [], []
+            self.match_rule_ids = []
         return self
 
 
@@ -211,7 +187,6 @@ class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
-    match_models: list[str] | None = None
     match_rule_ids: RegexRuleIds | None = None
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
@@ -227,10 +202,6 @@ class ModelGroupUpdate(StrictBaseModel):
             if value is not None
             else None
         )
-    )
-
-    _canonicalize_match_models = field_validator("match_models")(
-        canonicalize_match_models
     )
 
 
@@ -257,16 +228,11 @@ class ModelGroupCandidateItem(StrictBaseModel):
 
 class ModelGroupCandidatesRequest(StrictBaseModel):
     items: list[ModelGroupItemInput] = Field(default_factory=list)
-    # The editor's unsaved rules; the response reports which models they match.
-    match_models: list[str] = Field(default_factory=list)
-    match_rule_ids: RegexRuleIds = Field(default_factory=list)
 
 
 class ModelGroupCandidatesResponse(StrictBaseModel):
     candidates: list[ModelGroupCandidateItem] = Field(default_factory=list)
     evaluated_items: list[ModelGroupItemView] = Field(default_factory=list)
-    # Channel model names the requested rules match, evaluated like reconcile.
-    matched_model_names: list[str] = Field(default_factory=list)
 
 
 class ModelGroupModelTestRequest(StrictBaseModel):
@@ -291,6 +257,8 @@ class UnplacedModelProvider(StrictBaseModel):
 class UnplacedModelView(StrictBaseModel):
     model_name: str
     match_key: str
+    # Upstream and public names behind this view; internal to reconcile.
+    match_aliases: list[str] = Field(default_factory=list, exclude=True)
     similar_group_ids: list[str] = Field(default_factory=list)
     similar_group_names: list[str] = Field(default_factory=list)
     similar_model_names: list[str] = Field(default_factory=list)
@@ -333,6 +301,9 @@ class ModelGroupReconcileReport(StrictBaseModel):
 
 class ModelGroupPlacementRequest(StrictBaseModel):
     model_names: list[str] | None = None
+    # When set, join the names into this existing execution group instead of
+    # creating conflict-free own groups.
+    group_id: str = ""
 
 
 class ModelGroupPlacementResponse(StrictBaseModel):
@@ -343,10 +314,13 @@ class ModelGroupPlacementResponse(StrictBaseModel):
 
 class UnplacedModelRemovalRequest(StrictBaseModel):
     model_names: list[str] = Field(min_length=1)
+    # Also reference exclude rules so a sync never onboards them again.
+    exclude: bool = False
 
 
 class UnplacedModelRemovalResponse(StrictBaseModel):
     deleted: int = 0
+    excluded: int = 0
 
 
 class ModelGroupMergeRequest(StrictBaseModel):

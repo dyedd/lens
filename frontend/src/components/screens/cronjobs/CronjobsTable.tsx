@@ -167,7 +167,7 @@ export function CronjobsTable({
                     <span className="truncate">
                       {cronjobScheduleLabel(locale, task)}
                     </span>
-                    <Pencil className="size-3 shrink-0 text-muted-foreground" />
+                    <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
                   </button>
                 </TableCell>
                 <TableCell>

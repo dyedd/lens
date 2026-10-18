@@ -92,12 +92,12 @@ export function ModelGroupSelectedMembers({
 
   return (
     <section
-      className="flex shrink-0 flex-col gap-3"
+      className="flex shrink-0 flex-col gap-3 border-t border-border/60 pt-4"
       aria-label={locale === "zh-CN" ? "渠道成员" : "Channel members"}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium">
+          <h3 className="text-sm font-semibold">
             {locale === "zh-CN" ? "渠道成员" : "Channel members"}
           </h3>
           <span className="text-xs tabular-nums text-muted-foreground">

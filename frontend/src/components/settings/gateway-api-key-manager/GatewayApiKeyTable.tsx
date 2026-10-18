@@ -115,7 +115,7 @@ export function GatewayApiKeyTable({
           <TableRow className="hover:bg-transparent">
             <TableCell
               colSpan={6}
-              className="h-32 text-center text-sm text-muted-foreground"
+              className="h-32 text-center text-xs text-muted-foreground"
             >
               {titleForLocale(locale, "暂无网关密钥", "No gateway keys")}
             </TableCell>

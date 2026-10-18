@@ -25,7 +25,6 @@ import {
   SheetTitle,
 } from "@/components/ui/Sheet";
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
-import type { RegexRule } from "@/lib/api/regexRules";
 import type {
   CandidateChannelGroup,
   ChannelMemberGroup,
@@ -36,7 +35,6 @@ import type {
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
 import { ModelGroupExcludedMembers } from "./ModelGroupExcludedMembers";
-import { ModelGroupMatchRules } from "./ModelGroupMatchRules";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
 import { MultimodalFallbackGroups } from "./MultimodalFallbackGroups";
@@ -53,20 +51,16 @@ interface GroupEditorDialogProps {
   changeName: (name: string) => void;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
-  changeMatchRules: (
-    rules: Partial<Pick<FormState, "match_models" | "match_rule_ids">>,
-  ) => void;
-  invalidMatchRules: RegexRule[];
-  hasDeletedMatchRules: boolean;
-  ruleMatchModelCount: number;
-  ruleMatchSourceCount: number;
-  memberChange: { added: number; removed: number } | null;
   excludedMembers: FoldedMember[];
   restoreExcludedMember: (foldKey: string) => void;
   candidateSearch: string;
   changeCandidateSearch: (value: string) => void;
   refetchCandidates: () => unknown;
   isFetchingCandidates: boolean;
+  candidateRegex: boolean;
+  onCandidateRegexChange: (value: boolean) => void;
+  onAddAllCandidates: () => void;
+  visibleCandidateCount: number;
   groupedCandidates: CandidateChannelGroup[];
   expandedChannels: string[];
   toggleChannel: (channelId: string) => void;
@@ -127,7 +121,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
     <>
       <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
         <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
-          <SheetHeader className="shrink-0 px-4 py-4 pr-14">
+          <SheetHeader className="shrink-0 px-5 py-4 pr-14">
             <div className="flex items-center gap-3">
               <div className="min-w-0">
                 <SheetTitle>
@@ -141,14 +135,14 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 </SheetTitle>
                 <SheetDescription className="mt-1 truncate text-xs">
                   {locale === "zh-CN"
-                    ? "模型名称、渠道成员和匹配规则"
-                    : "Model name, channel members, and match rules"}
+                    ? "模型名称、渠道成员和排除项"
+                    : "Model name, channel members, and exclusions"}
                 </SheetDescription>
               </div>
             </div>
           </SheetHeader>
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-            <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pb-6">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5">
               <ModelGroupSettings
                 locale={locale}
                 form={form}
@@ -157,31 +151,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 routeTargetOptions={props.routeTargetOptions}
                 changeRouteTarget={props.changeRouteTarget}
               />
-              {!form.route_group_id ? (
-                <ModelGroupMatchRules
-                  locale={locale}
-                  matchModels={form.match_models}
-                  matchRuleIds={form.match_rule_ids}
-                  invalidMatchRules={props.invalidMatchRules}
-                  hasDeletedMatchRules={props.hasDeletedMatchRules}
-                  ruleMatchModelCount={props.ruleMatchModelCount}
-                  ruleMatchSourceCount={props.ruleMatchSourceCount}
-                  newMemberPosition={form.new_member_position}
-                  memberChange={props.memberChange}
-                  onMatchModelsChange={(matchModels) =>
-                    props.changeMatchRules({ match_models: matchModels })
-                  }
-                  onMatchRuleIdsChange={(matchRuleIds) =>
-                    props.changeMatchRules({ match_rule_ids: matchRuleIds })
-                  }
-                  onNewMemberPositionChange={(position) =>
-                    setForm((current) => ({
-                      ...current,
-                      new_member_position: position,
-                    }))
-                  }
-                />
-              ) : null}
               {!form.route_group_id ? (
                 <ModelGroupSelectedMembers
                   onAddSources={() => setCandidateSheetOpen(true)}
@@ -294,7 +263,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 </AccordionItem>
               </Accordion>
             </div>
-            <SheetFooter className="shrink-0 flex-row items-center justify-between gap-3 px-4 py-4">
+            <SheetFooter className="shrink-0 flex-row items-center justify-between gap-3 px-5 py-4">
               <span className="text-xs text-muted-foreground">
                 {form.route_group_id
                   ? locale === "zh-CN"
@@ -313,14 +282,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 >
                   {locale === "zh-CN" ? "取消" : "Cancel"}
                 </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={
-                    props.invalidMatchRules.length > 0 ||
-                    props.hasDeletedMatchRules
-                  }
-                >
+                <Button type="submit" size="sm">
                   {editingId
                     ? locale === "zh-CN"
                       ? "保存"
@@ -338,13 +300,13 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
         <SheetContent
           side="right"
           showOverlay={false}
-          className="flex flex-col gap-0 sm:right-[calc(560px+1.5rem)] sm:max-w-[420px]"
+          className="flex flex-col gap-0 sm:right-[calc(560px+1.5rem)] sm:max-w-[520px]"
         >
-          <SheetHeader className="shrink-0 px-5 py-5 pr-14">
+          <SheetHeader className="shrink-0 px-5 py-4 pr-14">
             <SheetTitle>
               {locale === "zh-CN" ? "添加渠道成员" : "Add channel members"}
             </SheetTitle>
-            <SheetDescription>
+            <SheetDescription className="text-xs">
               {locale === "zh-CN"
                 ? "选择成员加入当前模型组；已排除的模型会恢复为成员。"
                 : "Choose members for this group. Excluded models are restored when added."}
@@ -360,6 +322,10 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               changeCandidateSearch={props.changeCandidateSearch}
               refetchCandidates={props.refetchCandidates}
               isFetchingCandidates={props.isFetchingCandidates}
+              candidateRegex={props.candidateRegex}
+              onCandidateRegexChange={props.onCandidateRegexChange}
+              onAddAllCandidates={props.onAddAllCandidates}
+              visibleCandidateCount={props.visibleCandidateCount}
             />
             <ModelGroupCandidateList
               locale={locale}

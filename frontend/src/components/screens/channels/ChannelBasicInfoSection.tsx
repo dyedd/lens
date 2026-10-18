@@ -215,7 +215,7 @@ export function ChannelBasicInfoSection({
                         }))
                       }
                     >
-                      <X size={12} />
+                      <X className="size-3.5" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>

@@ -179,7 +179,7 @@ export function ChannelModelsTable({
                 {hasMultipleBaseUrls ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <p className="truncate text-[11px] leading-4">
+                      <p className="truncate text-xs leading-4">
                         {formatBaseUrlLabel(model.baseUrl)}
                       </p>
                     </TooltipTrigger>
@@ -200,7 +200,7 @@ export function ChannelModelsTable({
                 <ProtocolDropdown
                   value={model.protocols}
                   locale={locale}
-                  className="h-7 px-2 py-0 text-[11px] has-[>svg]:px-2"
+                  className="h-7 px-2 py-0 text-xs has-[>svg]:px-2"
                   onChange={(protocols) =>
                     onUpdateProtocols(model.key, protocols)
                   }
@@ -339,7 +339,7 @@ function ContextWindowInput({
               ? `${model.modelName} 上下文窗口`
               : `${model.modelName} context window`
           }
-          className="h-7 px-2 font-mono text-[11px] md:text-[11px]"
+          className="h-7 px-2 font-mono text-xs placeholder:font-sans"
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {

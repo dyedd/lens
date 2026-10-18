@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -76,25 +74,6 @@ def _model_list_request(
             context=request_rule_context(url, model_name="", protocol=channel.protocol),
         ),
     }
-
-
-@lru_cache(maxsize=256)
-def _compile_model_list_pattern(match_regex: str) -> re.Pattern[str]:
-    return re.compile(match_regex)
-
-
-def filter_upstream_models(
-    models: list[UpstreamModel], match_regex: str
-) -> list[UpstreamModel]:
-    """Keeps the upstream models matching a channel's upstream filter.
-
-    An empty pattern keeps everything. The pattern is validated on write, so a
-    compile error here is a bug rather than user input to tolerate.
-    """
-    if not match_regex.strip():
-        return models
-    pattern = _compile_model_list_pattern(match_regex)
-    return [model for model in models if pattern.search(model.name)]
 
 
 def _parse_model_list(payload: dict[str, Any]) -> list[UpstreamModel]:

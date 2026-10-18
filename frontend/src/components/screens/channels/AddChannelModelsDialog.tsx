@@ -3,6 +3,13 @@ import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Field, FieldLabel } from "@/components/ui/Field";
 import { Label } from "@/components/ui/Label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Locale } from "./channelTypes";
@@ -14,14 +21,22 @@ export function AddChannelModelsDialog({
   locale,
   onOpenChange,
   onAddBinding,
+  groupOptions,
 }: {
   open: boolean;
   locale: Locale;
   onOpenChange: (open: boolean) => void;
-  onAddBinding: (names: string, protocols: ProtocolKind[]) => boolean;
+  onAddBinding: (
+    names: string,
+    protocols: ProtocolKind[],
+    groupId?: string,
+  ) => boolean;
+  /** Execution groups the new models can join after the channel is saved. */
+  groupOptions: Array<{ id: string; name: string }>;
 }) {
   const [newName, setNewName] = useState("");
   const [newProtocols, setNewProtocols] = useState<ProtocolKind[]>(["auto"]);
+  const [targetGroupId, setTargetGroupId] = useState("__auto__");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <AppDialogContent
@@ -47,9 +62,16 @@ export function AddChannelModelsDialog({
               size="sm"
               disabled={!newName.trim() || newProtocols.length === 0}
               onClick={() => {
-                if (onAddBinding(newName, newProtocols)) {
+                if (
+                  onAddBinding(
+                    newName,
+                    newProtocols,
+                    targetGroupId === "__auto__" ? undefined : targetGroupId,
+                  )
+                ) {
                   setNewName("");
                   setNewProtocols(["auto"]);
+                  setTargetGroupId("__auto__");
                   onOpenChange(false);
                 }
               }}
@@ -71,7 +93,7 @@ export function AddChannelModelsDialog({
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
               placeholder={"gpt-4o\ngpt-4o-mini"}
-              className="max-h-48 font-mono"
+              className="max-h-48 font-mono placeholder:font-sans"
             />
           </div>
           <Field>
@@ -83,6 +105,32 @@ export function AddChannelModelsDialog({
               locale={locale}
               onChange={setNewProtocols}
             />
+          </Field>
+          <Field>
+            <FieldLabel>
+              {locale === "zh-CN" ? "添加后归入" : "Join group"}
+            </FieldLabel>
+            <Select value={targetGroupId} onValueChange={setTargetGroupId}>
+              <SelectTrigger
+                aria-label={
+                  locale === "zh-CN" ? "添加后归入模型组" : "Group to join"
+                }
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__auto__">
+                  {locale === "zh-CN"
+                    ? "不指定（按同名自动归组）"
+                    : "Automatic"}
+                </SelectItem>
+                {groupOptions.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
         </div>
       </AppDialogContent>

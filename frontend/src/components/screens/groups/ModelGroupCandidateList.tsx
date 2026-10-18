@@ -39,28 +39,27 @@ export function ModelGroupCandidateList({
               <Button
                 type="button"
                 variant="ghost"
-                className="h-auto min-h-9 w-full justify-start gap-2 rounded-md px-2 py-1.5 text-left"
+                className="h-auto min-h-8 w-full justify-start gap-2 rounded-md bg-muted/35 px-2 py-1 text-left hover:bg-muted/50"
                 aria-expanded={isOpen}
                 onClick={() => toggleChannel(channelGroup.key)}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-foreground">
+                  <div className="truncate text-xs font-medium text-foreground">
                     {channelGroup.channel_name}
                   </div>
                 </div>
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   {channelGroup.candidates.length}
                 </span>
                 <ChevronDown
-                  size={15}
                   className={cn(
-                    "text-muted-foreground transition-transform",
+                    "size-3.5 text-muted-foreground transition-transform",
                     isOpen && "rotate-180",
                   )}
                 />
               </Button>
               {isOpen ? (
-                <div className="ml-3 flex flex-col gap-0.5 border-l pl-1 pb-1">
+                <div className="flex flex-col gap-0.5 pt-0.5 pl-1">
                   {channelGroup.candidates.map((candidate) => (
                     <CandidateRow
                       key={`${candidate.protocol_config_id}-${candidate.credential_id}-${candidate.model_name}`}
@@ -94,7 +93,7 @@ export function ModelGroupCandidateList({
             </AlertDescription>
           </Alert>
         ) : !groupedCandidates.length ? (
-          <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+          <p className="px-1 py-6 text-center text-xs text-muted-foreground">
             {locale === "zh-CN" ? "暂无可选模型" : "No candidates found"}
           </p>
         ) : null}
