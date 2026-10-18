@@ -5,7 +5,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
@@ -18,8 +18,8 @@ from app.models.model_groups import (
 )
 from app.persistence.entities import (
     SiteDiscoveredModelEntity,
-    SiteEntity,
     SiteProtocolConfigEntity,
+    SiteProtocolConfigSyncTargetEntity,
 )
 
 from .group_read import list_ready_channel_items
@@ -140,9 +140,11 @@ class GroupPlacementMixin:
         self, model_names: list[str] | None = None
     ) -> ModelGroupPlacementResponse:
         """Join or create groups for unplaced models without a near name."""
-        report = await self.reconcile_group_members(
-            placement_names=set(model_names) if model_names is not None else None
-        )
+        if model_names is None:
+            model_names = [
+                item.model_name for item in await self.list_unplaced_models()
+            ]
+        report = await self.reconcile_group_members(placement_names=set(model_names))
         created_ids = {group.id for group in report.created_groups}
         groups = await self.list_groups()
         return ModelGroupPlacementResponse(
@@ -161,8 +163,8 @@ class GroupPlacementMixin:
     ) -> UnplacedModelRemovalResponse:
         """Remove unplaced model names from every channel that still offers them.
 
-        Sites with model sync keep the rows disabled, so the next sync does not
-        add the upstream model back; other sites drop the rows.
+        Remove the materialized row and its sync target. A deleted synced
+        model must not return on the next upstream refresh.
         """
         names = set(model_names)
         unplaced_names = {view.model_name for view in await self.list_unplaced_models()}
@@ -173,25 +175,35 @@ class GroupPlacementMixin:
             )
         async with self._session_factory() as session:
             rows = (
-                await session.execute(
-                    select(SiteDiscoveredModelEntity, SiteEntity.model_sync_enabled)
-                    .join(
-                        SiteProtocolConfigEntity,
-                        SiteProtocolConfigEntity.id
-                        == SiteDiscoveredModelEntity.protocol_config_id,
+                (
+                    await session.execute(
+                        select(SiteDiscoveredModelEntity)
+                        .join(
+                            SiteProtocolConfigEntity,
+                            SiteProtocolConfigEntity.id
+                            == SiteDiscoveredModelEntity.protocol_config_id,
+                        )
+                        .where(SiteDiscoveredModelEntity.model_name.in_(names))
+                        .where(SiteDiscoveredModelEntity.enabled == 1)
                     )
-                    .join(SiteEntity, SiteEntity.id == SiteProtocolConfigEntity.site_id)
-                    .where(SiteDiscoveredModelEntity.model_name.in_(names))
-                    .where(SiteDiscoveredModelEntity.enabled == 1)
                 )
-            ).all()
-            deleted = disabled = 0
-            for entity, sync_enabled in rows:
-                if sync_enabled:
-                    entity.enabled = 0
-                    disabled += 1
-                else:
-                    await session.delete(entity)
-                    deleted += 1
+                .scalars()
+                .all()
+            )
+            deleted = 0
+            for entity in rows:
+                await session.execute(
+                    delete(SiteProtocolConfigSyncTargetEntity).where(
+                        SiteProtocolConfigSyncTargetEntity.protocol_config_id
+                        == entity.protocol_config_id,
+                        SiteProtocolConfigSyncTargetEntity.credential_id
+                        == entity.credential_id,
+                        SiteProtocolConfigSyncTargetEntity.protocol == entity.protocol,
+                        SiteProtocolConfigSyncTargetEntity.model_name
+                        == entity.model_name,
+                    )
+                )
+                await session.delete(entity)
+                deleted += 1
             await session.commit()
-        return UnplacedModelRemovalResponse(deleted=deleted, disabled=disabled)
+        return UnplacedModelRemovalResponse(deleted=deleted)

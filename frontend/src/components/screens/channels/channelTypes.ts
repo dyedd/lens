@@ -5,7 +5,7 @@ import type {
   Site,
   SiteCredential,
   SiteModelInput,
-  SiteModelSyncSettings,
+  SiteSyncTarget,
 } from "@/lib/api/sites";
 import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { Locale } from "@/lib/I18nContext";
@@ -35,9 +35,10 @@ export type FormProtocolConfig = {
   credential_ids: string[];
   protocols: ProtocolKind[];
   models: FormModel[];
+  sync_targets: SiteSyncTarget[];
 };
 
-export type FormState = SiteModelSyncSettings & {
+export type FormState = {
   name: string;
   tags: string[];
   newApiKeysLines: string;
@@ -80,7 +81,6 @@ export type AggregatedModelMember = {
   credentialName: string;
   /** Key label plus masked value. */
   credentialTitle: string;
-  source: SiteModelInput["source"];
 };
 
 export type AggregatedModel = {
@@ -92,7 +92,6 @@ export type AggregatedModel = {
   /** Number of keys bound to the owning protocol config. */
   credentialCount: number;
   protocols: ProtocolKind[];
-  source: SiteModelInput["source"];
   enabled: boolean;
   upstreamMissing: boolean;
   /** Admin override shared by every key's copy of this model. */

@@ -29,7 +29,6 @@ export function buildModels(
   credentialIds: string[],
   modelName: string,
   protocols: ProtocolKind[],
-  source: "manual" | "synced",
   upstreamContextWindow: number | null = null,
 ): FormModel[] {
   const existing = new Set(
@@ -43,7 +42,6 @@ export function buildModels(
       credential_id,
       model_name: modelName,
       enabled: true,
-      source,
       upstream_missing: false,
       context_window: null,
       upstream_context_window: upstreamContextWindow,
@@ -53,13 +51,12 @@ export function buildModels(
 /** Builds a stable model key scoped to a protocol configuration. */
 export function protocolConfigModelKey(
   protocolConfig: Pick<FormProtocolConfig, "id">,
-  model: Pick<FormModel, "credential_id" | "model_name" | "source">,
+  model: Pick<FormModel, "credential_id" | "model_name">,
 ) {
   return JSON.stringify([
     protocolConfig.id,
     model.credential_id,
     model.model_name,
-    model.source,
   ]);
 }
 
@@ -89,11 +86,7 @@ export function isAggregateModelGroupKey(key: string) {
 export function coalesceFormModels(models: FormModel[]) {
   const groups = new Map<string, FormModel>();
   for (const model of models) {
-    const key = JSON.stringify([
-      model.credential_id,
-      model.model_name,
-      model.source,
-    ]);
+    const key = JSON.stringify([model.credential_id, model.model_name]);
     const existing = groups.get(key);
     if (!existing) {
       groups.set(key, {
@@ -332,6 +325,7 @@ export const emptyProtocolConfig = (
   credential_ids: [...credentialIds],
   protocols: [],
   models: [],
+  sync_targets: [],
 });
 
 /** Creates a channel editor form with one URL and protocol config. */
@@ -355,9 +349,6 @@ export const emptyForm = (): FormState => {
     channel_proxy: "",
     headersJson: "",
     paramsJson: "",
-    model_sync_enabled: true,
-    model_sync_include_rule_ids: [],
-    model_sync_exclude_rule_ids: [],
   };
 };
 

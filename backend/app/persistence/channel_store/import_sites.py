@@ -310,7 +310,6 @@ def _import_protocol_models(
                 model_name=model_name,
                 enabled=model.enabled,
                 protocol=model_protocol,
-                source=model.source,
             )
         )
     return model_inputs
