@@ -45,31 +45,6 @@ def _canonicalize_site_tags(values: list[str]) -> list[str]:
 
 SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
 
-MAX_MODEL_NAME_PREFIXES = 20
-
-
-def _canonicalize_model_name_prefixes(values: list[str]) -> list[str]:
-    prefixes: list[str] = []
-    for value in values:
-        prefix = value.strip().strip("/")
-        if not prefix:
-            raise ValueError("Model name prefixes cannot be empty")
-        if "/" in prefix:
-            raise ValueError("Model name prefixes cannot contain '/'")
-        if len(prefix) > 80:
-            raise ValueError("Model name prefixes cannot exceed 80 characters")
-        if prefix not in prefixes:
-            prefixes.append(prefix)
-    if len(prefixes) > MAX_MODEL_NAME_PREFIXES:
-        raise ValueError(
-            f"Sites cannot have more than {MAX_MODEL_NAME_PREFIXES} model name prefixes"
-        )
-    return prefixes
-
-
-ModelNamePrefixes = Annotated[
-    list[str], AfterValidator(_canonicalize_model_name_prefixes)
-]
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
 
 
@@ -150,7 +125,7 @@ class SiteModelInput(StrictBaseModel):
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
     enabled: bool = True
-    protocol: ProtocolKind = ProtocolKind.AUTO
+    protocol: ProtocolKind = ProtocolKind.OPENAI_CHAT
     upstream_missing: bool = False
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
@@ -170,21 +145,6 @@ class SiteProtocolConfigInput(StrictBaseModel):
     protocols: list[ProtocolKind] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def validate_model_protocols(self) -> "SiteProtocolConfigInput":
-        protocols_by_model: dict[tuple[str, str], set[ProtocolKind]] = {}
-        for item in self.models:
-            key = (item.credential_id, item.model_name.strip())
-            protocols_by_model.setdefault(key, set()).add(item.protocol)
-        if any(
-            ProtocolKind.AUTO in protocols and len(protocols) > 1
-            for protocols in protocols_by_model.values()
-        ):
-            raise ValueError(
-                "Automatic forwarding cannot be combined with fixed protocols for the same model and credential"
-            )
-        return self
-
 
 class SiteConfig(StrictBaseModel):
     id: str
@@ -200,8 +160,6 @@ class SiteConfig(StrictBaseModel):
     # not exclude. Empty include onboard nothing automatically.
     model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
     model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
-    # Vendor prefixes like "openai" that alias "openai/gpt-5" to "gpt-5".
-    model_name_prefixes: ModelNamePrefixes = Field(default_factory=list)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -216,7 +174,6 @@ class SiteCreate(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
     model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
-    model_name_prefixes: ModelNamePrefixes = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -231,7 +188,6 @@ class SiteUpdate(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
     model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
-    model_name_prefixes: ModelNamePrefixes = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)

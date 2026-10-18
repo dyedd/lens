@@ -41,13 +41,14 @@ def apply_reasoning_intent(
             )
             body["thinking"] = {"type": "enabled", "budget_tokens": budget}
     elif channel.protocol == ProtocolKind.GEMINI:
-        budget = parsed.reasoning_budget or _REASONING_BUDGET_TOKENS.get(
-            parsed.reasoning_effort or ""
-        )
-        if budget is not None:
-            body.setdefault("generationConfig", {})["thinkingConfig"] = {
-                "thinkingBudget": budget
-            }
+        effort = parsed.reasoning_effort
+        if effort == "none":
+            level = "minimal"
+        elif effort in {"minimal", "low", "medium", "high"}:
+            level = effort
+        else:
+            level = "high"
+        body.setdefault("generation_config", {})["thinking_level"] = level
     return body
 
 

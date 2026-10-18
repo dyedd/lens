@@ -251,9 +251,6 @@ class SiteConfigUpsertsMixin(
                     model_sync_exclude_rule_ids_json=json.dumps(
                         payload.model_sync_exclude_rule_ids, ensure_ascii=True
                     ),
-                    model_name_prefixes_json=json.dumps(
-                        payload.model_name_prefixes, ensure_ascii=True
-                    ),
                 )
             )
         else:
@@ -270,9 +267,6 @@ class SiteConfigUpsertsMixin(
             )
             site.model_sync_exclude_rule_ids_json = json.dumps(
                 payload.model_sync_exclude_rule_ids, ensure_ascii=True
-            )
-            site.model_name_prefixes_json = json.dumps(
-                payload.model_name_prefixes, ensure_ascii=True
             )
 
         await self._upsert_base_urls(session, site_id, built_base_urls)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -51,6 +52,19 @@ class UpstreamModelChanges:
     added: list[str]
     missing: list[str]
     restored: list[str]
+
+
+def _onboard_protocol(raw: str) -> ProtocolKind:
+    """Pick a concrete protocol for automatically onboarded models."""
+    try:
+        protocols = {ProtocolKind(value) for value in json.loads(raw)}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        protocols = set()
+    if ProtocolKind.ANTHROPIC in protocols:
+        return ProtocolKind.ANTHROPIC
+    if ProtocolKind.GEMINI in protocols:
+        return ProtocolKind.GEMINI
+    return ProtocolKind.OPENAI_CHAT
 
 
 class SiteOperationsMixin:
@@ -183,6 +197,7 @@ class SiteOperationsMixin:
                 max((row.sort_order for row in config_rows), default=-1) + 1
             )
             existing_names = {row.model_name for row in credential_models}
+            onboard_protocol = _onboard_protocol(entity.protocols_json)
             added: set[str] = set()
             for model_name in sorted(rule_names):
                 if model_name in existing_names or model_name not in upstream_names:
@@ -195,7 +210,7 @@ class SiteOperationsMixin:
                         model_name=model_name,
                         enabled=1,
                         sort_order=next_sort_order,
-                        protocol=ProtocolKind.AUTO.value,
+                        protocol=onboard_protocol.value,
                         upstream_missing=0,
                         upstream_missing_since=None,
                         upstream_context_window=reported_context_windows.get(

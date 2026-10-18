@@ -126,8 +126,6 @@ class ModelGroupItem(StrictBaseModel):
 class ModelGroupItemView(ModelGroupItem):
     protocol_config_id: str
     site_id: str | None
-    # Names the channel model also answers to; used for name-based joining.
-    match_aliases: list[str] = Field(default_factory=list, exclude=True)
     rate_source: Literal["none", "sub2api", "newapi"] = "none"
     rate_multiplier: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     state: ModelGroupItemState
@@ -196,6 +194,16 @@ class ModelGroupUpdate(StrictBaseModel):
     items: list[ModelGroupItemInput] | None = None
     excluded_items: list[ModelGroupItemInput] | None = None
 
+    _validate_fallback_group_ids = field_validator("fallback_group_ids")(
+        lambda value: _canonicalize_fallback_group_ids(value)
+    )
+    _validate_param_override = field_validator("param_override")(
+        lambda value: (
+            [ParamOverrideRule.model_validate(item) for item in value]
+            if value is not None
+            else None
+        )
+    )
     _canonicalize_headers = field_validator("headers")(
         lambda value: (
             [HeaderRule.model_validate(item) for item in value]
@@ -257,8 +265,6 @@ class UnplacedModelProvider(StrictBaseModel):
 class UnplacedModelView(StrictBaseModel):
     model_name: str
     match_key: str
-    # Upstream and public names behind this view; internal to reconcile.
-    match_aliases: list[str] = Field(default_factory=list, exclude=True)
     similar_group_ids: list[str] = Field(default_factory=list)
     similar_group_names: list[str] = Field(default_factory=list)
     similar_model_names: list[str] = Field(default_factory=list)

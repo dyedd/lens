@@ -77,7 +77,6 @@ export type FoldedMember = {
   rate_source: "none" | "sub2api" | "newapi";
   context_window: number | null;
   context_window_source: ContextWindowSource | null;
-  protocols: ProtocolKind[];
   subItems: EvaluatedFormItem[];
   /** Shared source of every sub item; mixed sources count as manual. */
   source: ModelGroupMemberSource;
@@ -106,7 +105,6 @@ export type GroupDisplayMember = {
   credential_mask: string;
   base_url: string;
   source: ModelGroupMemberSource;
-  protocols: ProtocolKind[];
   items: ModelGroup["items"];
   enabled_item_count: number;
   disabled_item_count: number;

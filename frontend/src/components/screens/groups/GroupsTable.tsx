@@ -34,7 +34,6 @@ import {
 } from "@/components/ui/Table";
 import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
-import { protocolLabel } from "@/lib/protocols";
 import type {
   GroupDisplayMember,
   GroupRow,
@@ -43,7 +42,6 @@ import type {
 import {
   formatCredentialIdentity,
   formatMemberSource,
-  groupMemberProtocols,
   isGroupEnabled,
   STRATEGY_OPTIONS,
   strategyLabel,
@@ -210,7 +208,6 @@ export function GroupsTable({
           </TableHead>
           <TableHead>{locale === "zh-CN" ? "策略" : "Strategy"}</TableHead>
           <TableHead>{locale === "zh-CN" ? "成员" : "Members"}</TableHead>
-          <TableHead>{locale === "zh-CN" ? "协议" : "Protocols"}</TableHead>
           <TableHead className="text-center">
             {locale === "zh-CN" ? "状态" : "Status"}
           </TableHead>
@@ -221,7 +218,7 @@ export function GroupsTable({
         {loading && items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={7}
+              colSpan={6}
               className="h-32 text-center text-muted-foreground"
             >
               {loadingLabel}
@@ -231,7 +228,7 @@ export function GroupsTable({
         {!loading && items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={7}
+              colSpan={6}
               className="h-32 text-center text-muted-foreground"
             >
               {emptyLabel}
@@ -240,7 +237,6 @@ export function GroupsTable({
         ) : null}
         {items.map((group) => {
           const Avatar = getModelGroupAvatar(group.name);
-          const protocols = groupMemberProtocols(group);
           const enabled = isGroupEnabled(group);
           const busy = busyId === group.id || busyId === "bulk";
           const canToggle = !group.is_route_group && group.items.length > 0;
@@ -351,19 +347,6 @@ export function GroupsTable({
               </TableCell>
               <TableCell className="py-1.5">
                 <GroupMembersPopover group={group} locale={locale} />
-              </TableCell>
-              <TableCell className="py-1.5">
-                {protocols.length ? (
-                  <div className="flex flex-wrap gap-1">
-                    {protocols.map((protocol) => (
-                      <Badge key={protocol} variant="secondary">
-                        {protocolLabel(protocol, locale)}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
-                )}
               </TableCell>
               <TableCell className="py-1.5">
                 <div className="flex h-7 items-center justify-center">

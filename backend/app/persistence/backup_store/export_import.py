@@ -18,6 +18,9 @@ from app.persistence.entities import SettingEntity
 
 # Group rule fields written by backups before name-based joining.
 _LEGACY_GROUP_KEYS = ("match_models", "source_tags")
+# Retired site and site-model fields still present in older backups.
+_LEGACY_SITE_KEYS = ("model_sync_enabled", "model_name_prefixes")
+_LEGACY_SITE_MODEL_KEYS = ("source",)
 
 
 def _drop_legacy_group_fields(data: object) -> object:
@@ -34,12 +37,39 @@ def _drop_legacy_group_fields(data: object) -> object:
     return data
 
 
+def _drop_legacy_site_fields(data: object) -> object:
+    """Strip retired site and site-model fields so older backups still import."""
+    if not isinstance(data, dict):
+        return data
+    sites = data.get("sites")
+    if not isinstance(sites, list):
+        return data
+    for site in sites:
+        if not isinstance(site, dict):
+            continue
+        for key in _LEGACY_SITE_KEYS:
+            site.pop(key, None)
+        protocols = site.get("protocols")
+        if not isinstance(protocols, list):
+            continue
+        for protocol in protocols:
+            models = protocol.get("models") if isinstance(protocol, dict) else None
+            if not isinstance(models, list):
+                continue
+            for model in models:
+                if isinstance(model, dict):
+                    for key in _LEGACY_SITE_MODEL_KEYS:
+                        model.pop(key, None)
+    return data
+
+
 class BackupExportImportMixin:
     @staticmethod
     def parse_dump(payload: bytes) -> ConfigBackupDump:
         """Parse and validate a serialized configuration backup."""
         try:
             data = _drop_legacy_group_fields(json.loads(payload))
+            data = _drop_legacy_site_fields(data)
             return ConfigBackupDump.model_validate(data)
         except ValueError as exc:
             raise ValueError("Invalid backup file") from exc

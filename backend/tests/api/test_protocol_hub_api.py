@@ -59,6 +59,7 @@ def _capture_json_upstream(
         captured["url"] = upstream.url
         captured["stream"] = stream
         captured["body"] = json.loads(body_bytes)
+        captured["headers"] = dict(upstream.headers)
         return httpx.Response(
             200,
             json=payload,
@@ -91,6 +92,7 @@ def _capture_stream_upstream(
         captured["url"] = upstream.url
         captured["stream"] = stream
         captured["body"] = json.loads(body_bytes)
+        captured["headers"] = dict(upstream.headers)
         return httpx.Response(
             200,
             content=body.encode(),
@@ -207,12 +209,16 @@ def test_chat_client_reaches_anthropic_upstream(
         headers=gateway_headers(create_gateway_key()),
         json={
             "model": "chat-to-anthropic",
-            "messages": [{"role": "user", "content": "hello"}],
+            "messages": [
+                {"role": "system", "content": "be brief"},
+                {"role": "user", "content": "hello"},
+            ],
         },
     )
 
     assert response.status_code == 200, response.text
     assert captured["url"] == "https://upstream.example/v1/messages"
+    assert captured["body"]["system"] == "be brief"
     assert captured["body"]["messages"] == [{"role": "user", "content": "hello"}]
     # Anthropic requires max_tokens on every request; the hub supplies a default.
     assert captured["body"]["max_tokens"] > 0
@@ -314,11 +320,18 @@ def test_responses_client_reaches_anthropic_upstream(
     response = client.post(
         "/v1/responses",
         headers=gateway_headers(create_gateway_key()),
-        json={"model": "responses-to-anthropic", "input": "hello"},
+        json={
+            "model": "responses-to-anthropic",
+            "input": [
+                {"role": "system", "content": "be brief"},
+                {"role": "user", "content": "hello"},
+            ],
+        },
     )
 
     assert response.status_code == 200, response.text
     assert captured["url"] == "https://upstream.example/v1/messages"
+    assert captured["body"]["system"] == "be brief"
     assert captured["body"]["messages"] == [{"role": "user", "content": "hello"}]
     body = response.json()
     assert body["status"] == "completed"
@@ -358,17 +371,216 @@ def test_gemini_client_reaches_chat_upstream(
     )
 
     response = client.post(
-        "/v1beta/models/gemini-to-chat:generateContent",
+        "/v1beta/interactions",
         headers=gateway_headers(create_gateway_key()),
-        json={"contents": [{"role": "user", "parts": [{"text": "hello"}]}]},
+        json={
+            "model": "gemini-to-chat",
+            "input": [
+                {
+                    "type": "user_input",
+                    "content": [{"type": "text", "text": "hello"}],
+                }
+            ],
+        },
     )
 
     assert response.status_code == 200, response.text
     assert captured["url"] == "https://upstream.example/v1/chat/completions"
     assert captured["body"]["messages"] == [{"role": "user", "content": "hello"}]
-    candidate = response.json()["candidates"][0]
-    assert candidate["content"]["parts"] == [{"text": "hi there"}]
-    assert candidate["finishReason"] == "STOP"
+    step = response.json()["steps"][0]
+    assert step["content"] == [{"type": "text", "text": "hi there"}]
+
+
+def test_chat_client_reaches_gemini_interactions_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "interaction_1",
+            "object": "interaction",
+            "model": "upstream-model",
+            "status": "completed",
+            "steps": [
+                {
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": "hi there"}],
+                }
+            ],
+            "usage": {
+                "total_input_tokens": 3,
+                "total_output_tokens": 2,
+                "total_tokens": 5,
+            },
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.GEMINI,
+        group_name="chat-to-gemini",
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "chat-to-gemini",
+            "messages": [
+                {"role": "system", "content": "be brief"},
+                {"role": "user", "content": "hello"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured["url"] == "https://upstream.example/v1beta/interactions"
+    assert captured["headers"]["x-goog-api-key"] == "upstream-secret"
+    assert captured["body"]["model"] == "upstream-model"
+    assert captured["body"]["store"] is False
+    assert captured["body"]["system_instruction"] == "be brief"
+    assert captured["body"]["input"] == [
+        {
+            "type": "user_input",
+            "content": [{"type": "text", "text": "hello"}],
+        }
+    ]
+    assert response.json()["choices"][0]["message"]["content"] == "hi there"
+
+
+def test_gemini_client_reaches_interactions_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "interaction_1",
+            "object": "interaction",
+            "model": "upstream-model",
+            "status": "completed",
+            "steps": [
+                {
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": "hi there"}],
+                }
+            ],
+            "usage": {"total_input_tokens": 3, "total_output_tokens": 2},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.GEMINI,
+        group_name="gemini-to-gemini",
+    )
+
+    response = client.post(
+        "/v1beta/interactions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "gemini-to-gemini",
+            "input": [
+                {
+                    "type": "user_input",
+                    "content": [{"type": "text", "text": "hello"}],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured["url"] == "https://upstream.example/v1beta/interactions"
+    assert captured["body"]["input"] == [
+        {
+            "type": "user_input",
+            "content": [{"type": "text", "text": "hello"}],
+        }
+    ]
+    step = response.json()["steps"][0]
+    assert step["content"] == [{"type": "text", "text": "hi there"}]
+
+
+def test_gemini_client_streams_from_interactions_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    _capture_stream_upstream(
+        monkeypatch,
+        captured,
+        [
+            {
+                "event_type": "interaction.created",
+                "interaction": {
+                    "id": "g1",
+                    "object": "interaction",
+                    "model": "upstream-model",
+                    "status": "in_progress",
+                },
+            },
+            {
+                "event_type": "step.start",
+                "index": 0,
+                "step": {"type": "model_output"},
+            },
+            {
+                "event_type": "step.delta",
+                "index": 0,
+                "delta": {"type": "text", "text": "hi"},
+            },
+            {"event_type": "step.stop", "index": 0},
+            {
+                "event_type": "interaction.completed",
+                "interaction": {
+                    "id": "g1",
+                    "object": "interaction",
+                    "model": "upstream-model",
+                    "status": "completed",
+                },
+            },
+        ],
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.GEMINI,
+        group_name="gemini-stream-to-gemini",
+    )
+
+    response = client.post(
+        "/v1beta/interactions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "gemini-stream-to-gemini",
+            "stream": True,
+            "input": [
+                {
+                    "type": "user_input",
+                    "content": [{"type": "text", "text": "hello"}],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured["url"] == "https://upstream.example/v1beta/interactions"
+    assert captured["body"]["stream"] is True
+    assert '"text": "hi"' in response.text
 
 
 def test_chat_client_streams_from_gemini_upstream(
@@ -384,15 +596,39 @@ def test_chat_client_streams_from_gemini_upstream(
         captured,
         [
             {
-                "responseId": "g1",
-                "candidates": [
-                    {
-                        "content": {"role": "model", "parts": [{"text": "hi"}]},
-                        "finishReason": "STOP",
-                    }
-                ],
-                "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 2},
-            }
+                "event_type": "interaction.created",
+                "interaction": {
+                    "id": "g1",
+                    "object": "interaction",
+                    "model": "upstream-model",
+                    "status": "in_progress",
+                },
+            },
+            {
+                "event_type": "step.start",
+                "index": 0,
+                "step": {"type": "model_output"},
+            },
+            {
+                "event_type": "step.delta",
+                "index": 0,
+                "delta": {"type": "text", "text": "hi"},
+            },
+            {"event_type": "step.stop", "index": 0},
+            {
+                "event_type": "interaction.completed",
+                "interaction": {
+                    "id": "g1",
+                    "object": "interaction",
+                    "model": "upstream-model",
+                    "status": "completed",
+                    "usage": {
+                        "total_input_tokens": 3,
+                        "total_output_tokens": 2,
+                        "total_tokens": 5,
+                    },
+                },
+            },
         ],
     )
     _single_upstream_group(
@@ -413,11 +649,14 @@ def test_chat_client_streams_from_gemini_upstream(
     )
 
     assert response.status_code == 200, response.text
-    assert captured["url"] == (
-        "https://upstream.example/v1beta/models/upstream-model:streamGenerateContent"
-        "?key=upstream-secret&alt=sse"
-    )
-    assert captured["body"]["contents"] == [
-        {"role": "user", "parts": [{"text": "hello"}]}
+    assert captured["url"] == "https://upstream.example/v1beta/interactions"
+    assert captured["headers"]["x-goog-api-key"] == "upstream-secret"
+    assert captured["body"]["model"] == "upstream-model"
+    assert captured["body"]["stream"] is True
+    assert captured["body"]["input"] == [
+        {
+            "type": "user_input",
+            "content": [{"type": "text", "text": "hello"}],
+        }
     ]
     assert '"content": "hi"' in response.text

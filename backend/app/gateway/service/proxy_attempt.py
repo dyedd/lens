@@ -15,7 +15,11 @@ from ...core.upstream_rules import (
 )
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
-from ..converters import convert_request, strip_foreign_reasoning
+from ..converters import (
+    convert_request,
+    needs_protocol_conversion,
+    strip_foreign_reasoning,
+)
 from ..router import RouteTarget
 from ..router.cooldown import ErrorCategory, classify_error
 from .app_state import app_state
@@ -145,10 +149,8 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
     plan = run.plan
     target = run.target
     channel = target.channel
-    if channel.protocol == ProtocolKind.AUTO:
-        channel = channel.model_copy(update={"protocol": request.protocol})
 
-    if request.protocol != channel.protocol:
+    if needs_protocol_conversion(request.protocol, channel.protocol):
         try:
             upstream_body = convert_request(
                 request.protocol,

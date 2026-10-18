@@ -341,9 +341,15 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
     if payload.protocol == ProtocolKind.GEMINI:
         return {
             "model": payload.model_name,
-            "contents": [{"role": "user", "parts": [{"text": text}]}],
-            "generationConfig": {"maxOutputTokens": 64},
+            "input": [
+                {
+                    "type": "user_input",
+                    "content": [{"type": "text", "text": text}],
+                }
+            ],
+            "generation_config": {"max_output_tokens": 64},
             "stream": False,
+            "store": False,
         }
     raise HTTPException(
         status_code=500, detail=f"Unsupported protocol={payload.protocol.value}"

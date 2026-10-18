@@ -94,14 +94,10 @@ def _flush_stream_event_buffer(
 def _stream_event_format(
     protocol: ProtocolKind, capture: StreamCapture, pending_text: str
 ) -> str:
+    del protocol, pending_text
     if capture.event_format is not None:
         return capture.event_format
-    if protocol != ProtocolKind.GEMINI:
-        return "sse"
-    probe_text = f"{capture.event_buffer}{pending_text}".lstrip()
-    if not probe_text:
-        return "sse"
-    capture.event_format = "ndjson" if probe_text.startswith(("{", "[")) else "sse"
+    capture.event_format = "sse"
     return capture.event_format
 
 

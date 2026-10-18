@@ -86,21 +86,9 @@ def _record_stream_completion(
         return is_terminal
     if protocol != ProtocolKind.GEMINI:
         return False
-
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list):
-        return
-    for index, candidate in enumerate(candidates):
-        if not isinstance(candidate, dict) or candidate.get("finishReason") is None:
-            continue
-        candidate_index = candidate.get("index", index)
-        if isinstance(candidate_index, bool) or not isinstance(candidate_index, int):
-            candidate_index = index
-        if 0 <= candidate_index < capture.gemini_expected_candidates:
-            capture.gemini_finished_candidates.add(candidate_index)
-    capture.protocol_completed = (
-        len(capture.gemini_finished_candidates) >= capture.gemini_expected_candidates
-    )
+    if payload.get("event_type") == "interaction.completed":
+        capture.protocol_completed = True
+        return True
     return False
 
 
@@ -162,25 +150,20 @@ def _anthropic_stream_payload_has_output(payload: dict[str, Any]) -> bool:
 
 
 def _gemini_stream_payload_has_output(payload: dict[str, Any]) -> bool:
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list):
+    if payload.get("event_type") == "step.delta":
+        delta = payload.get("delta")
+        if not isinstance(delta, dict):
+            return False
+        if delta.get("type") == "text":
+            return _has_non_empty_stream_value(delta.get("text"))
+        if delta.get("type") == "thought_summary":
+            content = delta.get("content")
+            return isinstance(content, dict) and _has_non_empty_stream_value(
+                content.get("text")
+            )
+        if delta.get("type") == "arguments_delta":
+            return _has_non_empty_stream_value(delta.get("arguments"))
         return False
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        content = candidate.get("content")
-        if not isinstance(content, dict):
-            continue
-        parts = content.get("parts")
-        if not isinstance(parts, list):
-            continue
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            if _has_non_empty_stream_value(part.get("text")):
-                return True
-            if isinstance(part.get("functionCall"), dict):
-                return True
     return False
 
 

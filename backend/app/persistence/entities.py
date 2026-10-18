@@ -39,6 +39,16 @@ def auto_timestamp_column() -> Mapped[datetime]:
     return mapped_column(default=_utc_now, onupdate=_utc_now, nullable=False)
 
 
+def site_updated_at_column() -> Mapped[datetime]:
+    """Timestamp column matching the sites migration's database default."""
+    return mapped_column(
+        default=_utc_now,
+        onupdate=_utc_now,
+        nullable=False,
+        server_default=text("(CURRENT_TIMESTAMP)"),
+    )
+
+
 class AdminUserEntity(Base):
     __tablename__ = "admin_users"
 
@@ -64,7 +74,7 @@ class SiteEntity(Base):
     tags_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    updated_at: Mapped[datetime] = auto_timestamp_column()
+    updated_at: Mapped[datetime] = site_updated_at_column()
     headers_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
@@ -72,7 +82,7 @@ class SiteEntity(Base):
         String(16), nullable=False, default="inherit", server_default="inherit"
     )
     channel_proxy: Mapped[str] = mapped_column(
-        Text, nullable=False, default="", server_default=""
+        Text, nullable=False, default="", server_default=text("''")
     )
     param_override: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
@@ -82,10 +92,6 @@ class SiteEntity(Base):
         Text, nullable=False, default="[]", server_default="[]"
     )
     model_sync_exclude_rule_ids_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
-    # Vendor prefixes to strip when matching upstream names to public names.
-    model_name_prefixes_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
 
@@ -108,7 +114,7 @@ class SiteCredentialEntity(Base):
     api_key: Mapped[str] = mapped_column(Text, nullable=False)
     sort_order: Mapped[int] = sort_order_column()
     base_url_id: Mapped[str] = mapped_column(
-        String(80), nullable=False, default="", server_default=""
+        String(80), nullable=False, default="", server_default=text("''")
     )
 
 

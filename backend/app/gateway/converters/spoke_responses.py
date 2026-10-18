@@ -85,7 +85,9 @@ def parse_responses_request(body: Mapping[str, Any]) -> UnifiedRequest:
     elif instructions is not None and not isinstance(instructions, str):
         raise ValueError("Responses instructions must be a string")
 
-    request.messages = _responses_input_to_messages(body.get("input", []))
+    request.messages = _responses_input_to_messages(
+        body.get("input", []), request.system
+    )
     request.tools = _responses_tools(body.get("tools"))
     request.tool_choice = _responses_tool_choice(body.get("tool_choice"))
     parallel = body.get("parallel_tool_calls")
@@ -244,7 +246,10 @@ def _incomplete_reason(reason: FinishReason) -> str:
     return "max_output_tokens"
 
 
-def _responses_input_to_messages(value: Any) -> list[Message]:
+def _responses_input_to_messages(
+    value: Any,
+    system_parts: list[ContentPart],
+) -> list[Message]:
     if isinstance(value, str):
         return [
             Message(
@@ -272,6 +277,17 @@ def _responses_input_to_messages(value: Any) -> list[Message]:
         if not isinstance(item, Mapping):
             raise ValueError("Responses input must contain objects")
         item_type = item.get("type")
+        role = item.get("role")
+        if (
+            (item_type is None or item_type == "message")
+            and isinstance(role, str)
+            and role in {"system", "developer"}
+        ):
+            # System prompts are instructions, not turn history; other
+            # protocols receive them beside the messages.
+            flush()
+            system_parts.extend(_responses_content_parts(item.get("content")))
+            continue
         if item_type == "function_call":
             pending_calls.append(
                 ToolCallPart(
@@ -328,12 +344,10 @@ def _responses_input_to_messages(value: Any) -> list[Message]:
 
 def _responses_message_to_unified(item: Mapping[str, Any]) -> Message:
     item_type = item.get("type")
-    if item_type not in {None, "message"}:
+    if item_type is not None and item_type != "message":
         raise ValueError(f"Unsupported Responses input item type: {item_type}")
     role = item.get("role")
-    if role == "developer":
-        role = "system"
-    if role not in {"system", "user", "assistant"}:
+    if not isinstance(role, str) or role not in {"user", "assistant"}:
         raise ValueError("Responses messages must contain a valid role")
     return Message(
         role=MessageRole(role),
