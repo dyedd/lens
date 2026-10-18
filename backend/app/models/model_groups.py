@@ -347,7 +347,6 @@ class UnplacedModelRemovalRequest(StrictBaseModel):
 
 class UnplacedModelRemovalResponse(StrictBaseModel):
     deleted: int = 0
-    disabled: int = 0
 
 
 class ModelGroupMergeRequest(StrictBaseModel):

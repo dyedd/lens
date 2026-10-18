@@ -8,7 +8,7 @@ import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Locale } from "./channelTypes";
 import { ProtocolDropdown } from "./ProtocolDropdown";
 
-/** Collects manually entered upstream model names. */
+/** Collects model names that should be tracked in the upstream catalog. */
 export function AddChannelModelsDialog({
   open,
   locale,
@@ -29,8 +29,8 @@ export function AddChannelModelsDialog({
         title={locale === "zh-CN" ? "添加模型" : "Add models"}
         description={
           locale === "zh-CN"
-            ? "每行输入一个模型名，也可用逗号分隔。模型会添加到所有 API Key，并且不受自动同步影响。"
-            : "Enter one model name per line or separate names with commas. Models are added to every API key and are not changed by auto-sync."
+            ? "每行输入一个模型名，也可用逗号分隔。模型会添加到所有 API Key，并按上游列表持续同步。"
+            : "Enter one model name per line or separate names with commas. Models are added to every API key and remain tracked in the upstream catalog."
         }
         footer={
           <>

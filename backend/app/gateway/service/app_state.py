@@ -69,7 +69,7 @@ CRONJOB_SPECS = (
     CronjobSpec(
         id=TASK_CHANNEL_MODEL_SYNC,
         name="渠道模型同步",
-        description="为开启自动同步的渠道拉取上游模型，新增模型直接可用，下线模型待确认",
+        description="为启用的渠道拉取上游模型，新增模型直接可用，下线模型待确认",
         default_interval_hours=24,
     ),
     CronjobSpec(

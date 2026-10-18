@@ -3,29 +3,17 @@ import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ChannelModelSyncResponse, Site } from "@/lib/api/sites";
-import { toForm, toPayload } from "./channelFormConversion";
+import { toPayload } from "./channelFormConversion";
 import type { FormState, Locale } from "./channelTypes";
 
 type ChannelEditor = {
   form: FormState;
   editingSiteId: string | null;
-  hasUnsavedChanges: boolean;
   setEditingSiteId: (value: string | null) => void;
   setIsDialogOpen: (value: boolean) => void;
   applyPreparedForm: (form: FormState) => void;
   validateSiteForm: () => boolean;
 };
-
-/** Identifies the inputs whose change makes the upstream catalog worth re-reading. */
-function modelSyncSourceKey(site: Site) {
-  return JSON.stringify([
-    site.model_sync_enabled,
-    site.model_sync_include_rule_ids,
-    site.model_sync_exclude_rule_ids,
-    site.base_urls.map((item) => item.url),
-    site.credentials.map((item) => item.api_key),
-  ]);
-}
 
 function countSyncedNames(
   result: ChannelModelSyncResponse,
@@ -65,7 +53,6 @@ function formatSyncSummary(
   return parts.length ? `已同步：${parts.join("，")}` : "模型已是最新";
 }
 
-/** Saves channels and runs the upstream model sync the save calls for. */
 export function useChannelSave({
   locale,
   queryClient,
@@ -78,15 +65,6 @@ export function useChannelSave({
   editor: ChannelEditor;
 }) {
   const [isSaving, setIsSaving] = useState(false);
-  const [syncingSiteId, setSyncingSiteId] = useState<string | null>(null);
-
-  function cachedSite(siteId: string | null) {
-    return siteId
-      ? queryClient
-          .getQueryData<Site[]>(["sites"])
-          ?.find((site) => site.id === siteId)
-      : undefined;
-  }
 
   async function persistSite() {
     const body = JSON.stringify(toPayload(editor.form));
@@ -104,7 +82,6 @@ export function useChannelSave({
   }
 
   async function syncSiteModels(siteId: string) {
-    setSyncingSiteId(siteId);
     try {
       const result = await apiRequest<ChannelModelSyncResponse>(
         "/admin/channel-model-sync",
@@ -115,8 +92,8 @@ export function useChannelSave({
       if (!result.items.length) {
         toast.info(
           locale === "zh-CN"
-            ? "该渠道未开启自动同步或已停用"
-            : "Auto-sync is off or the channel is disabled",
+            ? "该渠道已停用，暂时没有可同步的模型"
+            : "The channel is disabled, so no models were synchronized",
         );
       } else if (failures.length === result.items.length) {
         toast.error(
@@ -142,22 +119,20 @@ export function useChannelSave({
         ),
       );
       return null;
-    } finally {
-      setSyncingSiteId(null);
     }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editor.validateSiteForm()) return;
-    const previousSite = cachedSite(editor.editingSiteId);
+    const editing = Boolean(editor.editingSiteId);
     setIsSaving(true);
     try {
       const site = await persistSite();
       editor.setIsDialogOpen(false);
       editor.setEditingSiteId(null);
       toast.success(
-        previousSite
+        editing
           ? locale === "zh-CN"
             ? "渠道已保存"
             : "Channel saved"
@@ -165,38 +140,8 @@ export function useChannelSave({
             ? "渠道已创建"
             : "Channel created",
       );
-      const shouldSync =
-        site.enabled &&
-        site.model_sync_enabled &&
-        (!previousSite ||
-          modelSyncSourceKey(previousSite) !== modelSyncSourceKey(site));
-      if (shouldSync) void syncSiteModels(site.id);
+      if (site.enabled) void syncSiteModels(site.id);
       else void invalidateChannelData();
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN" ? "保存渠道失败" : "Failed to save channel",
-        ),
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  /** Saves pending edits, syncs now, and reloads the editor in place. */
-  async function syncEditorModels() {
-    if (!editor.validateSiteForm()) return;
-    setIsSaving(true);
-    try {
-      const site =
-        editor.hasUnsavedChanges || !editor.editingSiteId
-          ? await persistSite()
-          : cachedSite(editor.editingSiteId);
-      if (!site) return;
-      editor.setEditingSiteId(site.id);
-      await syncSiteModels(site.id);
-      editor.applyPreparedForm(toForm(cachedSite(site.id) ?? site));
     } catch (error) {
       toast.error(
         getApiErrorMessage(
@@ -211,9 +156,6 @@ export function useChannelSave({
 
   return {
     isSaving,
-    syncingSiteId,
     submit,
-    syncSiteModels,
-    syncEditorModels,
   };
 }

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import re
 from collections import defaultdict
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -23,30 +21,6 @@ from .model_discovery import fetch_upstream_models
 
 if TYPE_CHECKING:
     from ..app_state import AppState
-
-
-def _build_model_sync_filter(
-    site: SiteConfig, rule_patterns: dict[str, re.Pattern[str]]
-) -> Callable[[str], bool]:
-    """Build a predicate for models matching any include rule and no exclude rule."""
-    include = [
-        rule_patterns[rule_id]
-        for rule_id in site.model_sync_include_rule_ids
-        if rule_id in rule_patterns
-    ]
-    exclude = [
-        rule_patterns[rule_id]
-        for rule_id in site.model_sync_exclude_rule_ids
-        if rule_id in rule_patterns
-    ]
-
-    def is_wanted(model_name: str) -> bool:
-        return (
-            not site.model_sync_include_rule_ids
-            or any(pattern.search(model_name) for pattern in include)
-        ) and not any(pattern.search(model_name) for pattern in exclude)
-
-    return is_wanted
 
 
 def channel_for_credential(
@@ -83,24 +57,11 @@ async def sync_channel_models(
         site
         for site in await state.channel_store.list_sites()
         if site.enabled
-        and site.model_sync_enabled
         and (requested_site_ids is None or site.id in requested_site_ids)
     ]
-    rule_patterns = await state.regex_rule_repo.load_patterns(
-        rule_id
-        for site in sites
-        for rule_id in (
-            *site.model_sync_include_rule_ids,
-            *site.model_sync_exclude_rule_ids,
-        )
-    )
     items: list[ChannelModelSyncResultItem] = []
     for site in sites:
-        items.extend(
-            await _sync_site_models(
-                state, site, _build_model_sync_filter(site, rule_patterns)
-            )
-        )
+        items.extend(await _sync_site_models(state, site))
 
     logger.info(
         "Channel model sync: targets=%s updated=%s failed=%s",
@@ -147,7 +108,7 @@ async def _reconcile_synced_groups(
 
 
 async def _sync_site_models(
-    state: AppState, site: SiteConfig, is_wanted: Callable[[str], bool]
+    state: AppState, site: SiteConfig
 ) -> list[ChannelModelSyncResultItem]:
     credential_names = {
         credential.id: credential.name for credential in site.credentials
@@ -172,9 +133,7 @@ async def _sync_site_models(
             )
             items.append(item)
             try:
-                await _sync_credential_models(
-                    state, protocol_config, channels, item, is_wanted
-                )
+                await _sync_credential_models(state, protocol_config, channels, item)
             except (HTTPException, ResourceNotFoundError, ValueError) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
                 item.error = (
@@ -188,7 +147,6 @@ async def _sync_credential_models(
     protocol_config: SiteProtocolConfig,
     channels: list[ChannelConfig],
     item: ChannelModelSyncResultItem,
-    is_wanted: Callable[[str], bool],
 ) -> None:
     # Protocols of one config share a base URL, so one catalog fetch serves all.
     fetch_channel = next(
@@ -207,15 +165,15 @@ async def _sync_credential_models(
         raise ValueError("no usable credential for model discovery")
     upstream_models = await fetch_upstream_models(fetch_channel)
     upstream_names = {model.name for model in upstream_models}
-    if not upstream_names:
-        raise ValueError("upstream returned no models")
-
     changes = await state.channel_store.sync_upstream_models(
         protocol_config.id,
         item.credential_id,
-        [channel.protocol for channel in channels],
         upstream_names=upstream_names,
-        wanted_names={name for name in upstream_names if is_wanted(name)},
+        target_keys={
+            (target.protocol, target.model_name)
+            for target in protocol_config.sync_targets
+            if target.credential_id == item.credential_id
+        },
         upstream_context_windows={
             model.name: model.context_window
             for model in upstream_models

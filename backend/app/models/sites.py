@@ -4,8 +4,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
-from .protocols import ChannelProxyMode, ModelSource, ProtocolKind
-from .regex_rules import RegexRuleIds
+from .protocols import ChannelProxyMode, ProtocolKind
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel
 
@@ -112,7 +111,6 @@ class SiteModel(StrictBaseModel):
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
     protocol: ProtocolKind | None = None
-    source: ModelSource = ModelSource.MANUAL
     upstream_missing: bool = False
     # Internal: carried to runtime channels for retirement, never serialized.
     upstream_missing_since: datetime | None = Field(default=None, exclude=True)
@@ -126,10 +124,15 @@ class SiteModelInput(StrictBaseModel):
     model_name: str = Field(min_length=1)
     enabled: bool = True
     protocol: ProtocolKind = ProtocolKind.AUTO
-    source: ModelSource = ModelSource.MANUAL
     upstream_missing: bool = False
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
+
+
+class SiteSyncTarget(StrictBaseModel):
+    credential_id: str = Field(min_length=1)
+    protocol: ProtocolKind
+    model_name: str = Field(min_length=1)
 
 
 class SiteProtocolConfig(StrictBaseModel):
@@ -138,6 +141,7 @@ class SiteProtocolConfig(StrictBaseModel):
     protocols: list[ProtocolKind] = Field(default_factory=list)
     credential_ids: list[str] = Field(default_factory=list)
     models: list[SiteModel] = Field(default_factory=list)
+    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
 
 
 class SiteProtocolConfigInput(StrictBaseModel):
@@ -145,6 +149,7 @@ class SiteProtocolConfigInput(StrictBaseModel):
     base_url_id: str = Field(min_length=1)
     protocols: list[ProtocolKind] = Field(default_factory=list)
     models: list[SiteModelInput] = Field(default_factory=list)
+    sync_targets: list[SiteSyncTarget] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_model_protocols(self) -> "SiteProtocolConfigInput":
@@ -172,9 +177,6 @@ class SiteConfig(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    model_sync_enabled: bool = False
-    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
-    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -187,9 +189,6 @@ class SiteCreate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    model_sync_enabled: bool = False
-    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
-    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -202,9 +201,6 @@ class SiteUpdate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    model_sync_enabled: bool = False
-    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
-    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
