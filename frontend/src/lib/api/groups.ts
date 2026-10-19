@@ -34,8 +34,6 @@ export type ModelGroupItemReason =
   | "model_upstream_missing";
 /** How a saved member joined: by hand, through match rules, or by placement. */
 export type ModelGroupMemberSource = "manual" | "rule" | "placement";
-/** Where automatically joined members are inserted. */
-export type ModelGroupNewMemberPosition = "end" | "start" | "rate_asc";
 export type ModelGroupItemPayload = {
   channel_id: string;
   credential_id: string;
@@ -73,7 +71,6 @@ export type ModelGroup = {
   origin: "manual" | "auto";
   /** Library regex rules; when set they replace name matching for this group. */
   match_rule_ids: string[];
-  new_member_position: ModelGroupNewMemberPosition;
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
   fallback_group_ids?: string[];

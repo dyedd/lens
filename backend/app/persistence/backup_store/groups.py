@@ -130,7 +130,6 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
                     "fallback_group_ids": parse_fallback_group_ids(
                         row.fallback_group_ids_json
                     ),
-                    "new_member_position": row.new_member_position,
                     "origin": row.origin,
                     "context_window": coerce_context_window(row.context_window),
                     **group_price_kwargs(price),
@@ -235,7 +234,6 @@ async def replace_groups(
                 fallback_group_ids_json=dump_fallback_group_ids(
                     group.fallback_group_ids
                 ),
-                new_member_position=group.new_member_position.value,
                 origin=group.origin.value,
                 context_window=group.context_window,
             )

@@ -159,20 +159,6 @@ export function buildModelMatchKey(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/**
- * Build a matcher for a group's rules: exact match models (case-insensitive)
- * plus the model names the backend found for its regex rules.
- */
-export function buildRuleMatcher(
-  matchModels: string[],
-  matchedModelNames: string[],
-) {
-  const names = new Set(
-    [...matchModels, ...matchedModelNames].map((name) => name.toLowerCase()),
-  );
-  return (modelName: string) => names.has(modelName.toLowerCase());
-}
-
 /** Build the stable identity key for a model group member. */
 export function modelGroupItemKey(
   item: Pick<FormItem, "channel_id" | "credential_id" | "model_name">,
