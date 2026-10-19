@@ -25,6 +25,7 @@ from ..router.cooldown import (
 )
 from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
 from .app_state import app_state
+from .error_responses import stream_error_frame
 from .payload_serialization import (
     decode_content_bytes,
     decode_log_content_bytes,
@@ -321,7 +322,7 @@ async def _build_stream_result(
         converted_iter = raw_iter
         stream_media = response.headers.get("content-type")
 
-    converted_iter = _stream_client_iterator(converted_iter, capture)
+    converted_iter = _stream_client_iterator(converted_iter, capture, client_protocol)
 
     return UpstreamResult(
         response=FinalizingStreamingResponse(
@@ -344,10 +345,24 @@ async def _build_stream_result(
 async def _stream_client_iterator(
     stream: AsyncIterator[bytes],
     capture: StreamCapture,
+    client_protocol: ProtocolKind | None,
 ) -> AsyncIterator[bytes]:
     try:
         async for chunk in stream:
             yield chunk
+    except (ValueError, httpx.HTTPError, GatewayTimeoutError) as exc:
+        if not capture.errors:
+            record_stream_error(
+                capture,
+                f"stream failed: {type(exc).__name__}: {exc}",
+                status_code=502,
+            )
+        if client_protocol is not None and not capture.is_client_stream_completed:
+            yield stream_error_frame(
+                protocol=client_protocol,
+                message=capture.errors[-1] if capture.errors else str(exc),
+            )
+        return
     except Exception as exc:
         if not capture.errors:
             record_stream_error(

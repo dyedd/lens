@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -68,6 +70,9 @@ class RequestLogOverview:
             session, days=days, offset_days=offset_days, time_zone=time_zone
         )
         imported_dates = {item.date for item in imported_points}
+        coverage = await self.imported_daily_coverage(
+            session, days=days, offset_days=offset_days, time_zone=time_zone
+        )
         archived_points = await self.archived_daily_points(
             session,
             days=days,
@@ -79,7 +84,7 @@ class RequestLogOverview:
             session,
             days=days,
             offset_days=offset_days,
-            exclude_dates=imported_dates,
+            coverage=coverage,
             time_zone=time_zone,
         )
         merged = {item.date: item for item in imported_points}
@@ -184,7 +189,7 @@ class RequestLogOverview:
         days: int,
         time_zone: ZoneInfo,
         offset_days: int = 0,
-        exclude_dates: set[str] | None = None,
+        coverage: dict[str, datetime] | None = None,
         gateway_key_id: str | None = None,
         include_archived: bool = False,
     ) -> list[OverviewDailyPoint]:
@@ -199,12 +204,16 @@ class RequestLogOverview:
             stmt, days=days, offset_days=offset_days, time_zone=time_zone
         )
         stmt = apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
-        rows = (await session.execute(stmt)).all()
+        rows = [
+            row
+            for row in (await session.execute(stmt)).all()
+            if self._live_row_is_new_activity(
+                row[0], coverage=coverage, time_zone=time_zone
+            )
+        ]
         points: list[OverviewDailyPoint] = []
         daily_buckets = self.statistics.daily_stats_by_local_bucket(rows, time_zone)
         for date_value, values in sorted(daily_buckets.items()):
-            if exclude_dates and date_value in exclude_dates:
-                continue
             total_value = int(values["request_count"])
             success_value = int(values["successful_requests"])
             points.append(
@@ -480,6 +489,27 @@ class RequestLogOverview:
             ),
         )
 
+    async def imported_daily_coverage(
+        self,
+        session: AsyncSession,
+        *,
+        days: int,
+        time_zone: ZoneInfo,
+        offset_days: int = 0,
+    ) -> dict[str, datetime]:
+        """Map each imported local day to the instant its snapshot was taken."""
+        stmt = select(
+            ImportedStatsDailyEntity.date, ImportedStatsDailyEntity.imported_at
+        )
+        start_at, end_at = resolve_imported_date_window(
+            days, offset_days=offset_days, time_zone=time_zone
+        )
+        if start_at is not None and end_at is not None:
+            stmt = stmt.where(ImportedStatsDailyEntity.date >= start_at).where(
+                ImportedStatsDailyEntity.date < end_at
+            )
+        return {row[0]: row[1] for row in (await session.execute(stmt)).all()}
+
     async def imported_period_totals(
         self,
         session: AsyncSession,
@@ -487,14 +517,19 @@ class RequestLogOverview:
         days: int,
         time_zone: ZoneInfo,
         offset_days: int = 0,
-    ) -> dict[str, float | set[str]]:
+    ) -> dict[str, Any]:
         if days == 0:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
             rows = [imported_total] if imported_total is not None else []
             covered_dates = {
-                row[0]
+                row[0]: row[1]
                 for row in (
-                    await session.execute(select(ImportedStatsDailyEntity.date))
+                    await session.execute(
+                        select(
+                            ImportedStatsDailyEntity.date,
+                            ImportedStatsDailyEntity.imported_at,
+                        )
+                    )
                 ).all()
             }
         else:
@@ -513,7 +548,7 @@ class RequestLogOverview:
                 .all()
             )
             rows = list(daily_rows)
-            covered_dates = {item.date for item in daily_rows}
+            covered_dates = {item.date: item.imported_at for item in daily_rows}
         return {
             "request_count": float(
                 sum(item.request_success + item.request_failed for item in rows)
@@ -531,13 +566,37 @@ class RequestLogOverview:
             "covered_dates": covered_dates,
         }
 
+    def _live_row_is_new_activity(
+        self,
+        created_at: Any,
+        *,
+        coverage: dict[str, datetime] | None,
+        time_zone: ZoneInfo,
+    ) -> bool:
+        """Tell post-import activity apart from history an import already counted.
+
+        A covered local day only outweighs the rows that existed when the
+        snapshot was taken; later rows on that same day are new requests.
+        """
+        if not coverage:
+            return True
+        utc_created_at = self.statistics.to_utc_datetime(created_at)
+        if utc_created_at is None:
+            return True
+        cutoff = coverage.get(utc_created_at.astimezone(time_zone).strftime("%Y%m%d"))
+        if cutoff is None:
+            return True
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=UTC)
+        return utc_created_at > cutoff
+
     async def request_log_period_totals(
         self,
         session: AsyncSession,
         *,
         days: int,
         offset_days: int = 0,
-        exclude_dates: set[str] | None = None,
+        coverage: dict[str, datetime] | None = None,
         gateway_key_id: str | None = None,
         include_archived: bool = False,
         time_zone: ZoneInfo,
@@ -549,13 +608,17 @@ class RequestLogOverview:
             stmt, days=days, offset_days=offset_days, time_zone=time_zone
         )
         stmt = apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
-        rows = (await session.execute(stmt)).all()
+        rows = [
+            row
+            for row in (await session.execute(stmt)).all()
+            if self._live_row_is_new_activity(
+                row[0], coverage=coverage, time_zone=time_zone
+            )
+        ]
         totals = self.zero_totals()
         totals["successful_requests"] = 0.0
         daily_buckets = self.statistics.daily_stats_by_local_bucket(rows, time_zone)
-        for date_value, values in daily_buckets.items():
-            if exclude_dates and date_value in exclude_dates:
-                continue
+        for values in daily_buckets.values():
             totals["request_count"] += float(values["request_count"])
             totals["wait_time_ms"] += float(values["wait_time_ms"])
             totals["input_tokens"] += float(values["input_tokens"])
@@ -649,18 +712,19 @@ class RequestLogOverview:
         imported_totals = await self.imported_period_totals(
             session, days=days, offset_days=offset_days, time_zone=time_zone
         )
+        coverage: dict[str, datetime] = imported_totals["covered_dates"]
         archived_totals = await self.archived_period_totals(
             session,
             days=days,
             offset_days=offset_days,
-            exclude_dates=imported_totals["covered_dates"],
+            exclude_dates=set(coverage),
             time_zone=time_zone,
         )
         request_log_totals = await self.request_log_period_totals(
             session,
             days=days,
             offset_days=offset_days,
-            exclude_dates=imported_totals["covered_dates"],
+            coverage=coverage,
             time_zone=time_zone,
         )
         parts = (imported_totals, archived_totals, request_log_totals)

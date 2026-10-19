@@ -16,7 +16,6 @@ from typing import Any
 
 from ...models.protocols import ProtocolKind
 from .sse import (
-    FINISH_REASON_CHAT_TO_ANTHROPIC,
     anthropic_block_delta,
     anthropic_block_start,
     anthropic_block_stop,
@@ -63,10 +62,6 @@ _REASONING_BUDGET_TOKENS = {
     "xhigh": 16384,
     "max": 32768,
     "auto": 4096,
-}
-
-_ANTHROPIC_TO_CHAT_FINISH: dict[str | None, str] = {
-    reason: wire for wire, reason in FINISH_REASON_CHAT_TO_ANTHROPIC.items()
 }
 
 
@@ -930,6 +925,12 @@ class _AnthropicParseState:
                     "Anthropic block stop arrived before content_block_start"
                 )
             return [BlockStop(index=unified_index)]
+        if event_type == "error":
+            error = payload.get("error")
+            message = _text(error.get("message")) if isinstance(error, Mapping) else ""
+            detail = _text(error.get("type")) if isinstance(error, Mapping) else ""
+            label = f"{detail}: {message}" if detail and message else message or detail
+            raise ValueError(f"Anthropic upstream error: {label or 'unknown error'}")
         if event_type == "message_delta":
             delta = payload.get("delta")
             if isinstance(delta, Mapping) and delta.get("stop_reason"):

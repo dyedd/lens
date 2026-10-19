@@ -331,31 +331,3 @@ def test_editor_save_keeps_rule_members_added_while_it_was_open(
         "second-cred",
     ]
     assert saved.json()["excluded_items"] == []
-
-
-def test_named_members_join_at_the_group_insert_position(
-    client,
-    admin_headers,
-    create_site,
-) -> None:
-    created_group = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={"name": "gpt-4o"},
-    )
-    assert created_group.status_code == 201, created_group.text
-    create_site(_site_with_key("First", "first"))
-    group = _group_named(client, admin_headers, "gpt-4o")
-    client.put(
-        f"/api/admin/model-groups/{group['id']}",
-        headers=admin_headers,
-        json={"new_member_position": "start"},
-    )
-
-    create_site(_site_with_key("Second", "second"))
-    stored = client.get(f"/api/admin/model-groups/{group['id']}", headers=admin_headers)
-
-    assert stored.json()["new_member_position"] == "start"
-    assert [
-        (item["credential_id"], item["source"]) for item in stored.json()["items"]
-    ] == [("second-cred", "placement"), ("first-cred", "placement")]

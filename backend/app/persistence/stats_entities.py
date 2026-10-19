@@ -1,4 +1,6 @@
-from sqlalchemy import Float, Integer, String
+from datetime import datetime
+
+from sqlalchemy import DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
@@ -21,6 +23,9 @@ class ImportedStatsDailyEntity(Base):
     __tablename__ = "imported_stats_daily"
 
     date: Mapped[str] = mapped_column(String(8), primary_key=True)
+    # Wall-clock instant the snapshot was imported; live logs created after it
+    # on the same local day are new activity and still count.
+    imported_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     input_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

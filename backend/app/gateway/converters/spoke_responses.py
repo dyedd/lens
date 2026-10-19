@@ -19,6 +19,7 @@ from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
 from .responses_common import (
     decode_reasoning_item,
     encode_reasoning_item,
+    is_reasoning_envelope,
     raise_for_failed_response,
     reasoning_summary_text,
     usage_int,
@@ -118,7 +119,7 @@ def build_responses_request(request: UnifiedRequest) -> dict[str, Any]:
                 if isinstance(part, ToolResultPart):
                     items.append(_tool_result_to_responses(part))
             continue
-        items.extend(_message_to_responses(message, request=request))
+        items.extend(_message_to_responses(message))
 
     body: dict[str, Any] = dict(request.passthrough)
     body.pop("stream_options", None)
@@ -542,9 +543,7 @@ def _responses_response_format(value: Any) -> ResponseFormat | None:
     )
 
 
-def _message_to_responses(
-    message: Message, *, request: UnifiedRequest
-) -> list[dict[str, Any]]:
+def _message_to_responses(message: Message) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     content: list[dict[str, Any]] = []
     tool_calls: list[dict[str, Any]] = []
@@ -889,7 +888,11 @@ async def parse_responses_stream(
             return
         elif event_type in {"response.failed", "error"}:
             raise_for_failed_response(response if isinstance(response, Mapping) else {})
-            raise ValueError("Responses stream failed")
+            message = _text(payload.get("message"))
+            error = payload.get("error")
+            if not message and isinstance(error, Mapping):
+                message = _text(error.get("message"))
+            raise ValueError(message or "Responses stream failed")
     raise ValueError("Responses stream ended before terminal event")
 
 
@@ -934,16 +937,41 @@ async def _serialize_responses_stream(
             elif isinstance(event, ReasoningDelta):
                 yield _chat_chunk({"reasoning_content": event.text})
             elif isinstance(event, SignatureDelta):
-                # Chat has no signature channel; the response-side envelope is
-                # re-encoded by the terminal event instead.
-                continue
+                # Chat has no signature channel, so the envelope travels in its
+                # own internal chunk for the Responses state to re-encode.
+                yield _chat_chunk({"reasoning_signature": event.opaque})
             elif isinstance(event, StreamFinish):
+                # A tool call whose upstream sent no argument delta still needs
+                # an identity frame; otherwise the response omits the call.
+                for index in sorted(tool_identities):
+                    if index in tool_announced:
+                        continue
+                    call_id, name = tool_identities[index]
+                    if not call_id and not name:
+                        continue
+                    tool_announced.add(index)
+                    yield _chat_chunk(
+                        {
+                            "tool_calls": [
+                                {
+                                    "index": index,
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {"name": name, "arguments": "{}"},
+                                }
+                            ]
+                        }
+                    )
                 yield _chat_chunk(
                     {},
                     finish_reason=_responses_wire_finish_reason(event.reason),
                     usage={
                         "prompt_tokens": event.usage.input_tokens,
                         "completion_tokens": event.usage.output_tokens,
+                        "cache_write_tokens": event.usage.cache_creation_input_tokens,
+                        "completion_tokens_details": {
+                            "reasoning_tokens": event.usage.reasoning_tokens,
+                        },
                         "prompt_tokens_details": {
                             "cached_tokens": event.usage.cached_input_tokens
                         },
@@ -1023,6 +1051,12 @@ class _ResponsesStreamState:
     model: str
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
+    reasoning_output_index: int | None = None
+    reasoning_parts: list[str] = field(default_factory=list)
+    reasoning_signature: str = ""
     text_output_index: int | None = None
     text_parts: list[str] = field(default_factory=list)
     tool_calls: ChatToolCalls = field(default_factory=ChatToolCalls)
@@ -1048,11 +1082,23 @@ class _ResponsesStreamState:
             self.input_tokens = usage["prompt_tokens"]
         if usage.get("completion_tokens"):
             self.output_tokens = usage["completion_tokens"]
+        prompt_details = usage.get("prompt_tokens_details")
+        if isinstance(prompt_details, dict):
+            self.cached_tokens = int(prompt_details.get("cached_tokens") or 0)
+        if usage.get("cache_write_tokens"):
+            self.cache_write_tokens = usage["cache_write_tokens"]
+        completion_details = usage.get("completion_tokens_details")
+        if isinstance(completion_details, dict):
+            self.reasoning_tokens = int(completion_details.get("reasoning_tokens") or 0)
 
         events: list[bytes] = []
         for choice in payload.get("choices", []):
             self.finish_reason = choice.get("finish_reason") or self.finish_reason
             delta = choice.get("delta", {})
+            events.extend(self._reasoning_events(delta.get("reasoning_content")))
+            events.extend(
+                self._reasoning_signature_events(delta.get("reasoning_signature"))
+            )
             events.extend(self._text_events(delta.get("content")))
             for value in delta.get("tool_calls") or []:
                 events.extend(
@@ -1064,6 +1110,12 @@ class _ResponsesStreamState:
         status, incomplete_details = _response_status(self.finish_reason)
         events: list[bytes] = []
         output_by_index: dict[int, dict[str, Any]] = {}
+
+        reasoning_events, reasoning_output = self._finish_reasoning()
+        events.extend(reasoning_events)
+        if reasoning_output is not None:
+            output_index, item = reasoning_output
+            output_by_index[output_index] = item
 
         text_events, text_output = self._finish_text(status)
         events.extend(text_events)
@@ -1087,11 +1139,115 @@ class _ResponsesStreamState:
         )
         if incomplete_details is not None:
             response["incomplete_details"] = incomplete_details
+        usage_payload = response.get("usage")
+        if isinstance(usage_payload, dict):
+            usage_payload["input_tokens_details"] = {
+                "cached_tokens": self.cached_tokens,
+                "cache_write_tokens": self.cache_write_tokens,
+            }
+            usage_payload["output_tokens_details"] = {
+                "reasoning_tokens": self.reasoning_tokens,
+            }
         terminal_type = (
             "response.completed" if status == "completed" else "response.incomplete"
         )
         events.append(self.event(terminal_type, response=response))
         return events
+
+    def _reasoning_item_id(self) -> str:
+        return f"rs_{self.response_id.removeprefix('resp_')}"
+
+    def _ensure_reasoning_started(self) -> list[bytes]:
+        if self.reasoning_output_index is not None:
+            return []
+        self.reasoning_output_index = self.allocate_output_index()
+        return [
+            self.event(
+                "response.output_item.added",
+                output_index=self.reasoning_output_index,
+                item={
+                    "id": self._reasoning_item_id(),
+                    "type": "reasoning",
+                    "status": "in_progress",
+                    "summary": [],
+                },
+            ),
+            self.event(
+                "response.reasoning_summary_part.added",
+                output_index=self.reasoning_output_index,
+                summary_index=0,
+                part={"type": "summary_text", "text": ""},
+            ),
+        ]
+
+    def _reasoning_events(self, delta: Any) -> list[bytes]:
+        if not delta:
+            return []
+        if not isinstance(delta, str):
+            raise ValueError("Chat reasoning delta must be a string")
+        events = self._ensure_reasoning_started()
+        self.reasoning_parts.append(delta)
+        events.append(
+            self.event(
+                "response.reasoning_summary_text.delta",
+                output_index=self.reasoning_output_index,
+                summary_index=0,
+                delta=delta,
+            )
+        )
+        return events
+
+    def _reasoning_signature_events(self, value: Any) -> list[bytes]:
+        if not isinstance(value, str) or not value:
+            return []
+        events = self._ensure_reasoning_started()
+        self.reasoning_signature = value
+        return events
+
+    def _reasoning_item(self) -> dict[str, Any]:
+        if self.reasoning_signature and is_reasoning_envelope(self.reasoning_signature):
+            decoded = decode_reasoning_item(self.reasoning_signature)
+            if decoded is not None:
+                return decoded
+        text = "".join(self.reasoning_parts)
+        return {
+            "id": self._reasoning_item_id(),
+            "type": "reasoning",
+            "status": "completed",
+            "summary": [
+                {"type": "summary_text", "text": part}
+                for part in text.split("\n\n")
+                if part
+            ],
+        }
+
+    def _finish_reasoning(
+        self,
+    ) -> tuple[list[bytes], tuple[int, dict[str, Any]] | None]:
+        if self.reasoning_output_index is None:
+            return [], None
+        text = "".join(self.reasoning_parts)
+        item = self._reasoning_item()
+        events = [
+            self.event(
+                "response.reasoning_summary_text.done",
+                output_index=self.reasoning_output_index,
+                summary_index=0,
+                text=text,
+            ),
+            self.event(
+                "response.reasoning_summary_part.done",
+                output_index=self.reasoning_output_index,
+                summary_index=0,
+                part={"type": "summary_text", "text": text},
+            ),
+            self.event(
+                "response.output_item.done",
+                output_index=self.reasoning_output_index,
+                item=item,
+            ),
+        ]
+        return events, (self.reasoning_output_index, item)
 
     def _text_events(self, delta: Any) -> list[bytes]:
         if not delta:

@@ -42,14 +42,6 @@ class ModelGroupMemberSource(str, Enum):
     PLACEMENT = "placement"
 
 
-class ModelGroupNewMemberPosition(str, Enum):
-    """Where automatically joined members are inserted."""
-
-    END = "end"
-    START = "start"
-    RATE_ASC = "rate_asc"
-
-
 class ModelGroupOrigin(str, Enum):
     """How a group came to exist: created by hand or by automatic placement."""
 
@@ -80,7 +72,6 @@ class ModelGroup(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
-    new_member_position: ModelGroupNewMemberPosition = ModelGroupNewMemberPosition.END
     context_window: ContextWindow | None = None
     input_price_per_million: float = 0.0
     image_input_price_per_million: float = 0.0
@@ -159,7 +150,6 @@ class ModelGroupCreate(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
-    new_member_position: ModelGroupNewMemberPosition = ModelGroupNewMemberPosition.END
     context_window: ContextWindow | None = None
     items: list[ModelGroupItemInput] = Field(default_factory=list)
     excluded_items: list[ModelGroupItemInput] = Field(default_factory=list)
@@ -189,7 +179,6 @@ class ModelGroupUpdate(StrictBaseModel):
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
     fallback_group_ids: list[str] | None = Field(default=None, max_length=20)
-    new_member_position: ModelGroupNewMemberPosition | None = None
     context_window: ContextWindow | None = None
     items: list[ModelGroupItemInput] | None = None
     excluded_items: list[ModelGroupItemInput] | None = None
