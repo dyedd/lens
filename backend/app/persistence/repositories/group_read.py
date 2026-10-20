@@ -47,7 +47,6 @@ from ...core.protocol_reachability import infer_client_protocols
 from ...models.model_groups import (
     ModelGroupItemState,
     ModelGroupMemberSource,
-    ModelGroupNewMemberPosition,
 )
 
 
@@ -447,7 +446,6 @@ class GroupMappingMixin:
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),
             fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),
-            new_member_position=ModelGroupNewMemberPosition(entity.new_member_position),
             context_window=coerce_context_window(entity.context_window),
             **group_price_kwargs(price),
             items=items,

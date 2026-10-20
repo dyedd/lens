@@ -410,7 +410,6 @@ async def _log_unexpected_proxy_error(
 async def _prepare_proxy_context(
     *,
     body: dict[str, Any],
-    protocol: ProtocolKind,
     inbound_user_agent: str | None,
 ) -> tuple[list[ChannelConfig], dict[str, Any], RequestDeadline, str, bool, str | None]:
     started_at = perf_counter()
@@ -460,7 +459,6 @@ async def proxy_protocol(
         request_content,
     ) = await _prepare_proxy_context(
         body=body,
-        protocol=protocol,
         inbound_user_agent=inbound_user_agent,
     )
     started_at = deadline.started_at

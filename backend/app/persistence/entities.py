@@ -203,9 +203,6 @@ class ModelGroupEntity(Base):
     fallback_group_ids_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]"
     )
-    new_member_position: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="end", server_default="end"
-    )
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 

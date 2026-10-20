@@ -191,6 +191,27 @@ async def serialize_chat_stream(
             finish_reason = _chat_wire_finish_reason(event.reason)
             usage = _chat_stream_usage_wire(event.usage)
             continue
+    # A tool call whose upstream sent no argument delta still needs an identity
+    # frame; otherwise the client never learns the call happened.
+    for index in sorted(tool_calls):
+        if index in announced:
+            continue
+        call = tool_calls[index]
+        if not call.call_id and not call.name:
+            continue
+        announced.add(index)
+        yield chunk(
+            {
+                "tool_calls": [
+                    {
+                        "index": index,
+                        "id": call.call_id,
+                        "type": call.call_type or "function",
+                        "function": {"name": call.name, "arguments": "{}"},
+                    }
+                ]
+            }
+        )
     yield chunk({}, finish=finish_reason)
     yield chunk({}, with_usage=True)
     yield b"data: [DONE]\n\n"

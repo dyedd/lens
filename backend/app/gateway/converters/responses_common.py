@@ -50,15 +50,6 @@ def validate_terminal_response(
     return output
 
 
-def reasoning_item_to_anthropic(item: Mapping[str, Any]) -> dict[str, Any]:
-    standard_item = _standard_reasoning_item(item)
-    envelope = _encode_standard_reasoning_item(standard_item)
-    thinking = reasoning_summary_text(standard_item)
-    if thinking:
-        return {"type": "thinking", "thinking": thinking, "signature": envelope}
-    return {"type": "redacted_thinking", "data": envelope}
-
-
 def reasoning_summary_text(item: Mapping[str, Any]) -> str:
     summary = item.get("summary")
     if not isinstance(summary, list):
