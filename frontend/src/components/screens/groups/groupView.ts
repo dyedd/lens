@@ -61,45 +61,6 @@ export function candidatePayloadToFormItems(
   }));
 }
 
-/**
- * Preview what saving the match rules does to the member list.
- *
- * Rule members that no longer match drop out and new matches join at the
- * group's insert position; every other member and exclusion stays. Returns
- * the same form when nothing changes. `matchedModelNames` is the backend's
- * evaluation of the form's current rules.
- */
-/** Summarize how the edited form changes the saved members. */
-export function buildMemberChangeSummary(
-  group: ModelGroup | undefined,
-  form: FormState,
-) {
-  const savedKeys = new Set(
-    (group?.items ?? []).map((item) => modelGroupItemKey(item)),
-  );
-  const formKeys = new Set(form.items.map((item) => modelGroupItemKey(item)));
-  const countMembers = (items: FormItem[] | ModelGroup["items"]) =>
-    new Set(
-      items.map((item) =>
-        modelFoldKey(
-          item.protocol_config_id,
-          item.credential_id,
-          item.model_name,
-        ),
-      ),
-    ).size;
-  return {
-    added: countMembers(
-      form.items.filter((item) => !savedKeys.has(modelGroupItemKey(item))),
-    ),
-    removed: countMembers(
-      (group?.items ?? []).filter(
-        (item) => !formKeys.has(modelGroupItemKey(item)),
-      ),
-    ),
-  };
-}
-
 function modelGroupItemToFormItem(item: ModelGroup["items"][number]): FormItem {
   return {
     channel_id: item.channel_id,

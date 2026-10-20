@@ -167,7 +167,6 @@ class ModelGroupRepository(
                 fallback_group_ids_json=dump_fallback_group_ids(
                     payload.fallback_group_ids
                 ),
-                new_member_position=payload.new_member_position.value,
                 context_window=payload.context_window,
             )
             session.add(entity)
@@ -260,9 +259,6 @@ class ModelGroupRepository(
                         entity.match_rule_ids_json = dump_rule_ids(value)
                 elif key in {"items", "excluded_items"}:
                     continue
-                elif key == "new_member_position":
-                    if value is not None:
-                        entity.new_member_position = value.value
                 elif key == "fallback_group_ids":
                     entity.fallback_group_ids_json = dump_fallback_group_ids(value)
                 elif key == "headers":

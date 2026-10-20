@@ -9,7 +9,6 @@ membership from names themselves.
 
 from __future__ import annotations
 
-import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -31,7 +30,6 @@ from app.models.model_groups import (
     ModelGroupItemView,
     ModelGroupMemberChangeView,
     ModelGroupMemberSource,
-    ModelGroupNewMemberPosition,
     ModelGroupOrigin,
     ModelGroupReconcileReport,
     ModelGroupRefView,
@@ -135,13 +133,6 @@ class _ReconcileRun:
             source=ModelGroupMemberSource(row.source),
         )
 
-    def rate_of(self, row: ModelGroupItemEntity) -> float:
-        lookup = self.lookups.get(row.channel_id)
-        credential = lookup.credentials_by_id.get(row.credential_id) if lookup else None
-        if credential is None or credential.rate_multiplier is None:
-            return math.inf
-        return credential.rate_multiplier
-
     def delete(self, state: _GroupMemberState, row: ModelGroupItemEntity) -> None:
         state.members.remove(row)
         self.deleted_rows.append(row)
@@ -154,11 +145,9 @@ class _ReconcileRun:
         items: list[ModelGroupItemView],
         source: ModelGroupMemberSource,
     ) -> None:
-        """Save READY channel items as members at the group's insert position."""
+        """Save READY channel items as members at the end of the group."""
         existing_keys = state.keys()
         exclusion_keys = state.exclusion_keys()
-        position = ModelGroupNewMemberPosition(state.entity.new_member_position)
-        start_index = 0
         for item in items:
             key = (item.channel_id, item.credential_id, item.model_name)
             if key in existing_keys or _exclusion_key(*key) in exclusion_keys:
@@ -202,22 +191,7 @@ class _ReconcileRun:
                 sort_order=0,
             )
             self.session.add(row)
-            if position == ModelGroupNewMemberPosition.START:
-                state.members.insert(start_index, row)
-                start_index += 1
-            elif position == ModelGroupNewMemberPosition.RATE_ASC:
-                rate = self.rate_of(row)
-                index = next(
-                    (
-                        index
-                        for index, member in enumerate(state.members)
-                        if self.rate_of(member) > rate
-                    ),
-                    len(state.members),
-                )
-                state.members.insert(index, row)
-            else:
-                state.members.append(row)
+            state.members.append(row)
             state.is_reordered = True
             self.has_writes = True
             self.report.added.append(self.describe(state, row))
@@ -426,7 +400,6 @@ class GroupReconcileMixin:
                 strategy=RoutingStrategy.FAILOVER.value,
                 route_group_id="",
                 fallback_group_ids_json="[]",
-                new_member_position=ModelGroupNewMemberPosition.END.value,
                 origin=ModelGroupOrigin.AUTO.value,
             )
             run.session.add(entity)

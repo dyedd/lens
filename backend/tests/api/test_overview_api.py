@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -316,3 +317,80 @@ def test_overlapping_archive_and_clear_do_not_double_count(
     assert summary.status_code == 200
     assert summary.json()["request_count"]["value"] == 1
     assert summary.json()["total_cost_usd"]["value"] == pytest.approx(0.03)
+
+
+def test_imported_stats_day_still_counts_requests_made_after_the_import(
+    client, admin_headers, app_state
+) -> None:
+    changed = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": SETTING_TIME_ZONE, "value": "UTC"}]},
+    )
+    assert changed.status_code == 200, changed.text
+    today = datetime.now(UTC).strftime("%Y%m%d")
+    exported = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert exported.status_code == 200
+    payload = exported.json()
+    payload["stats"] = {
+        "imported_total": {
+            "input_token": 10,
+            "output_token": 5,
+            "request_success": 2,
+            "request_failed": 0,
+        },
+        "imported_daily": [
+            {
+                "date": today,
+                "input_token": 10,
+                "output_token": 5,
+                "request_success": 2,
+            }
+        ],
+        "request_daily": [],
+        "model_daily": [],
+    }
+
+    imported = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={
+            "file": (
+                "backup.json",
+                json.dumps(payload).encode(),
+                "application/json",
+            )
+        },
+    )
+    assert imported.status_code == 200, imported.text
+    seed_request_log(app_state)
+
+    summary = client.get(
+        "/api/admin/overview-summary", headers=admin_headers, params={"days": 1}
+    )
+    daily = client.get(
+        "/api/admin/overview-daily", headers=admin_headers, params={"days": 1}
+    )
+
+    assert summary.status_code == daily.status_code == 200
+    assert summary.json()["request_count"]["value"] == 3
+    assert summary.json()["total_tokens"]["value"] == 45
+    all_time = client.get(
+        "/api/admin/overview-summary", headers=admin_headers, params={"days": 0}
+    )
+    assert all_time.status_code == 200
+    assert all_time.json()["request_count"]["value"] == 3
+    assert all_time.json()["total_tokens"]["value"] == 45
+    assert daily.json() == [
+        {
+            "date": today,
+            "request_count": 3,
+            "input_tokens": 20,
+            "output_tokens": 25,
+            "total_tokens": 45,
+            "total_cost_usd": pytest.approx(0.03),
+            "wait_time_ms": 34,
+            "successful_requests": 3,
+            "failed_requests": 0,
+        }
+    ]

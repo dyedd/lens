@@ -85,7 +85,13 @@ def test_import_backup_drops_retired_group_fields(
     assert exported.status_code == 200
     payload = exported.json()
     [group] = payload["groups"]
-    group.update({"match_models": ["gpt-4o"], "source_tags": ["prod"]})
+    group.update(
+        {
+            "match_models": ["gpt-4o"],
+            "source_tags": ["prod"],
+            "new_member_position": "start",
+        }
+    )
 
     response = client.post(
         "/api/admin/backups/import",
