@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -213,6 +215,7 @@ async def replace_stats(
             )
         )
 
+    imported_at = datetime.now(UTC).replace(tzinfo=None)
     imported_daily_dates: set[str] = set()
     for item in stats.imported_daily:
         if item.date in imported_daily_dates:
@@ -221,6 +224,7 @@ async def replace_stats(
         session.add(
             ImportedStatsDailyEntity(
                 date=item.date,
+                imported_at=imported_at,
                 input_token=item.input_token,
                 output_token=item.output_token,
                 input_cost=item.input_cost,

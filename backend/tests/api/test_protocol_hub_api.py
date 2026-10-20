@@ -660,3 +660,226 @@ def test_chat_client_streams_from_gemini_upstream(
         }
     ]
     assert '"content": "hi"' in response.text
+
+
+def test_responses_client_streams_tool_call_without_arguments(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    _capture_stream_upstream(
+        monkeypatch,
+        captured,
+        [
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "model": "upstream-model",
+                    "usage": {"input_tokens": 3, "output_tokens": 0},
+                },
+            },
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "call_noargs",
+                    "name": "get_time",
+                    "input": {},
+                },
+            },
+            {"type": "content_block_stop", "index": 0},
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "tool_use"},
+                "usage": {"output_tokens": 2},
+            },
+            {"type": "message_stop"},
+        ],
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.ANTHROPIC,
+        group_name="responses-tool-noargs",
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "responses-tool-noargs",
+            "input": [{"role": "user", "content": "what time is it"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert "response.completed" in response.text
+    assert '"type": "function_call"' in response.text
+    assert '"name": "get_time"' in response.text
+    assert '"arguments": "{}"' in response.text
+
+
+def test_responses_client_streams_reasoning_and_cache_usage(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    _capture_stream_upstream(
+        monkeypatch,
+        captured,
+        [
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "model": "upstream-model",
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 0,
+                        "cache_read_input_tokens": 4,
+                        "cache_creation_input_tokens": 2,
+                    },
+                },
+            },
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "step one"},
+            },
+            {"type": "content_block_stop", "index": 0},
+            {
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": {"type": "text", "text": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "answer"},
+            },
+            {"type": "content_block_stop", "index": 1},
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn"},
+                "usage": {"output_tokens": 3},
+            },
+            {"type": "message_stop"},
+        ],
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.ANTHROPIC,
+        group_name="responses-reasoning",
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "responses-reasoning",
+            "input": [{"role": "user", "content": "hello"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert '"type": "response.reasoning_summary_text.delta"' in response.text
+    assert '"delta": "step one"' in response.text
+    completed = [
+        line
+        for line in response.text.splitlines()
+        if line.startswith("data: ") and "response.completed" in line
+    ]
+    body = json.loads(completed[-1].removeprefix("data: "))
+    assert [item["type"] for item in body["response"]["output"]] == [
+        "reasoning",
+        "message",
+    ]
+    assert body["response"]["output"][0]["summary"] == [
+        {"type": "summary_text", "text": "step one"}
+    ]
+    assert body["response"]["usage"]["input_tokens_details"]["cached_tokens"] == 4
+    assert body["response"]["usage"]["input_tokens_details"]["cache_write_tokens"] == 2
+
+
+def test_anthropic_upstream_error_event_fails_the_request(
+    client: Any,
+    admin_headers: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+    _capture_stream_upstream(
+        monkeypatch,
+        captured,
+        [
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "model": "upstream-model",
+                    "usage": {"input_tokens": 3, "output_tokens": 0},
+                },
+            },
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "par"},
+            },
+            {
+                "type": "error",
+                "error": {"type": "overloaded_error", "message": "Overloaded"},
+            },
+        ],
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.ANTHROPIC,
+        group_name="anthropic-error-stream",
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "anthropic-error-stream",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+        },
+    )
+
+    page = client.get("/api/admin/request-logs/page", headers=admin_headers)
+
+    assert page.status_code == 200
+    entry = page.json()["items"][0]
+
+    assert entry["success"] is False
+    assert "Overloaded" in (entry["error_message"] or "")
+    # The response already started, so the failure must travel in band.
+    assert '"error":' in response.text
+    assert "Overloaded" in response.text
+    assert "[DONE]" not in response.text
+    assert '"finish_reason": "stop"' not in response.text

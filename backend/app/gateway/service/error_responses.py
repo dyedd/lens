@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any
@@ -109,6 +110,39 @@ def detail_message(detail: Any, fallback: str) -> str:
         if isinstance(message, str) and message:
             return message
     return fallback
+
+
+def stream_error_frame(
+    *,
+    protocol: ProtocolKind,
+    message: str,
+    error_type: str = "server_error",
+) -> bytes:
+    """Build an in-band SSE error frame for a stream that already started.
+
+    Once response headers are sent the status code is fixed, so a failure has
+    to travel as a protocol event instead of an HTTP error.
+    """
+    if protocol == ProtocolKind.OPENAI_RESPONSES:
+        payload: dict[str, Any] = {
+            "type": "error",
+            "code": error_type,
+            "message": message,
+            "param": None,
+        }
+    elif protocol == ProtocolKind.GEMINI:
+        payload = {"event_type": "error", "error": {"message": message}}
+    else:
+        payload = _protocol_error_payload(
+            protocol=protocol,
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            error_type=error_type,
+            message=message,
+        )
+    data = json.dumps(payload, ensure_ascii=False)
+    if protocol == ProtocolKind.OPENAI_CHAT:
+        return f"data: {data}\n\n".encode()
+    return f"event: error\ndata: {data}\n\n".encode()
 
 
 def _request_error_protocol(request: Request | None) -> ProtocolKind | None:

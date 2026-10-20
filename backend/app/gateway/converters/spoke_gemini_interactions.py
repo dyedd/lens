@@ -48,9 +48,6 @@ from .unified_stream import (
 from .validation import required_string
 
 _ORIGIN = ProtocolKind.GEMINI
-_TERMINAL_STATUSES = frozenset(
-    {"completed", "incomplete", "requires_action", "failed", "cancelled"}
-)
 
 
 def build_gemini_interaction_request(request: UnifiedRequest) -> dict[str, Any]:

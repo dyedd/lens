@@ -2,13 +2,6 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-FINISH_REASON_CHAT_TO_ANTHROPIC: dict[str | None, str] = {
-    "stop": "end_turn",
-    "length": "max_tokens",
-    "tool_calls": "tool_use",
-    "content_filter": "end_turn",
-}
-
 FINISH_REASON_CHAT_TO_RESPONSES: dict[str | None, str] = {
     "stop": "completed",
     "length": "incomplete",
@@ -81,11 +74,3 @@ def anthropic_block_stop(index: int) -> bytes:
     return format_sse_event(
         "content_block_stop", {"type": "content_block_stop", "index": index}
     )
-
-
-def build_chat_tool_call(call_id: str, name: str, arguments: str) -> dict[str, Any]:
-    return {
-        "id": call_id,
-        "type": "function",
-        "function": {"name": name, "arguments": arguments},
-    }

@@ -16,8 +16,8 @@ from app.persistence.editable_settings import (
 )
 from app.persistence.entities import SettingEntity
 
-# Group rule fields written by backups before name-based joining.
-_LEGACY_GROUP_KEYS = ("match_models", "source_tags")
+# Group fields written by backups before name-based joining and fixed placement.
+_LEGACY_GROUP_KEYS = ("match_models", "source_tags", "new_member_position")
 # Retired site and site-model fields still present in older backups.
 _LEGACY_SITE_KEYS = ("model_sync_enabled", "model_name_prefixes")
 _LEGACY_SITE_MODEL_KEYS = ("source",)
