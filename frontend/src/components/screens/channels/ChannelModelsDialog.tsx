@@ -42,6 +42,7 @@ import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import { useRegexRules } from "@/hooks/useRegexRules";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import { protocolLabel } from "@/lib/protocols";
 import { compileRegexRulePattern } from "@/lib/regexRules";
 import { AddChannelModelsDialog } from "./AddChannelModelsDialog";
 import { ChannelModelsTable } from "./ChannelModelsTable";
@@ -143,6 +144,9 @@ function ChannelModelsBody({
       if (!keyword) return true;
       return (
         model.modelName.toLowerCase().includes(keyword) ||
+        model.protocols.some((protocol) =>
+          protocolLabel(protocol, locale).toLowerCase().includes(keyword),
+        ) ||
         (hasMultipleBaseUrls && model.baseUrl.toLowerCase().includes(keyword))
       );
     });
@@ -227,8 +231,8 @@ function ChannelModelsBody({
           </DialogTitle>
           <DialogDescription>
             {locale === "zh-CN"
-              ? "自动传递客户端协议；选择具体协议可将请求转换为该协议。"
-              : "Auto passes the client protocol through. Choose a protocol to convert requests to it."}
+              ? "选择模型实际使用的上游协议；请求按该协议路由，四个 chat 协议之间会自动转换。"
+              : "Choose the upstream protocol the model speaks. Requests route by it, and the four chat protocols convert into each other."}
             <span className="block">
               {locale === "zh-CN"
                 ? "模型会按上游列表更新；删除模型后不会重新加入。上游已移除的模型会暂停调用。"

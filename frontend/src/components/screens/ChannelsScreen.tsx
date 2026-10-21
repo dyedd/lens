@@ -74,7 +74,6 @@ export function ChannelsScreen() {
     mode: "channel" | "models",
     options: { statusFilter?: ModelStatusFilter; fetch?: boolean } = {},
   ) {
-    if (!editor.confirmDiscardChanges()) return;
     setEditorMode(mode);
     setIsModelsNested(false);
     setModelsStatusFilter(options.statusFilter ?? "all");
