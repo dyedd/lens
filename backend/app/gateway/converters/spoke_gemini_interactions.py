@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 from ...models.protocols import ProtocolKind
+from . import capabilities, repair
 from .sse import format_sse_event, parse_sse_json_stream
 from .unified import (
     ContentPart,
@@ -23,12 +24,17 @@ from .unified import (
     MessageRole,
     ReasoningIntent,
     ReasoningPart,
+    Refusal,
     ResponseFormat,
+    ServerToolDefinition,
+    ServerToolKind,
+    ServerToolPart,
     TextPart,
     ToolCallPart,
     ToolChoice,
     ToolChoiceMode,
     ToolDefinition,
+    ToolKind,
     ToolResultPart,
     UnifiedRequest,
 )
@@ -37,7 +43,10 @@ from .unified_stream import (
     BlockKind,
     BlockStart,
     BlockStop,
+    CitationDelta,
     ReasoningDelta,
+    RefusalDelta,
+    ServerToolStatusDelta,
     SignatureDelta,
     StreamError,
     StreamFinish,
@@ -48,6 +57,15 @@ from .unified_stream import (
 from .validation import required_string
 
 _ORIGIN = ProtocolKind.GEMINI
+
+_SERVER_TOOL_TYPES: dict[str, ServerToolKind] = {
+    "google_search": ServerToolKind.WEB_SEARCH,
+    "web_search": ServerToolKind.WEB_SEARCH,
+    "google_search_retrieval": ServerToolKind.WEB_SEARCH,
+    "code_execution": ServerToolKind.CODE_INTERPRETER,
+    "url_context": ServerToolKind.OTHER,
+    "google_maps": ServerToolKind.OTHER,
+}
 
 
 def build_gemini_interaction_request(request: UnifiedRequest) -> dict[str, Any]:
@@ -64,11 +82,12 @@ def build_gemini_interaction_request(request: UnifiedRequest) -> dict[str, Any]:
     if system_text:
         body["system_instruction"] = system_text
 
-    steps = _request_steps(request.messages)
+    steps = _request_steps(repair.repair_history(list(request.messages)))
     if steps:
         body["input"] = steps
 
     tools = [_tool_to_interaction(tool) for tool in request.tools]
+    tools.extend(_server_tool_to_interaction(tool) for tool in request.server_tools)
     if tools:
         body["tools"] = tools
 
@@ -94,7 +113,7 @@ def parse_gemini_interaction_request(body: Mapping[str, Any]) -> UnifiedRequest:
     if isinstance(system, str) and system:
         request.system = [TextPart(text=system)]
     request.messages = _input_to_messages(body.get("input"))
-    request.tools = _tools_from_interaction(body.get("tools"))
+    request.tools, request.server_tools = _tools_from_interaction(body.get("tools"))
     generation = body.get("generation_config")
     if isinstance(generation, Mapping):
         request.generation = _generation_from_interaction(generation)
@@ -139,13 +158,12 @@ def build_gemini_interaction_response(
             )
         elif isinstance(part, ToolResultPart):
             flush_content()
-            steps.append(
-                {
-                    "type": "function_result",
-                    "call_id": part.call_id,
-                    "result": [{"type": "text", "text": part.content}],
-                }
-            )
+            steps.append(_tool_result_step(part))
+        elif isinstance(part, ServerToolPart):
+            flush_content()
+            steps.extend(_server_part_to_interaction(part))
+        elif isinstance(part, Refusal):
+            content.append({"type": "text", "text": part.text})
         else:
             converted = _content_to_interaction(part)
             if converted is not None:
@@ -237,6 +255,34 @@ async def serialize_gemini_interaction_stream(
                     "delta": {"type": "text", "text": event.text},
                 },
             )
+        elif isinstance(event, RefusalDelta):
+            # Interactions has no refusal channel, so the refusal streams as text.
+            yield format_sse_event(
+                "step.delta",
+                {
+                    "event_type": "step.delta",
+                    "index": event.index,
+                    "delta": {"type": "text", "text": event.text},
+                },
+            )
+        elif isinstance(event, CitationDelta):
+            url = event.citation.url
+            if url:
+                yield format_sse_event(
+                    "step.delta",
+                    {
+                        "event_type": "step.delta",
+                        "index": event.index,
+                        "delta": {
+                            "type": "text",
+                            "text": f" [{url}]",
+                        },
+                    },
+                )
+        elif isinstance(event, ServerToolStatusDelta):
+            # Interactions reports provider tools as their own steps; a bare
+            # status tick without a step cannot be expressed, so it is dropped.
+            continue
         elif isinstance(event, ReasoningDelta):
             yield format_sse_event(
                 "step.delta",
@@ -465,17 +511,31 @@ def _request_steps(messages: list[Message]) -> list[dict[str, Any]]:
         if message.role == MessageRole.TOOL:
             for part in message.parts:
                 if isinstance(part, ToolResultPart):
-                    step: dict[str, Any] = {
-                        "type": "function_result",
-                        "call_id": part.call_id,
-                        "result": [{"type": "text", "text": part.content}],
-                    }
+                    step = _tool_result_step(part)
                     name = tool_names.get(part.call_id)
                     if name:
                         step["name"] = name
-                    if part.is_error:
-                        step["is_error"] = True
                     steps.append(step)
+            continue
+
+        if message.role == MessageRole.SYSTEM:
+            # Interactions keeps system text out of the turn history, so a
+            # mid-conversation instruction is carried as a reminder turn.
+            text = "\n".join(
+                part.text for part in message.parts if isinstance(part, TextPart)
+            )
+            if text:
+                steps.append(
+                    {
+                        "type": "user_input",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"<system-reminder>\n{text}\n</system-reminder>",
+                            }
+                        ],
+                    }
+                )
             continue
 
         if message.role == MessageRole.ASSISTANT:
@@ -491,15 +551,11 @@ def _request_steps(messages: list[Message]) -> list[dict[str, Any]]:
                     steps.append(thought)
                 elif isinstance(part, ToolCallPart):
                     _flush_model_output(steps, content_parts)
-                    steps.append(
-                        {
-                            "type": "function_call",
-                            "id": part.call_id,
-                            "name": part.name,
-                            "arguments": _arguments_object(part.arguments),
-                        }
-                    )
+                    steps.append(_tool_call_to_interaction(part))
                     tool_names[part.call_id] = part.name
+                elif isinstance(part, ServerToolPart):
+                    _flush_model_output(steps, content_parts)
+                    steps.extend(_server_part_to_interaction(part))
                 else:
                     converted = _content_to_interaction(part)
                     if converted is not None:
@@ -514,6 +570,78 @@ def _request_steps(messages: list[Message]) -> list[dict[str, Any]]:
         ]
         steps.append({"type": "user_input", "content": content})
     return steps
+
+
+def _tool_call_to_interaction(part: ToolCallPart) -> dict[str, Any]:
+    if part.kind is ToolKind.CUSTOM:
+        # Interactions has no free-form tool, so the raw input travels as the
+        # single-string argument object :func:`_tool_to_interaction` declared.
+        return {
+            "type": "function_call",
+            "id": part.call_id,
+            "name": part.name,
+            "arguments": {
+                "input": capabilities.unwrap_custom_tool_arguments(part.arguments)
+            },
+        }
+    return {
+        "type": "function_call",
+        "id": part.call_id,
+        "name": part.name,
+        "arguments": _arguments_object(part.arguments),
+    }
+
+
+def _tool_result_step(part: ToolResultPart) -> dict[str, Any]:
+    step: dict[str, Any] = {
+        "type": "function_result",
+        "call_id": part.call_id,
+        "result": _tool_result_content(part),
+    }
+    if part.is_error:
+        step["is_error"] = True
+    return step
+
+
+def _tool_result_content(part: ToolResultPart) -> list[dict[str, Any]]:
+    content: list[dict[str, Any]] = []
+    if part.content:
+        content.append({"type": "text", "text": part.content})
+    for nested in part.parts:
+        converted = _content_to_interaction(nested)
+        if converted is not None:
+            content.append(converted)
+    return content or [{"type": "text", "text": ""}]
+
+
+def _server_part_to_interaction(part: ServerToolPart) -> list[dict[str, Any]]:
+    """Render a provider tool trace as text content.
+
+    Interactions documents no step for a provider-executed tool, so inventing
+    one would be rejected; the trace travels as text instead.
+    """
+    name = part.name or part.kind.value
+    detail = " ".join(
+        item.text for item in part.output if isinstance(item, TextPart) and item.text
+    )
+    text = f"[{name}] {detail}".strip()
+    return [{"type": "text", "text": text}] if text else []
+
+
+def _server_tool_to_interaction(tool: ServerToolDefinition) -> dict[str, Any]:
+    """Declare a provider tool in the Interactions tool list.
+
+    The declaration is keyed on the tool kind, not on the name the source
+    protocol used, because each protocol spells the same tool differently.
+    """
+    name = {
+        ServerToolKind.WEB_SEARCH: "google_search",
+        ServerToolKind.CODE_INTERPRETER: "code_execution",
+        ServerToolKind.OTHER: "url_context",
+    }.get(tool.kind, tool.name or "google_search")
+    result: dict[str, Any] = {"type": name}
+    result.update(tool.options)
+    return result
 
 
 def _step_to_unified(step: Mapping[str, Any]) -> list[ContentPart]:
@@ -653,8 +781,12 @@ def _generation_to_interaction(
         result["temperature"] = generation.temperature
     if generation.top_p is not None:
         result["top_p"] = generation.top_p
+    if generation.top_k is not None:
+        result["top_k"] = generation.top_k
     if generation.seed is not None:
         result["seed"] = generation.seed
+    if generation.n is not None:
+        result["candidate_count"] = generation.n
     if generation.stop:
         result["stop_sequences"] = list(generation.stop)
     if reasoning is not None:
@@ -702,7 +834,18 @@ def _tool_choice_to_interaction(
 
 
 def _tool_to_interaction(tool: ToolDefinition) -> dict[str, Any]:
-    result: dict[str, Any] = {"type": "function", "name": tool.name}
+    name = capabilities.namespaced_name(tool.namespace, tool.name)
+    if tool.kind is ToolKind.CUSTOM:
+        description, parameters = capabilities.custom_tool_as_function(
+            tool.description, tool.format
+        )
+        return {
+            "type": "function",
+            "name": name,
+            "description": description,
+            "parameters": parameters,
+        }
+    result: dict[str, Any] = {"type": "function", "name": name}
     if tool.description:
         result["description"] = tool.description
     if tool.parameters is not None:
@@ -890,12 +1033,32 @@ def _result_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _tools_from_interaction(value: Any) -> list[ToolDefinition]:
+def _tools_from_interaction(
+    value: Any,
+) -> tuple[list[ToolDefinition], list[ServerToolDefinition]]:
+    """Split declared tools into client tools and provider-run tools."""
     if not isinstance(value, list):
-        return []
+        return [], []
     tools: list[ToolDefinition] = []
+    server_tools: list[ServerToolDefinition] = []
     for tool in value:
-        if not isinstance(tool, Mapping) or tool.get("type") != "function":
+        if not isinstance(tool, Mapping):
+            continue
+        tool_type = tool.get("type")
+        if tool_type in _SERVER_TOOL_TYPES:
+            server_tools.append(
+                ServerToolDefinition(
+                    kind=_SERVER_TOOL_TYPES[tool_type],
+                    name=tool_type,
+                    options={
+                        key: item
+                        for key, item in tool.items()
+                        if key not in {"type", "name"}
+                    },
+                )
+            )
+            continue
+        if tool_type != "function":
             continue
         name = _text(tool.get("name"))
         if not name:
@@ -908,7 +1071,7 @@ def _tools_from_interaction(value: Any) -> list[ToolDefinition]:
                 parameters=parameters if isinstance(parameters, Mapping) else None,
             )
         )
-    return tools
+    return tools, server_tools
 
 
 def _generation_from_interaction(value: Mapping[str, Any]) -> GenerationConfig:
@@ -917,10 +1080,12 @@ def _generation_from_interaction(value: Mapping[str, Any]) -> GenerationConfig:
         max_output_tokens=_optional_int(value.get("max_output_tokens")),
         temperature=_optional_float(value.get("temperature")),
         top_p=_optional_float(value.get("top_p")),
+        top_k=_optional_int(value.get("top_k")),
         seed=_optional_int(value.get("seed")),
         stop=tuple(item for item in stop if isinstance(item, str))
         if isinstance(stop, list)
         else (),
+        n=_optional_int(value.get("candidate_count")),
     )
 
 

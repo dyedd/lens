@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 from ...models.protocols import ProtocolKind
+from . import cache, capabilities, repair, signatures
 from .sse import (
     anthropic_block_delta,
     anthropic_block_start,
@@ -23,18 +24,26 @@ from .sse import (
     parse_sse_json_stream,
 )
 from .unified import (
+    AudioPart,
+    Citation,
     ContentPart,
     FilePart,
     ImagePart,
     Message,
     MessageRole,
     ReasoningIntent,
+    ReasoningKind,
     ReasoningPart,
+    Refusal,
+    ServerToolDefinition,
+    ServerToolKind,
+    ServerToolPart,
     TextPart,
     ToolCallPart,
     ToolChoice,
     ToolChoiceMode,
     ToolDefinition,
+    ToolKind,
     ToolResultPart,
     UnifiedRequest,
 )
@@ -43,7 +52,10 @@ from .unified_stream import (
     BlockKind,
     BlockStart,
     BlockStop,
+    CitationDelta,
     ReasoningDelta,
+    RefusalDelta,
+    ServerToolStatusDelta,
     SignatureDelta,
     StreamFinish,
     StreamStart,
@@ -67,9 +79,16 @@ _REASONING_BUDGET_TOKENS = {
 
 def build_anthropic_request(request: UnifiedRequest) -> dict[str, Any]:
     """Build an Anthropic Messages request body from the unified request."""
+    # Breakpoints must be normalised and trimmed before anything is rendered,
+    # because rendering copies each part's ``cache_control`` into the block.
+    for message in request.messages:
+        cache.sink_message_breakpoint(message)
+    cache.apply_cache_budget(request)
+
     messages: list[dict[str, Any]] = []
     pending_results: list[dict[str, Any]] = []
-    for message in request.messages:
+    drops = capabilities.ContentDrops()
+    for message in repair.repair_history(list(request.messages)):
         if message.role == MessageRole.TOOL:
             for part in message.parts:
                 if isinstance(part, ToolResultPart):
@@ -78,9 +97,33 @@ def build_anthropic_request(request: UnifiedRequest) -> dict[str, Any]:
         if pending_results:
             messages.append({"role": "user", "content": pending_results})
             pending_results = []
-        messages.append(_message_to_anthropic(message, request=request))
+        if message.role == MessageRole.SYSTEM:
+            # Anthropic only accepts system content at the top level, so a
+            # mid-conversation system turn keeps its place as a reminder.
+            text = "\n".join(
+                part.text for part in message.parts if isinstance(part, TextPart)
+            )
+            if text:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"<system-reminder>\n{text}\n</system-reminder>",
+                            }
+                        ],
+                    }
+                )
+            continue
+        rendered = _message_to_anthropic(message, request=request, drops=drops)
+        if message.role is MessageRole.USER:
+            drops.keep(_rendered_block_count(rendered))
+            drops.end_turn()
+        messages.append(rendered)
     if pending_results:
         messages.append({"role": "user", "content": pending_results})
+    drops.raise_if_empty()
 
     body: dict[str, Any] = dict(request.passthrough)
     body["model"] = request.model
@@ -109,9 +152,13 @@ def build_anthropic_request(request: UnifiedRequest) -> dict[str, Any]:
         body["top_k"] = generation.top_k
     if generation.stop:
         body["stop_sequences"] = list(generation.stop)
-    if request.tools:
-        body["tools"] = [_tool_to_anthropic(tool) for tool in request.tools]
-    if request.tool_choice is not None:
+    tools = [_tool_to_anthropic(tool) for tool in request.tools]
+    tools.extend(
+        _server_tool_to_anthropic_definition(tool) for tool in request.server_tools
+    )
+    if tools:
+        body["tools"] = tools
+    if request.tool_choice is not None and request.tools:
         body["tool_choice"] = _tool_choice_to_anthropic(request.tool_choice)
     if request.reasoning is not None:
         _apply_reasoning_intent(body, request.reasoning)
@@ -155,7 +202,7 @@ def parse_anthropic_request(body: Mapping[str, Any]) -> UnifiedRequest:
     for message in messages:
         request.messages.extend(_anthropic_message(message))
 
-    request.tools = _anthropic_tools(body.get("tools"))
+    request.tools, request.server_tools = _anthropic_tools(body.get("tools"))
     request.tool_choice = _anthropic_tool_choice(body.get("tool_choice"))
     return request
 
@@ -173,6 +220,7 @@ def _anthropic_system_parts(value: Any) -> list[ContentPart]:
             raise ValueError("Anthropic system must contain objects")
         if block.get("type") != "text":
             raise ValueError("Unsupported Anthropic system block type")
+        hint = cache.normalize_cache_control(block.get("cache_control"))
         parts.append(
             TextPart(
                 text=required_string(
@@ -180,7 +228,8 @@ def _anthropic_system_parts(value: Any) -> list[ContentPart]:
                     "Anthropic system text blocks must contain text",
                     allow_empty=True,
                 ),
-                cache_breakpoint=isinstance(block.get("cache_control"), Mapping),
+                cache_breakpoint=hint is not None,
+                cache_control=hint,
             )
         )
     return parts
@@ -206,9 +255,11 @@ def _anthropic_message(value: Any) -> list[Message]:
 
     media: list[ContentPart] = []
     texts: list[str] = []
+    text_cache: dict[str, Any] | None = None
     thinking: list[ReasoningPart] = []
     tool_calls: list[ContentPart] = []
     tool_results: list[ContentPart] = []
+    server_parts: list[ServerToolPart] = []
     for block in content:
         if not isinstance(block, Mapping):
             raise ValueError("Anthropic message content must contain objects")
@@ -221,6 +272,9 @@ def _anthropic_message(value: Any) -> list[Message]:
                     allow_empty=True,
                 )
             )
+            hint = cache.normalize_cache_control(block.get("cache_control"))
+            if hint is not None:
+                text_cache = hint
         elif block_type == "thinking":
             thinking.append(
                 ReasoningPart(
@@ -231,6 +285,7 @@ def _anthropic_message(value: Any) -> list[Message]:
                     ),
                     opaque=_text(block.get("signature")),
                     origin=_ORIGIN,
+                    kind=ReasoningKind.SIGNATURE,
                 )
             )
         elif block_type == "redacted_thinking":
@@ -242,10 +297,15 @@ def _anthropic_message(value: Any) -> list[Message]:
                         allow_empty=True,
                     ),
                     origin=_ORIGIN,
+                    kind=ReasoningKind.REDACTED,
                 )
             )
         elif block_type in {"image", "document"}:
-            media.append(_anthropic_media(block))
+            part = _anthropic_media(block)
+            part.cache_control = cache.normalize_cache_control(
+                block.get("cache_control")
+            )
+            media.append(part)
         elif block_type == "tool_use":
             tool_input = block.get("input", {})
             if not isinstance(tool_input, Mapping):
@@ -263,16 +323,28 @@ def _anthropic_message(value: Any) -> list[Message]:
                 )
             )
         elif block_type == "tool_result":
-            tool_results.append(
-                ToolResultPart(
+            tool_results.append(_anthropic_tool_result(block))
+        elif block_type == "server_tool_use":
+            tool_input = block.get("input", {})
+            name = required_string(
+                block.get("name"), "Anthropic server_tool_use must contain name"
+            )
+            server_parts.append(
+                ServerToolPart(
+                    kind=_anthropic_server_tool_kind(name),
+                    name=name,
                     call_id=required_string(
-                        block.get("tool_use_id"),
-                        "Anthropic tool_result must contain tool_use_id",
+                        block.get("id"), "Anthropic server_tool_use must contain id"
                     ),
-                    content=_anthropic_tool_result_text(block.get("content")),
-                    is_error=block.get("is_error") is True,
+                    status="in_progress",
+                    arguments=json.dumps(tool_input, ensure_ascii=False)
+                    if isinstance(tool_input, Mapping)
+                    else "",
+                    origin=_ORIGIN,
                 )
             )
+        elif isinstance(block_type, str) and block_type.endswith("_tool_result"):
+            _attach_server_result(server_parts, block, block_type)
         else:
             raise ValueError(f"Unsupported Anthropic content block type: {block_type}")
 
@@ -283,12 +355,66 @@ def _anthropic_message(value: Any) -> list[Message]:
     if thinking and role == "assistant":
         parts.extend(thinking)
     if texts:
-        parts.append(TextPart(text="\n".join(texts)))
+        parts.append(TextPart(text="\n".join(texts), cache_control=text_cache))
     parts.extend(media)
     parts.extend(tool_calls)
+    parts.extend(server_parts)
     if parts:
-        messages.append(Message(role=MessageRole(role), parts=parts))
+        messages.append(
+            Message(
+                role=MessageRole(role),
+                parts=parts,
+                cache_control=cache.normalize_cache_control(value.get("cache_control")),
+            )
+        )
     return messages
+
+
+def _attach_server_result(
+    parts: list[ServerToolPart], block: Mapping[str, Any], block_type: str
+) -> None:
+    """Fold a provider tool's result block onto the call it answers."""
+    call_id = _text(block.get("tool_use_id"))
+    output: list[ContentPart] = []
+    content = block.get("content")
+    if isinstance(content, str):
+        output.append(TextPart(text=content))
+    elif isinstance(content, list):
+        for item in content:
+            if not isinstance(item, Mapping):
+                continue
+            item_type = item.get("type")
+            if item_type in {"web_search_result", "text"}:
+                title = _text(item.get("title"))
+                url = _text(item.get("url"))
+                text = _text(item.get("text")) or _text(item.get("content"))
+                if url:
+                    output.append(
+                        TextPart(
+                            text=f"{title or url}\n{url}",
+                            citations=[Citation(url=url, title=title)],
+                        )
+                    )
+                elif text:
+                    output.append(TextPart(text=text))
+            elif item_type == "image":
+                output.append(_anthropic_media(item))
+    for part in parts:
+        if part.call_id and part.call_id == call_id:
+            part.output = output
+            part.status = "failed" if block.get("is_error") is True else "completed"
+            return
+    # A result whose call scrolled out of history still has to survive, so it
+    # becomes a standalone server-tool part rather than vanishing.
+    parts.append(
+        ServerToolPart(
+            kind=_anthropic_server_tool_kind(block_type.replace("_tool_result", "")),
+            call_id=call_id,
+            status="completed",
+            output=output,
+            origin=_ORIGIN,
+        )
+    )
 
 
 def _anthropic_media(block: Mapping[str, Any]) -> ContentPart:
@@ -346,6 +472,13 @@ def _anthropic_media(block: Mapping[str, Any]) -> ContentPart:
             ),
             filename=filename,
         )
+    if source_type == "file":
+        return FilePart(
+            file_id=required_string(
+                source.get("file_id"), "Anthropic file sources must contain file_id"
+            ),
+            filename=filename,
+        )
     if source_type == "content":
         content = source.get("content")
         if isinstance(content, str):
@@ -369,54 +502,114 @@ def _anthropic_media(block: Mapping[str, Any]) -> ContentPart:
     raise ValueError("Unsupported Anthropic document source type")
 
 
-def _anthropic_tool_result_text(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if not isinstance(value, list):
-        raise ValueError("Anthropic tool_result content must be a string or array")
+def _anthropic_tool_result(block: Mapping[str, Any]) -> ToolResultPart:
+    """Parse a tool result, keeping media beside the text.
+
+    Anthropic lets a tool return images and documents inline; flattening them to
+    text loses them entirely on the way to a target that accepts them too.
+    """
+    content = block.get("content")
     texts: list[str] = []
-    for block in value:
-        if not isinstance(block, Mapping):
-            raise ValueError("Anthropic tool_result content must contain objects")
-        if block.get("type") == "text":
-            texts.append(
-                required_string(
-                    block.get("text"),
-                    "Anthropic tool_result text blocks must contain text",
-                    allow_empty=True,
+    parts: list[ContentPart] = []
+    if isinstance(content, str):
+        texts.append(content)
+    elif isinstance(content, list):
+        for item in content:
+            if not isinstance(item, Mapping):
+                raise ValueError("Anthropic tool_result content must contain objects")
+            block_type = item.get("type")
+            if block_type == "text":
+                texts.append(
+                    required_string(
+                        item.get("text"),
+                        "Anthropic tool_result text blocks must contain text",
+                        allow_empty=True,
+                    )
                 )
-            )
-        else:
-            raise ValueError("Unsupported Anthropic tool_result block type")
-    return "\n".join(texts)
+            elif block_type in {"image", "document"}:
+                parts.append(_anthropic_media(item))
+            else:
+                raise ValueError("Unsupported Anthropic tool_result block type")
+    elif content is not None:
+        raise ValueError("Anthropic tool_result content must be a string or array")
+    return ToolResultPart(
+        call_id=required_string(
+            block.get("tool_use_id"),
+            "Anthropic tool_result must contain tool_use_id",
+        ),
+        content="\n".join(texts),
+        is_error=block.get("is_error") is True,
+        parts=parts,
+    )
 
 
-def _anthropic_tools(value: Any) -> list[ToolDefinition]:
+def _anthropic_tools(
+    value: Any,
+) -> tuple[list[ToolDefinition], list[ServerToolDefinition]]:
+    """Split Anthropic tools into client-declared and provider-executed ones.
+
+    A dated ``type`` (``web_search_20250305``) marks a tool Anthropic runs
+    itself; everything else is a client tool the model calls back through.
+    """
     if value is None:
-        return []
+        return [], []
     if not isinstance(value, list):
         raise ValueError("Anthropic tools must be an array")
-    result: list[ToolDefinition] = []
+    tools: list[ToolDefinition] = []
+    server_tools: list[ServerToolDefinition] = []
     for tool in value:
         if not isinstance(tool, Mapping):
             raise ValueError("Anthropic tools must contain objects")
-        if tool.get("type") not in {None, "custom"}:
+        tool_type = tool.get("type")
+        if isinstance(tool_type, str) and _is_anthropic_server_tool(tool_type):
+            server_tools.append(
+                ServerToolDefinition(
+                    kind=_anthropic_server_tool_kind(tool_type),
+                    name=_text(tool.get("name")) or tool_type,
+                    options={
+                        key: item
+                        for key, item in tool.items()
+                        if key not in {"name", "type"}
+                    },
+                )
+            )
+            continue
+        if tool_type not in {None, "custom"}:
             raise ValueError("Unsupported Anthropic tool type")
         input_schema = tool.get("input_schema")
         if not isinstance(input_schema, Mapping):
             raise ValueError("Anthropic tools must contain input_schema")
-        result.append(
+        hint = cache.normalize_cache_control(tool.get("cache_control"))
+        tools.append(
             ToolDefinition(
                 name=required_string(
                     tool.get("name"), "Anthropic tools must contain name"
                 ),
                 description=_text(tool.get("description")),
                 parameters=dict(input_schema),
+                cache_control=hint,
             )
         )
-    return result
+    return tools, server_tools
+
+
+def _is_anthropic_server_tool(tool_type: str) -> bool:
+    return "_20" in tool_type and tool_type not in {"custom"}
+
+
+def _anthropic_server_tool_kind(tool_type: str) -> ServerToolKind:
+    lowered = tool_type.lower()
+    if "web_search" in lowered:
+        return ServerToolKind.WEB_SEARCH
+    if "code_execution" in lowered or "code_interpreter" in lowered:
+        return ServerToolKind.CODE_INTERPRETER
+    if "tool_search" in lowered:
+        return ServerToolKind.TOOL_SEARCH
+    if "computer" in lowered:
+        return ServerToolKind.COMPUTER_USE
+    if "bash" in lowered or "shell" in lowered:
+        return ServerToolKind.SHELL
+    return ServerToolKind.OTHER
 
 
 def _anthropic_tool_choice(value: Any) -> ToolChoice | None:
@@ -454,9 +647,20 @@ def build_anthropic_response(response: UnifiedResponse) -> dict[str, Any]:
             content.append(_reasoning_to_anthropic(part))
         elif isinstance(part, TextPart):
             if part.text:
-                content.append({"type": "text", "text": part.text})
+                block: dict[str, Any] = {"type": "text", "text": part.text}
+                if part.citations:
+                    block["citations"] = [
+                        _citation_to_anthropic(citation) for citation in part.citations
+                    ]
+                content.append(block)
+        elif isinstance(part, Refusal):
+            # Anthropic has no refusal block, so the text carries the refusal
+            # rather than dropping it from the answer.
+            content.append({"type": "text", "text": part.text})
         elif isinstance(part, ToolCallPart):
             content.append(_tool_call_to_anthropic(part))
+        elif isinstance(part, ServerToolPart):
+            content.extend(_server_tool_to_anthropic(part))
     whether_tools = any(isinstance(part, ToolCallPart) for part in response.parts)
     return {
         "id": response.id or f"msg_{uuid.uuid4().hex[:24]}",
@@ -468,6 +672,22 @@ def build_anthropic_response(response: UnifiedResponse) -> dict[str, Any]:
         "stop_sequence": None,
         "usage": _anthropic_usage_wire(response.usage),
     }
+
+
+def _citation_to_anthropic(citation: Citation) -> dict[str, Any]:
+    if citation.raw:
+        return dict(citation.raw)
+    result: dict[str, Any] = {
+        "type": "web_search_result_location",
+        "url": citation.url,
+        "title": citation.title or citation.url,
+        "cited_text": "",
+    }
+    if citation.start_index is not None:
+        result["start_char_index"] = citation.start_index
+    if citation.end_index is not None:
+        result["end_char_index"] = citation.end_index
+    return result
 
 
 def parse_anthropic_response(body: Mapping[str, Any]) -> UnifiedResponse:
@@ -486,13 +706,29 @@ def parse_anthropic_response(body: Mapping[str, Any]) -> UnifiedResponse:
 
 
 def _message_to_anthropic(
-    message: Message, *, request: UnifiedRequest
+    message: Message,
+    *,
+    request: UnifiedRequest,
+    drops: capabilities.ContentDrops | None = None,
 ) -> dict[str, Any]:
-    parts: list[ContentPart] = list(message.parts)
     content = _parts_to_anthropic_content(
-        parts, role=message.role, replay_reasoning=request.replay_reasoning
+        list(message.parts),
+        role=message.role,
+        replay_reasoning=request.replay_reasoning,
+        target_model=request.model,
+        drops=drops,
     )
     return {"role": message.role.value, "content": content}
+
+
+def _rendered_block_count(rendered: dict[str, Any]) -> int:
+    """Count the content blocks a rendered message actually carries."""
+    content = rendered.get("content")
+    if isinstance(content, str):
+        return 1 if content else 0
+    if isinstance(content, list):
+        return len(content)
+    return 0
 
 
 def _parts_to_anthropic_content(
@@ -500,31 +736,151 @@ def _parts_to_anthropic_content(
     *,
     role: MessageRole,
     replay_reasoning: bool = False,
+    target_model: str = "",
+    drops: capabilities.ContentDrops | None = None,
 ) -> str | list[dict[str, Any]]:
-    blocks: list[dict[str, Any]] = []
-    text_parts: list[str] = []
+    text_blocks: list[dict[str, Any]] = []
+    media_blocks: list[dict[str, Any]] = []
+    call_blocks: list[dict[str, Any]] = []
+    result_blocks: list[dict[str, Any]] = []
+    server_blocks: list[dict[str, Any]] = []
+    thinking_blocks: list[dict[str, Any]] = []
+    text_only = True
     for part in parts:
         if isinstance(part, TextPart):
-            text_parts.append(part.text)
+            block: dict[str, Any] = {"type": "text", "text": part.text}
+            _attach_cache(block, part.cache_control)
+            text_blocks.append(block)
+            if part.cache_control is not None:
+                text_only = False
         elif isinstance(part, ImagePart):
-            blocks.append(_image_to_anthropic(part))
+            block = _image_to_anthropic(part)
+            _attach_cache(block, part.cache_control)
+            media_blocks.append(block)
+            text_only = False
         elif isinstance(part, FilePart):
-            blocks.append(_file_to_anthropic(part))
+            block = _file_to_anthropic(part)
+            _attach_cache(block, part.cache_control)
+            media_blocks.append(block)
+            text_only = False
+        elif isinstance(part, AudioPart):
+            # Anthropic has no audio block, so the part is dropped from its turn
+            # instead of failing a request that is otherwise expressible.
+            if drops is not None:
+                drops.drop("audio")
+            text_only = False
         elif isinstance(part, ReasoningPart) and role == MessageRole.ASSISTANT:
-            if replay_reasoning or part.origin == _ORIGIN:
-                blocks.append(_reasoning_to_anthropic(part))
+            if not replay_reasoning and part.origin is not _ORIGIN:
+                continue
+            if part.opaque and not signatures.can_replay(
+                origin=part.origin,
+                target=_ORIGIN,
+                opaque=part.opaque,
+                target_model=target_model,
+            ):
+                # A foreign model's sealed state would be rejected upstream, so
+                # only its readable text survives.
+                if part.text:
+                    thinking_blocks.append({"type": "thinking", "thinking": part.text})
+                continue
+            thinking_blocks.append(_reasoning_to_anthropic(part))
+            text_only = False
         elif isinstance(part, ToolCallPart):
-            blocks.append(_tool_call_to_anthropic(part))
+            call_blocks.append(_tool_call_to_anthropic(part))
+            text_only = False
         elif isinstance(part, ToolResultPart):
-            blocks.append(_tool_result_to_anthropic(part))
+            result_blocks.append(_tool_result_to_anthropic(part))
+            text_only = False
+        elif isinstance(part, ServerToolPart):
+            server_blocks.extend(_server_tool_to_anthropic(part))
+            text_only = False
+        elif isinstance(part, Refusal):
+            text_blocks.append({"type": "text", "text": part.text})
+            text_only = False
 
-    text = "\n".join(value for value in text_parts if value)
-    if not blocks:
-        return text
-    result: list[dict[str, Any]] = []
-    if text:
-        result.append({"type": "text", "text": text})
-    return [*result, *blocks]
+    if text_only and not (call_blocks or result_blocks or media_blocks):
+        return "\n".join(block["text"] for block in text_blocks)
+
+    blocks: list[dict[str, Any]] = []
+    if role is MessageRole.ASSISTANT:
+        # Anthropic requires thinking before the text and tool calls it produced.
+        blocks.extend(thinking_blocks)
+        blocks.extend(text_blocks)
+        blocks.extend(media_blocks)
+        blocks.extend(server_blocks)
+        blocks.extend(call_blocks)
+    else:
+        # A user turn must lead with the tool results it answers.
+        blocks.extend(result_blocks)
+        blocks.extend(server_blocks)
+        blocks.extend(text_blocks)
+        blocks.extend(media_blocks)
+    return blocks
+
+
+def _attach_cache(block: dict[str, Any], cache_control: dict[str, Any] | None) -> None:
+    if cache_control is not None:
+        block["cache_control"] = cache_control
+
+
+def _server_tool_to_anthropic(part: ServerToolPart) -> list[dict[str, Any]]:
+    """Render a provider tool call and its result as Anthropic server blocks."""
+    kind = part.kind.value
+    if not part.call_id:
+        # A result whose call is gone still has to be readable somewhere.
+        text = _server_output_text(part)
+        return [{"type": "text", "text": text}] if text else []
+    name = part.name or kind
+    try:
+        tool_input = json.loads(part.arguments) if part.arguments else {}
+    except ValueError:
+        tool_input = {}
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "server_tool_use",
+            "id": part.call_id,
+            "name": name,
+            "input": tool_input if isinstance(tool_input, dict) else {},
+        }
+    ]
+    if part.output:
+        result_type = f"{name}_tool_result"
+        blocks.append(
+            {
+                "type": result_type,
+                "tool_use_id": part.call_id,
+                "content": _server_result_content(part),
+            }
+        )
+    return blocks
+
+
+def _server_result_content(part: ServerToolPart) -> list[dict[str, Any]]:
+    content: list[dict[str, Any]] = []
+    for item in part.output:
+        if isinstance(item, TextPart):
+            if item.citations:
+                for citation in item.citations:
+                    content.append(
+                        {
+                            "type": "web_search_result",
+                            "url": citation.url,
+                            "title": citation.title or citation.url,
+                        }
+                    )
+                continue
+            content.append({"type": "text", "text": item.text})
+        elif isinstance(item, ImagePart):
+            content.append(_image_to_anthropic(item))
+    return content
+
+
+def _server_output_text(part: ServerToolPart) -> str:
+    label = part.name or part.kind.value
+    text = " ".join(
+        item.text for item in part.output if isinstance(item, TextPart) and item.text
+    )
+    return f"[{label}] {text}".strip()
 
 
 def _image_to_anthropic(part: ImagePart) -> dict[str, Any]:
@@ -569,7 +925,7 @@ def _file_to_anthropic(part: FilePart) -> dict[str, Any]:
 
 
 def _reasoning_to_anthropic(part: ReasoningPart) -> dict[str, Any]:
-    if part.origin == _ORIGIN and part.opaque and not part.text:
+    if part.kind is ReasoningKind.REDACTED and part.opaque:
         return {"type": "redacted_thinking", "data": part.opaque}
     if part.text:
         block: dict[str, Any] = {"type": "thinking", "thinking": part.text}
@@ -582,6 +938,18 @@ def _reasoning_to_anthropic(part: ReasoningPart) -> dict[str, Any]:
 
 
 def _tool_call_to_anthropic(part: ToolCallPart) -> dict[str, Any]:
+    name = capabilities.namespaced_name(part.namespace, part.name)
+    if part.kind is ToolKind.CUSTOM:
+        # Anthropic has no free-form tool, so the raw input is carried in the
+        # single-string argument shape :func:`custom_tool_as_function` declared.
+        return {
+            "type": "tool_use",
+            "id": part.call_id,
+            "name": name,
+            "input": {
+                "input": capabilities.unwrap_custom_tool_arguments(part.arguments)
+            },
+        }
     arguments = part.arguments or "{}"
     try:
         parsed_input = json.loads(arguments)
@@ -592,33 +960,82 @@ def _tool_call_to_anthropic(part: ToolCallPart) -> dict[str, Any]:
     return {
         "type": "tool_use",
         "id": part.call_id,
-        "name": part.name,
+        "name": name,
         "input": dict(parsed_input),
     }
 
 
 def _tool_result_to_anthropic(part: ToolResultPart) -> dict[str, Any]:
-    block: dict[str, Any] = {
-        "type": "tool_result",
-        "tool_use_id": part.call_id,
-        "content": part.content,
-    }
+    block: dict[str, Any] = {"type": "tool_result", "tool_use_id": part.call_id}
+    if part.parts:
+        content: list[dict[str, Any]] = []
+        if part.content:
+            content.append({"type": "text", "text": part.content})
+        for nested in part.parts:
+            if isinstance(nested, ImagePart):
+                content.append(_image_to_anthropic(nested))
+            elif isinstance(nested, FilePart):
+                content.append(_file_to_anthropic(nested))
+            elif isinstance(nested, TextPart):
+                content.append({"type": "text", "text": nested.text})
+        block["content"] = content or part.content
+    else:
+        block["content"] = part.content
     if part.is_error:
         block["is_error"] = True
+    _attach_cache(block, part.cache_control)
     return block
 
 
 def _tool_to_anthropic(tool: ToolDefinition) -> dict[str, Any]:
-    result: dict[str, Any] = {"name": tool.name}
-    if tool.description:
-        result["description"] = tool.description
-    result["input_schema"] = tool.parameters or {"type": "object", "properties": {}}
+    name = capabilities.namespaced_name(tool.namespace, tool.name)
+    if tool.kind is ToolKind.CUSTOM:
+        description, parameters = capabilities.custom_tool_as_function(
+            tool.description, tool.format
+        )
+        result: dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "input_schema": parameters,
+        }
+    else:
+        result = {"name": name}
+        if tool.description:
+            result["description"] = tool.description
+        result["input_schema"] = tool.parameters or {
+            "type": "object",
+            "properties": {},
+        }
+    _attach_cache(result, tool.cache_control)
     return result
+
+
+def _server_tool_to_anthropic_definition(tool: ServerToolDefinition) -> dict[str, Any]:
+    """Declare a provider-executed tool the way Anthropic expects it."""
+    result: dict[str, Any] = {
+        "type": _anthropic_server_type(tool.kind),
+        "name": tool.name or _anthropic_server_type(tool.kind),
+    }
+    result.update(tool.options)
+    return result
+
+
+def _anthropic_server_type(kind: ServerToolKind) -> str:
+    return {
+        ServerToolKind.WEB_SEARCH: "web_search_20250305",
+        ServerToolKind.CODE_INTERPRETER: "code_execution_20250522",
+        ServerToolKind.COMPUTER_USE: "computer_20250124",
+        ServerToolKind.TOOL_SEARCH: "tool_search_tool_regex_20251119",
+        ServerToolKind.SHELL: "bash_20250124",
+    }.get(kind, "web_search_20250305")
 
 
 def _tool_choice_to_anthropic(choice: ToolChoice) -> dict[str, Any]:
     if choice.mode == ToolChoiceMode.FUNCTION:
-        return {"type": "tool", "name": choice.name}
+        return {
+            "type": "tool",
+            "name": capabilities.namespaced_name(choice.namespace, choice.name),
+        }
     if choice.mode == ToolChoiceMode.REQUIRED:
         return {"type": "any"}
     if choice.mode == ToolChoiceMode.NONE:
@@ -668,6 +1085,7 @@ def _concatenate_anthropic_content(first: Any, second: Any) -> list[dict[str, An
 
 def _anthropic_content_parts(content: list[Any]) -> list[ContentPart]:
     parts: list[ContentPart] = []
+    servers: list[ServerToolPart] = []
     for block in content:
         if not isinstance(block, Mapping):
             raise ValueError("Anthropic content must contain objects")
@@ -679,7 +1097,8 @@ def _anthropic_content_parts(content: list[Any]) -> list[ContentPart]:
                         block.get("text"),
                         "Anthropic text blocks must contain text",
                         allow_empty=True,
-                    )
+                    ),
+                    citations=_anthropic_citations(block.get("citations")),
                 )
             )
         elif block_type == "thinking":
@@ -692,6 +1111,7 @@ def _anthropic_content_parts(content: list[Any]) -> list[ContentPart]:
                     ),
                     opaque=_text(block.get("signature")),
                     origin=_ORIGIN,
+                    kind=ReasoningKind.SIGNATURE,
                 )
             )
         elif block_type == "redacted_thinking":
@@ -703,6 +1123,7 @@ def _anthropic_content_parts(content: list[Any]) -> list[ContentPart]:
                         allow_empty=True,
                     ),
                     origin=_ORIGIN,
+                    kind=ReasoningKind.REDACTED,
                 )
             )
         elif block_type == "tool_use":
@@ -721,7 +1142,55 @@ def _anthropic_content_parts(content: list[Any]) -> list[ContentPart]:
                     origin=_ORIGIN,
                 )
             )
+        elif block_type == "server_tool_use":
+            name = required_string(
+                block.get("name"), "Anthropic server_tool_use must contain name"
+            )
+            tool_input = block.get("input")
+            servers.append(
+                ServerToolPart(
+                    kind=_anthropic_server_tool_kind(name),
+                    name=name,
+                    call_id=required_string(
+                        block.get("id"), "Anthropic server_tool_use must contain id"
+                    ),
+                    status="in_progress",
+                    arguments=json.dumps(tool_input, ensure_ascii=False)
+                    if isinstance(tool_input, Mapping)
+                    else "",
+                    origin=_ORIGIN,
+                )
+            )
+        elif isinstance(block_type, str) and block_type.endswith("_tool_result"):
+            _attach_server_result(servers, block, block_type)
+    parts.extend(servers)
     return parts
+
+
+def _anthropic_citations(value: Any) -> list[Citation]:
+    if not isinstance(value, list):
+        return []
+    citations: list[Citation] = []
+    for block in value:
+        if not isinstance(block, Mapping):
+            continue
+        url = _text(block.get("url"))
+        if not url:
+            continue
+        citations.append(
+            Citation(
+                url=url,
+                title=_text(block.get("title")),
+                start_index=_optional_index(block.get("start_char_index")),
+                end_index=_optional_index(block.get("end_char_index")),
+                raw=dict(block),
+            )
+        )
+    return citations
+
+
+def _optional_index(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _anthropic_usage(value: Mapping[str, Any]) -> Usage:
@@ -1015,11 +1484,26 @@ async def _anthropic_serializer(
                 yield format_sse_event("ping", {"type": "ping"})
             kind_by_index[event.index] = event.kind
             open_blocks.append(event.index)
-            if event.kind == _block_kinds().TEXT:
+            if event.kind == BlockKind.TEXT:
                 yield anthropic_block_start(event.index, {"type": "text", "text": ""})
-            elif event.kind == _block_kinds().REASONING:
+            elif event.kind == BlockKind.REASONING:
                 yield anthropic_block_start(
                     event.index, {"type": "thinking", "thinking": ""}
+                )
+            elif event.kind == BlockKind.REFUSAL:
+                # Anthropic has no refusal block; the text still reaches the
+                # client as ordinary text.
+                yield anthropic_block_start(event.index, {"type": "text", "text": ""})
+            elif event.kind == BlockKind.SERVER_TOOL:
+                call_by_index[event.index] = (event.call_id, event.name)
+                yield anthropic_block_start(
+                    event.index,
+                    {
+                        "type": "server_tool_use",
+                        "id": event.call_id,
+                        "name": event.name,
+                        "input": {},
+                    },
                 )
             else:
                 call_by_index[event.index] = (event.call_id, event.name)
@@ -1037,6 +1521,30 @@ async def _anthropic_serializer(
             yield anthropic_block_delta(
                 event.index, {"type": "text_delta", "text": event.text}
             )
+            continue
+        if isinstance(event, RefusalDelta):
+            if event.index not in open_blocks:
+                open_blocks.append(event.index)
+                yield anthropic_block_start(event.index, {"type": "text", "text": ""})
+            yield anthropic_block_delta(
+                event.index, {"type": "text_delta", "text": event.text}
+            )
+            continue
+        if isinstance(event, CitationDelta):
+            yield anthropic_block_delta(
+                event.index,
+                {
+                    "type": "citations_delta",
+                    "citation": _citation_to_anthropic(event.citation),
+                },
+            )
+            continue
+        if isinstance(event, ServerToolStatusDelta):
+            # Anthropic reports server-tool progress by closing the block, so a
+            # completed status becomes the block stop it would have sent.
+            if event.status in {"completed", "failed"} and event.index in open_blocks:
+                open_blocks.remove(event.index)
+                yield anthropic_block_stop(event.index)
             continue
         if isinstance(event, ReasoningDelta):
             if event.index not in open_blocks and event.text:
@@ -1073,7 +1581,8 @@ async def _anthropic_serializer(
                 yield anthropic_block_stop(index)
             open_blocks.clear()
             has_tools = any(
-                kind == _block_kinds().TOOL_CALL for kind in kind_by_index.values()
+                kind in {BlockKind.TOOL_CALL, BlockKind.SERVER_TOOL}
+                for kind in kind_by_index.values()
             )
             yield format_sse_event(
                 "message_delta",
@@ -1095,11 +1604,6 @@ async def _anthropic_serializer(
             return
     for index in sorted(open_blocks):
         yield anthropic_block_stop(index)
-
-
-def _block_kinds() -> Any:
-
-    return BlockKind
 
 
 def _event_index(payload: Mapping[str, Any], key: str) -> int:
