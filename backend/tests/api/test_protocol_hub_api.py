@@ -176,6 +176,65 @@ def test_anthropic_passthrough_drops_foreign_reasoning_signature(
     ]
 
 
+def test_responses_passthrough_drops_reasoning_sealed_by_another_provider(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """A blob sealed by one provider must not be replayed to another."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "resp_1",
+            "object": "response",
+            "status": "completed",
+            "model": "upstream-model",
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg_1",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.OPENAI_RESPONSES,
+        group_name="responses-passthrough",
+        model_name="claude-3-5-sonnet",
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "responses-passthrough",
+            "input": [
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": [{"type": "summary_text", "text": "prior thought"}],
+                    "encrypted_content": "gAAAA-openai-sealed",
+                },
+                {"type": "message", "role": "user", "content": "hi"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    types = [item.get("type") for item in captured["body"]["input"]]
+    assert "reasoning" not in types
+    assert "message" in types
+
+
 def test_chat_client_reaches_anthropic_upstream(
     client: Any,
     monkeypatch: Any,

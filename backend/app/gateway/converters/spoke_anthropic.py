@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 from ...models.protocols import ProtocolKind
-from . import cache, capabilities, repair, signatures
+from . import cache, capabilities, repair
 from .sse import (
     anthropic_block_delta,
     anthropic_block_start,
@@ -110,7 +110,7 @@ def build_anthropic_request(request: UnifiedRequest) -> dict[str, Any]:
                         "content": [
                             {
                                 "type": "text",
-                                "text": f"<system-reminder>\n{text}\n</system-reminder>",
+                                "text": capabilities.as_reminder(text),
                             }
                         ],
                     }
@@ -118,7 +118,10 @@ def build_anthropic_request(request: UnifiedRequest) -> dict[str, Any]:
             continue
         rendered = _message_to_anthropic(message, request=request, drops=drops)
         if message.role is MessageRole.USER:
-            drops.keep(_rendered_block_count(rendered))
+            content = rendered["content"]
+            drops.keep(
+                len(content) if isinstance(content, list) else int(bool(content))
+            )
             drops.end_turn()
         messages.append(rendered)
     if pending_results:
@@ -715,20 +718,9 @@ def _message_to_anthropic(
         list(message.parts),
         role=message.role,
         replay_reasoning=request.replay_reasoning,
-        target_model=request.model,
         drops=drops,
     )
     return {"role": message.role.value, "content": content}
-
-
-def _rendered_block_count(rendered: dict[str, Any]) -> int:
-    """Count the content blocks a rendered message actually carries."""
-    content = rendered.get("content")
-    if isinstance(content, str):
-        return 1 if content else 0
-    if isinstance(content, list):
-        return len(content)
-    return 0
 
 
 def _parts_to_anthropic_content(
@@ -736,7 +728,6 @@ def _parts_to_anthropic_content(
     *,
     role: MessageRole,
     replay_reasoning: bool = False,
-    target_model: str = "",
     drops: capabilities.ContentDrops | None = None,
 ) -> str | list[dict[str, Any]]:
     text_blocks: list[dict[str, Any]] = []
@@ -745,76 +736,51 @@ def _parts_to_anthropic_content(
     result_blocks: list[dict[str, Any]] = []
     server_blocks: list[dict[str, Any]] = []
     thinking_blocks: list[dict[str, Any]] = []
-    text_only = True
+    dropped = False
     for part in parts:
         if isinstance(part, TextPart):
             block: dict[str, Any] = {"type": "text", "text": part.text}
             _attach_cache(block, part.cache_control)
             text_blocks.append(block)
-            if part.cache_control is not None:
-                text_only = False
-        elif isinstance(part, ImagePart):
-            block = _image_to_anthropic(part)
+        elif isinstance(part, (ImagePart, FilePart)):
+            block = (
+                _image_to_anthropic(part)
+                if isinstance(part, ImagePart)
+                else _file_to_anthropic(part)
+            )
             _attach_cache(block, part.cache_control)
             media_blocks.append(block)
-            text_only = False
-        elif isinstance(part, FilePart):
-            block = _file_to_anthropic(part)
-            _attach_cache(block, part.cache_control)
-            media_blocks.append(block)
-            text_only = False
         elif isinstance(part, AudioPart):
-            # Anthropic has no audio block, so the part is dropped from its turn
-            # instead of failing a request that is otherwise expressible.
+            # Anthropic has no audio block, so the part leaves its turn rather
+            # than failing a request that is otherwise sendable.
+            dropped = True
             if drops is not None:
                 drops.drop("audio")
-            text_only = False
-        elif isinstance(part, ReasoningPart) and role == MessageRole.ASSISTANT:
-            if not replay_reasoning and part.origin is not _ORIGIN:
-                continue
-            if part.opaque and not signatures.can_replay(
-                origin=part.origin,
-                target=_ORIGIN,
-                opaque=part.opaque,
-                target_model=target_model,
-            ):
-                # A foreign model's sealed state would be rejected upstream, so
-                # only its readable text survives.
-                if part.text:
-                    thinking_blocks.append({"type": "thinking", "thinking": part.text})
-                continue
-            thinking_blocks.append(_reasoning_to_anthropic(part))
-            text_only = False
+        elif isinstance(part, ReasoningPart) and role is MessageRole.ASSISTANT:
+            if replay_reasoning or part.origin is _ORIGIN:
+                thinking_blocks.append(_reasoning_to_anthropic(part))
         elif isinstance(part, ToolCallPart):
             call_blocks.append(_tool_call_to_anthropic(part))
-            text_only = False
         elif isinstance(part, ToolResultPart):
             result_blocks.append(_tool_result_to_anthropic(part))
-            text_only = False
         elif isinstance(part, ServerToolPart):
             server_blocks.extend(_server_tool_to_anthropic(part))
-            text_only = False
         elif isinstance(part, Refusal):
             text_blocks.append({"type": "text", "text": part.text})
-            text_only = False
 
-    if text_only and not (call_blocks or result_blocks or media_blocks):
-        return "\n".join(block["text"] for block in text_blocks)
-
-    blocks: list[dict[str, Any]] = []
-    if role is MessageRole.ASSISTANT:
-        # Anthropic requires thinking before the text and tool calls it produced.
-        blocks.extend(thinking_blocks)
-        blocks.extend(text_blocks)
-        blocks.extend(media_blocks)
-        blocks.extend(server_blocks)
-        blocks.extend(call_blocks)
-    else:
-        # A user turn must lead with the tool results it answers.
-        blocks.extend(result_blocks)
-        blocks.extend(server_blocks)
-        blocks.extend(text_blocks)
-        blocks.extend(media_blocks)
+    # Anthropic requires thinking first in an assistant turn, and tool results
+    # first in a user turn.
+    blocks = (
+        [*thinking_blocks, *text_blocks, *media_blocks, *server_blocks, *call_blocks]
+        if role is MessageRole.ASSISTANT
+        else [*result_blocks, *server_blocks, *text_blocks, *media_blocks]
+    )
+    # Collapse to a bare string only for an untouched all-text turn, so a turn
+    # that lost a part keeps the block form its client sent.
+    if not dropped and all(
+        block.get("type") == "text" and "cache_control" not in block for block in blocks
+    ):
+        return "\n".join(block["text"] for block in blocks)
     return blocks
 
 
@@ -941,14 +907,12 @@ def _tool_call_to_anthropic(part: ToolCallPart) -> dict[str, Any]:
     name = capabilities.namespaced_name(part.namespace, part.name)
     if part.kind is ToolKind.CUSTOM:
         # Anthropic has no free-form tool, so the raw input is carried in the
-        # single-string argument shape :func:`custom_tool_as_function` declared.
+        # single-string argument shape :func:`render_custom_tool` declared.
         return {
             "type": "tool_use",
             "id": part.call_id,
             "name": name,
-            "input": {
-                "input": capabilities.unwrap_custom_tool_arguments(part.arguments)
-            },
+            "input": {"input": capabilities.unwrap_custom_tool_input(part.arguments)},
         }
     arguments = part.arguments or "{}"
     try:
@@ -990,7 +954,7 @@ def _tool_result_to_anthropic(part: ToolResultPart) -> dict[str, Any]:
 def _tool_to_anthropic(tool: ToolDefinition) -> dict[str, Any]:
     name = capabilities.namespaced_name(tool.namespace, tool.name)
     if tool.kind is ToolKind.CUSTOM:
-        description, parameters = capabilities.custom_tool_as_function(
+        description, parameters = capabilities.render_custom_tool(
             tool.description, tool.format
         )
         result: dict[str, Any] = {

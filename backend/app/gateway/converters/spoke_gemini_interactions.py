@@ -531,7 +531,7 @@ def _request_steps(messages: list[Message]) -> list[dict[str, Any]]:
                         "content": [
                             {
                                 "type": "text",
-                                "text": f"<system-reminder>\n{text}\n</system-reminder>",
+                                "text": capabilities.as_reminder(text),
                             }
                         ],
                     }
@@ -581,7 +581,7 @@ def _tool_call_to_interaction(part: ToolCallPart) -> dict[str, Any]:
             "id": part.call_id,
             "name": part.name,
             "arguments": {
-                "input": capabilities.unwrap_custom_tool_arguments(part.arguments)
+                "input": capabilities.unwrap_custom_tool_input(part.arguments)
             },
         }
     return {
@@ -836,7 +836,7 @@ def _tool_choice_to_interaction(
 def _tool_to_interaction(tool: ToolDefinition) -> dict[str, Any]:
     name = capabilities.namespaced_name(tool.namespace, tool.name)
     if tool.kind is ToolKind.CUSTOM:
-        description, parameters = capabilities.custom_tool_as_function(
+        description, parameters = capabilities.render_custom_tool(
             tool.description, tool.format
         )
         return {

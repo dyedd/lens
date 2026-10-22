@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ...models.protocols import ProtocolKind
-from . import cache, repair, signatures
+from . import cache, repair
 from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
 from .responses_common import (
     decode_reasoning_item,
@@ -206,7 +206,7 @@ def build_responses_request(request: UnifiedRequest) -> dict[str, Any]:
                 if isinstance(part, ToolResultPart):
                     items.append(_tool_result_to_responses(part))
             continue
-        items.extend(_message_to_responses(message, target_model=request.model))
+        items.extend(_message_to_responses(message))
 
     body: dict[str, Any] = dict(request.passthrough)
     body.pop("stream_options", None)
@@ -917,25 +917,13 @@ def _responses_response_format(value: Any) -> ResponseFormat | None:
     )
 
 
-def _message_to_responses(
-    message: Message, *, target_model: str = ""
-) -> list[dict[str, Any]]:
+def _message_to_responses(message: Message) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     content: list[dict[str, Any]] = []
     tool_calls: list[dict[str, Any]] = []
     for part in message.parts:
         if isinstance(part, ReasoningPart):
             if part.origin is not _ORIGIN:
-                continue
-            if part.opaque and not signatures.can_replay(
-                origin=part.origin,
-                target=_ORIGIN,
-                opaque=part.opaque,
-                target_model=target_model,
-            ):
-                # Sealed by another provider family: replay only what is
-                # readable, because the blob would be rejected upstream.
-                items.append(_plain_reasoning_item(part))
                 continue
             if part.sealed is not None:
                 items.append(dict(part.sealed))

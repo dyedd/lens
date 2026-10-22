@@ -618,7 +618,7 @@ def _message_to_chat(
             return [
                 {
                     "role": "user",
-                    "content": f"<system-reminder>\n{text}\n</system-reminder>",
+                    "content": capabilities.as_reminder(text),
                 }
             ]
         return []
@@ -633,7 +633,7 @@ def _message_to_chat(
         elif isinstance(part, ToolCallPart):
             arguments = part.arguments
             if part.kind is ToolKind.CUSTOM:
-                arguments = capabilities.unwrap_custom_tool_arguments(arguments)
+                arguments = capabilities.unwrap_custom_tool_input(arguments)
             tool_calls.append(
                 {
                     "id": part.call_id,
@@ -777,7 +777,7 @@ def _file_to_chat(part: FilePart) -> dict[str, Any]:
 def _tool_to_chat(tool: ToolDefinition) -> dict[str, Any]:
     name = capabilities.namespaced_name(tool.namespace, tool.name)
     if tool.kind is ToolKind.CUSTOM:
-        description, parameters = capabilities.custom_tool_as_function(
+        description, parameters = capabilities.render_custom_tool(
             tool.description, tool.format
         )
         return {
