@@ -11,13 +11,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .unified_response import FinishReason, Usage
+from .unified_response import Citation, FinishReason, ResponseStatus, Usage
 
 
 class BlockKind(str, Enum):
     TEXT = "text"
     REASONING = "reasoning"
     TOOL_CALL = "tool_call"
+    # A provider-executed tool (web search, code interpreter, MCP, ...).
+    SERVER_TOOL = "server_tool"
+    REFUSAL = "refusal"
 
 
 @dataclass(slots=True)
@@ -32,6 +35,10 @@ class BlockStart:
     kind: BlockKind
     call_id: str = ""
     name: str = ""
+    # Wire item id for blocks that carry one (Responses ``output_item.added``).
+    item_id: str = ""
+    # Server-tool lifecycle marker (``in_progress``, ``searching``, ...).
+    status: str = ""
 
 
 @dataclass(slots=True)
@@ -61,6 +68,28 @@ class ToolCallArgsDelta:
 
 
 @dataclass(slots=True)
+class RefusalDelta:
+    index: int
+    text: str
+
+
+@dataclass(slots=True)
+class CitationDelta:
+    """A source annotation attached to a text block as it streams."""
+
+    index: int
+    citation: Citation
+
+
+@dataclass(slots=True)
+class ServerToolStatusDelta:
+    """A lifecycle change for a provider-executed tool block."""
+
+    index: int
+    status: str
+
+
+@dataclass(slots=True)
 class BlockStop:
     index: int
 
@@ -69,6 +98,8 @@ class BlockStop:
 class StreamFinish:
     reason: FinishReason = FinishReason.END_TURN
     usage: Usage = field(default_factory=Usage)
+    status: ResponseStatus = ResponseStatus.COMPLETED
+    incomplete_reason: str = ""
 
 
 @dataclass(slots=True)
@@ -83,6 +114,9 @@ StreamEvent = (
     | ReasoningDelta
     | SignatureDelta
     | ToolCallArgsDelta
+    | RefusalDelta
+    | CitationDelta
+    | ServerToolStatusDelta
     | BlockStop
     | StreamFinish
     | StreamError

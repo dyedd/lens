@@ -35,7 +35,7 @@ export type RemoteModelCatalog = {
   hasMultipleBaseUrls: boolean;
 };
 
-/** Lists a native Anthropic or Gemini URL in its own protocol; everything else, auto included, as OpenAI Chat. */
+/** Lists a native Anthropic or Gemini URL in its own protocol; every other URL as OpenAI Chat. */
 function discoveryProtocol(protocols: ProtocolKind[]): ProtocolKind {
   if (
     protocols.includes("openai_chat") ||

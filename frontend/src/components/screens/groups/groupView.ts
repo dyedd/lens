@@ -2,7 +2,6 @@ import type {
   ModelGroup,
   ModelGroupCandidateItem,
   ModelGroupItemPayload,
-  ModelGroupMemberSource,
 } from "@/lib/api/groups";
 import {
   formatContextWindow,
@@ -35,7 +34,6 @@ import {
 /** Convert candidate payload items into editable model group members. */
 export function candidatePayloadToFormItems(
   candidate: ModelGroupCandidateItem,
-  source: ModelGroupMemberSource = "manual",
 ): FormItem[] {
   return candidate.items.map((payloadItem) => ({
     channel_id: payloadItem.channel_id,
@@ -52,9 +50,9 @@ export function candidatePayloadToFormItems(
     rate_source: candidate.rate_source,
     model_name: payloadItem.model_name,
     enabled: true,
-    source,
-    // Candidates are READY by construction; rule members skip evaluation.
-    state: source === "rule" ? "ready" : null,
+    source: "manual",
+    // Added before the next evaluation, so the row stays pending until then.
+    state: null,
     reasons: [],
     context_window: null,
     context_window_source: null,

@@ -21,6 +21,7 @@ from ...core.protocol_reachability import can_reach_protocol
 from ...models.protocols import ProtocolKind
 from .chat_stream import repair_chat_tool_call_stream
 from .responses_common import is_reasoning_envelope
+from .signatures import fits
 
 __all__ = [
     "can_reach_protocol",
@@ -188,53 +189,75 @@ def convert_request(
     return result
 
 
-def strip_foreign_reasoning(body: dict[str, Any]) -> dict[str, Any]:
-    """Drop Anthropic thinking blocks that carry a foreign reasoning envelope.
+def strip_foreign_reasoning(
+    body: dict[str, Any], protocol: ProtocolKind, target_model: str
+) -> dict[str, Any]:
+    """Drop sealed reasoning the target cannot read.
 
-    A client whose history passed through a Responses channel holds thinking
-    blocks whose ``signature`` is a Lens envelope. Anthropic rejects those, so
-    they are removed before a same-protocol request is forwarded.
+    A same-protocol request is forwarded untouched, but its history can still
+    hold state another protocol or provider sealed: a Lens envelope written on
+    an earlier hop, or a blob sealed with another provider's key. Replaying
+    either makes the upstream reject the whole request, so it is removed here.
     """
+    if protocol is ProtocolKind.ANTHROPIC:
+        return _strip_anthropic_thinking(body, target_model)
+    if protocol is ProtocolKind.OPENAI_RESPONSES:
+        return _strip_responses_reasoning(body, target_model)
+    return body
+
+
+def _strip_anthropic_thinking(
+    body: dict[str, Any], target_model: str
+) -> dict[str, Any]:
     messages = body.get("messages")
     if not isinstance(messages, list):
         return body
 
-    cleaned: list[Any] = []
-    changed = False
+    kept: list[Any] = []
     for message in messages:
-        if not isinstance(message, dict):
-            cleaned.append(message)
-            continue
-        content = message.get("content")
+        content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, list):
-            cleaned.append(message)
+            kept.append(message)
             continue
-        kept = [
-            block
-            for block in content
-            if not (
-                isinstance(block, dict)
-                and (
-                    (
-                        block.get("type") == "thinking"
-                        and is_reasoning_envelope(block.get("signature"))
-                    )
-                    or (
-                        block.get("type") == "redacted_thinking"
-                        and is_reasoning_envelope(block.get("data"))
-                    )
-                )
-            )
+        blocks = [
+            block for block in content if not _foreign_anthropic(block, target_model)
         ]
-        if len(kept) == len(content):
-            cleaned.append(message)
-            continue
-        changed = True
-        if kept:
-            cleaned.append({**message, "content": kept})
-    if not changed:
+        if len(blocks) == len(content):
+            kept.append(message)
+        elif blocks:
+            kept.append({**message, "content": blocks})
+    return {**body, "messages": kept}
+
+
+def _foreign_anthropic(block: Any, target_model: str) -> bool:
+    if not isinstance(block, dict):
+        return False
+    field = {"thinking": "signature", "redacted_thinking": "data"}.get(
+        block.get("type", "")
+    )
+    value = block.get(field) if field else None
+    if not isinstance(value, str) or not value:
+        return False
+    return is_reasoning_envelope(value) or not fits(value, target_model)
+
+
+def _strip_responses_reasoning(
+    body: dict[str, Any], target_model: str
+) -> dict[str, Any]:
+    items = body.get("input")
+    if not isinstance(items, list):
         return body
-    return {**body, "messages": cleaned}
+    return {
+        **body,
+        "input": [item for item in items if not _foreign_response(item, target_model)],
+    }
+
+
+def _foreign_response(item: Any, target_model: str) -> bool:
+    if not isinstance(item, dict) or item.get("type") != "reasoning":
+        return False
+    value = item.get("encrypted_content")
+    return isinstance(value, str) and bool(value) and not fits(value, target_model)
 
 
 def convert_response(

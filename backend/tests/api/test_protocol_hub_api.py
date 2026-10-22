@@ -176,6 +176,65 @@ def test_anthropic_passthrough_drops_foreign_reasoning_signature(
     ]
 
 
+def test_responses_passthrough_drops_reasoning_sealed_by_another_provider(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """A blob sealed by one provider must not be replayed to another."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "resp_1",
+            "object": "response",
+            "status": "completed",
+            "model": "upstream-model",
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg_1",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.OPENAI_RESPONSES,
+        group_name="responses-passthrough",
+        model_name="claude-3-5-sonnet",
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "responses-passthrough",
+            "input": [
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": [{"type": "summary_text", "text": "prior thought"}],
+                    "encrypted_content": "gAAAA-openai-sealed",
+                },
+                {"type": "message", "role": "user", "content": "hi"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    types = [item.get("type") for item in captured["body"]["input"]]
+    assert "reasoning" not in types
+    assert "message" in types
+
+
 def test_chat_client_reaches_anthropic_upstream(
     client: Any,
     monkeypatch: Any,
@@ -883,3 +942,312 @@ def test_anthropic_upstream_error_event_fails_the_request(
     assert "Overloaded" in response.text
     assert "[DONE]" not in response.text
     assert '"finish_reason": "stop"' not in response.text
+
+
+# Remaining pairs: every client protocol must reach every other upstream
+# protocol with the same tool and text semantics.
+
+
+def test_anthropic_client_reaches_chat_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """Anthropic tools and system text reach a Chat upstream."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "model": "upstream-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.OPENAI_CHAT,
+        group_name="anthropic-to-chat",
+    )
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "anthropic-to-chat",
+            "max_tokens": 32,
+            "system": "be brief",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [
+                {"name": "lookup", "input_schema": {"type": "object", "properties": {}}}
+            ],
+            "tool_choice": {"type": "auto", "disable_parallel_tool_use": True},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = captured["body"]
+    assert body["messages"][0] == {"role": "system", "content": "be brief"}
+    assert body["tools"][0]["function"]["name"] == "lookup"
+    assert body["parallel_tool_calls"] is False
+
+
+def test_anthropic_client_reaches_responses_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """Anthropic history becomes Responses input items, with store disabled."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "resp_1",
+            "object": "response",
+            "status": "completed",
+            "model": "upstream-model",
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg_1",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.OPENAI_RESPONSES,
+        group_name="anthropic-to-responses",
+    )
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "anthropic-to-responses",
+            "max_tokens": 32,
+            "system": "be brief",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = captured["body"]
+    assert body["store"] is False
+    assert body["input"][0] == {"role": "system", "content": "be brief"}
+    assert body["input"][1] == {"role": "user", "content": "hello"}
+
+
+def test_anthropic_client_reaches_gemini_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """Anthropic text and instructions reach a Gemini Interactions upstream."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "interaction_1",
+            "object": "interaction",
+            "model": "upstream-model",
+            "status": "completed",
+            "steps": [
+                {"type": "model_output", "content": [{"type": "text", "text": "ok"}]}
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.GEMINI,
+        group_name="anthropic-to-gemini",
+    )
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "anthropic-to-gemini",
+            "max_tokens": 32,
+            "system": "be brief",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = captured["body"]
+    assert body["system_instruction"] == "be brief"
+    assert body["input"][0]["type"] == "user_input"
+
+
+def test_responses_client_reaches_gemini_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """Responses instructions and function tools reach a Gemini upstream."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "interaction_2",
+            "object": "interaction",
+            "model": "upstream-model",
+            "status": "completed",
+            "steps": [
+                {"type": "model_output", "content": [{"type": "text", "text": "ok"}]}
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.GEMINI,
+        group_name="responses-to-gemini",
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "responses-to-gemini",
+            "instructions": "be brief",
+            "input": "hello",
+            "tools": [{"type": "function", "name": "lookup", "parameters": {}}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = captured["body"]
+    assert body["system_instruction"] == "be brief"
+    assert body["tools"][0]["name"] == "lookup"
+
+
+def test_gemini_client_reaches_responses_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """Gemini instructions and function tools reach a Responses upstream."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "resp_2",
+            "object": "response",
+            "status": "completed",
+            "model": "upstream-model",
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg_2",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.OPENAI_RESPONSES,
+        group_name="gemini-to-responses",
+    )
+
+    response = client.post(
+        "/v1beta/interactions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "gemini-to-responses",
+            "system_instruction": "be brief",
+            "input": [{"type": "text", "text": "hello"}],
+            "tools": [{"type": "function", "name": "lookup", "parameters": {}}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = captured["body"]
+    assert body["input"][0] == {"role": "system", "content": "be brief"}
+    assert body["tools"][0]["name"] == "lookup"
+    assert body["tools"][0]["type"] == "function"
+
+
+def test_gemini_client_reaches_anthropic_upstream(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """Gemini instructions and function tools reach an Anthropic upstream."""
+    captured: dict[str, Any] = {}
+    _capture_json_upstream(
+        monkeypatch,
+        captured,
+        {
+            "id": "msg_2",
+            "type": "message",
+            "role": "assistant",
+            "model": "upstream-model",
+            "content": [{"type": "text", "text": "ok"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    )
+    _single_upstream_group(
+        create_site,
+        create_model_group,
+        upstream_protocol=ProtocolKind.ANTHROPIC,
+        group_name="gemini-to-anthropic",
+    )
+
+    response = client.post(
+        "/v1beta/interactions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "gemini-to-anthropic",
+            "system_instruction": "be brief",
+            "input": [{"type": "text", "text": "hello"}],
+            "tools": [{"type": "function", "name": "lookup", "parameters": {}}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = captured["body"]
+    assert body["system"] == "be brief"
+    assert body["tools"][0]["name"] == "lookup"
+    assert body["tools"][0]["input_schema"] == {
+        "type": "object",
+        "properties": {},
+    }

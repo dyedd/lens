@@ -167,7 +167,7 @@ export function useGroupMembers(
     );
   }
 
-  /** Bring an excluded member back at the group's insert position. */
+  /** Bring an excluded member back as an enabled member at the end. */
   function restoreExcludedMember(foldKey: string) {
     setForm((current) => {
       const restoredItems = current.excluded_items.filter(

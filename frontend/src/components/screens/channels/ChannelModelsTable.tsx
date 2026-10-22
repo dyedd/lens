@@ -103,7 +103,7 @@ export function ChannelModelsTable({
         {items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={8}
+              colSpan={7}
               className="h-28 text-center text-muted-foreground"
             >
               {!hasModels

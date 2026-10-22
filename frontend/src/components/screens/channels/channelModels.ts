@@ -352,38 +352,6 @@ export const emptyForm = (): FormState => {
   };
 };
 
-/** Builds uniqueness keys for a protocol configuration's credentials. */
-function protocolConfigCredentialKeys(
-  protocolConfig: FormProtocolConfig,
-  baseUrlIds: Set<string>,
-) {
-  if (!baseUrlIds.has(protocolConfig.base_url_id)) return [];
-  const credentialIds = protocolConfigSelectedCredentialIds(protocolConfig);
-  return credentialIds.flatMap((credentialId) =>
-    protocolConfigEffectiveProtocols(protocolConfig).map((protocol) =>
-      JSON.stringify([protocolConfig.base_url_id, credentialId, protocol]),
-    ),
-  );
-}
-
-/** Finds duplicated base URL, credential, and protocol combinations. */
-export function duplicateProtocolConfigKeys(
-  protocolConfigs: FormProtocolConfig[],
-  baseUrls: Array<{ id: string }>,
-) {
-  const baseUrlIds = new Set(baseUrls.map((item) => item.id));
-  const counts = new Map<string, number>();
-  for (const item of protocolConfigs) {
-    if (protocolConfigEffectiveProtocols(item).length === 0) continue;
-    for (const key of protocolConfigCredentialKeys(item, baseUrlIds)) {
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-  return new Set(
-    [...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key),
-  );
-}
-
 /** Counts protocol configurations bound to unavailable base URLs. */
 export function invalidProtocolBaseUrlCount(form: FormState) {
   const baseUrlIds = new Set(

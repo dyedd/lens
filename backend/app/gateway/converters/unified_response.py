@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .unified import ContentPart
+from .unified import Citation, ContentPart, Refusal
 
 
 class FinishReason(str, Enum):
@@ -25,6 +25,15 @@ class FinishReason(str, Enum):
     OTHER = "other"
 
 
+class ResponseStatus(str, Enum):
+    """Terminal status of a response the client asked to observe."""
+
+    COMPLETED = "completed"
+    INCOMPLETE = "incomplete"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 @dataclass(slots=True)
 class Usage:
     input_tokens: int = 0
@@ -32,6 +41,12 @@ class Usage:
     cached_input_tokens: int = 0
     cache_creation_input_tokens: int = 0
     reasoning_tokens: int = 0
+    audio_input_tokens: int = 0
+    audio_output_tokens: int = 0
+    accepted_prediction_tokens: int = 0
+    rejected_prediction_tokens: int = 0
+    # Provider-executed searches billed alongside tokens.
+    web_search_requests: int = 0
 
 
 @dataclass(slots=True)
@@ -41,3 +56,17 @@ class UnifiedResponse:
     parts: list[ContentPart] = field(default_factory=list)
     finish: FinishReason = FinishReason.END_TURN
     usage: Usage = field(default_factory=Usage)
+    status: ResponseStatus = ResponseStatus.COMPLETED
+    # Machine-readable reason when ``status`` is ``incomplete``
+    # (``max_output_tokens``, ``content_filter``).
+    incomplete_reason: str = ""
+
+
+__all__ = [
+    "Citation",
+    "FinishReason",
+    "Refusal",
+    "ResponseStatus",
+    "UnifiedResponse",
+    "Usage",
+]

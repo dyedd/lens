@@ -12,8 +12,12 @@ from collections.abc import Mapping
 from typing import Any
 
 from ...models.protocols import ProtocolKind
+from . import capabilities, repair
+from .cache import normalize_cache_control
 from .unified import (
+    AudioPart,
     ContentPart,
+    Continuation,
     FilePart,
     GenerationConfig,
     ImagePart,
@@ -21,12 +25,15 @@ from .unified import (
     MessageRole,
     ReasoningIntent,
     ReasoningPart,
+    Refusal,
     ResponseFormat,
+    ServerToolPart,
     TextPart,
     ToolCallPart,
     ToolChoice,
     ToolChoiceMode,
     ToolDefinition,
+    ToolKind,
     ToolResultPart,
     UnifiedRequest,
 )
@@ -52,15 +59,28 @@ def parse_chat_request(body: Mapping[str, Any]) -> UnifiedRequest:
     request.response_format = _chat_response_format(body)
     request.reasoning = _chat_reasoning_intent(body)
     request.user_id = _optional_string(body.get("user")) or ""
+    request.continuation = _chat_continuation(body)
     request.passthrough = _chat_passthrough(body)
 
+    seen_conversation = False
     for message in messages:
         role = message.get("role") if isinstance(message, Mapping) else None
         if isinstance(role, str) and role in {"system", "developer"}:
-            # System prompts live beside the message history in the unified
-            # request, matching the Anthropic and Gemini representations.
-            request.system.extend(_chat_content_parts(message.get("content")))
+            if not seen_conversation:
+                # Leading instructions live beside the history in the unified
+                # request, matching the Anthropic and Gemini representations.
+                request.system.extend(_chat_content_parts(message.get("content")))
+                continue
+            # A system message mid-conversation keeps its position so a target
+            # without mid-turn system turns can demote it in place.
+            request.messages.append(
+                Message(
+                    role=MessageRole.SYSTEM,
+                    parts=_chat_content_parts(message.get("content")),
+                )
+            )
             continue
+        seen_conversation = True
         request.messages.extend(_chat_message(message))
     return request
 
@@ -68,6 +88,7 @@ def parse_chat_request(body: Mapping[str, Any]) -> UnifiedRequest:
 def build_chat_request(request: UnifiedRequest) -> dict[str, Any]:
     """Build a Chat Completions request body from the unified request."""
     messages: list[dict[str, Any]] = []
+    drops = capabilities.ContentDrops()
     if request.system:
         messages.append(
             {
@@ -79,8 +100,9 @@ def build_chat_request(request: UnifiedRequest) -> dict[str, Any]:
                 ),
             }
         )
-    for message in request.messages:
-        messages.append(_message_to_chat(message, request=request))
+    for message in repair.repair_history(list(request.messages)):
+        messages.extend(_message_to_chat(message, request=request, drops=drops))
+    drops.raise_if_empty()
 
     body: dict[str, Any] = dict(request.passthrough)
     body["messages"] = messages
@@ -99,14 +121,22 @@ def build_chat_request(request: UnifiedRequest) -> dict[str, Any]:
         ("seed", generation.seed),
         ("presence_penalty", generation.presence_penalty),
         ("frequency_penalty", generation.frequency_penalty),
+        ("n", generation.n),
+        ("logprobs", generation.logprobs),
+        ("top_logprobs", generation.top_logprobs),
+        ("logit_bias", generation.logit_bias),
+        ("verbosity", generation.verbosity),
     ):
         if value is not None:
             body[key] = value
+    if generation.modalities:
+        body["modalities"] = list(generation.modalities)
     if generation.stop:
         body["stop"] = list(generation.stop)
-    if request.tools:
-        body["tools"] = [_tool_to_chat(tool) for tool in request.tools]
-    if request.tool_choice is not None and request.tools:
+    tools = [_tool_to_chat(tool) for tool in request.tools]
+    if tools:
+        body["tools"] = tools
+    if request.tool_choice is not None and tools:
         body["tool_choice"] = _tool_choice_to_chat(request.tool_choice)
         if request.tool_choice.allow_parallel is not None:
             body["parallel_tool_calls"] = request.tool_choice.allow_parallel
@@ -116,6 +146,16 @@ def build_chat_request(request: UnifiedRequest) -> dict[str, Any]:
         body["response_format"] = _response_format_to_chat(request.response_format)
     if request.user_id:
         body["user"] = request.user_id
+    continuation = request.continuation
+    # Chat has no server-side conversation state, so a replayed response id can
+    # never be honoured here; the caller must resend full history.
+    for key, value in (
+        ("prompt_cache_key", continuation.prompt_cache_key),
+        ("service_tier", continuation.service_tier),
+        ("safety_identifier", continuation.safety_identifier),
+    ):
+        if value:
+            body.setdefault(key, value)
     if request.stream:
         body["stream"] = True
         if request.include_usage:
@@ -211,7 +251,43 @@ def _chat_generation_config(body: Mapping[str, Any]) -> GenerationConfig:
         config.stop = (stop,)
     elif isinstance(stop, list):
         config.stop = tuple(value for value in stop if isinstance(value, str))
+    n = body.get("n")
+    config.n = n if isinstance(n, int) and not isinstance(n, bool) else None
+    config.logprobs = _optional_bool(body.get("logprobs"))
+    top_logprobs = body.get("top_logprobs")
+    config.top_logprobs = (
+        top_logprobs
+        if isinstance(top_logprobs, int) and not isinstance(top_logprobs, bool)
+        else None
+    )
+    verbosity = body.get("verbosity")
+    config.verbosity = verbosity if isinstance(verbosity, str) else None
+    logit_bias = body.get("logit_bias")
+    if isinstance(logit_bias, Mapping):
+        config.logit_bias = {
+            key: float(value)
+            for key, value in logit_bias.items()
+            if isinstance(key, str) and isinstance(value, int | float)
+        }
+    modalities = body.get("modalities")
+    if isinstance(modalities, list):
+        config.modalities = tuple(
+            value for value in modalities if isinstance(value, str)
+        )
     return config
+
+
+def _chat_continuation(body: Mapping[str, Any]) -> Continuation:
+    """Collect the server-side state fields Chat exposes, if any."""
+    store = body.get("store")
+    return Continuation(
+        prompt_cache_key=_optional_string(body.get("prompt_cache_key")) or "",
+        prompt_cache_retention=_optional_string(body.get("prompt_cache_retention"))
+        or "",
+        safety_identifier=_optional_string(body.get("safety_identifier")) or "",
+        service_tier=_optional_string(body.get("service_tier")) or "",
+        store=store if isinstance(store, bool) else None,
+    )
 
 
 def _chat_passthrough(body: Mapping[str, Any]) -> dict[str, Any]:
@@ -295,16 +371,52 @@ def _chat_content_parts(content: Any) -> list[ContentPart]:
                         part.get("text"),
                         "Chat text parts must contain text",
                         allow_empty=True,
-                    )
+                    ),
+                    cache_control=_cache_hint(part),
                 )
             )
         elif part_type == "image_url":
-            parts.append(_chat_image_part(part))
+            image = _chat_image_part(part)
+            image.cache_control = _cache_hint(part)
+            parts.append(image)
         elif part_type == "file":
-            parts.append(_chat_file_part(part))
+            file_part = _chat_file_part(part)
+            file_part.cache_control = _cache_hint(part)
+            parts.append(file_part)
+        elif part_type == "input_audio":
+            parts.append(_chat_audio_part(part))
+        elif part_type == "refusal":
+            parts.append(
+                Refusal(
+                    text=required_string(
+                        part.get("refusal"),
+                        "Chat refusal parts must contain refusal",
+                        allow_empty=True,
+                    )
+                )
+            )
         else:
             raise ValueError(f"Unsupported Chat content part type: {part_type}")
     return parts
+
+
+def _cache_hint(part: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Carry a provider-specific breakpoint a Chat client may have attached."""
+    return normalize_cache_control(part.get("cache_control"))
+
+
+def _chat_audio_part(part: Mapping[str, Any]) -> AudioPart:
+    audio = part.get("input_audio")
+    if not isinstance(audio, Mapping):
+        raise ValueError("Chat input_audio parts must contain an input_audio object")
+    data = audio.get("data")
+    if not isinstance(data, str) or not data:
+        raise ValueError("Chat input_audio parts must contain data")
+    audio_format = audio.get("format")
+    return AudioPart(
+        data=data,
+        format=audio_format if isinstance(audio_format, str) else "",
+    )
 
 
 def _chat_image_part(part: Mapping[str, Any]) -> ImagePart:
@@ -487,15 +599,29 @@ def _chat_reasoning_intent(body: Mapping[str, Any]) -> ReasoningIntent | None:
     return ReasoningIntent(enabled=True, effort=effort)
 
 
-def _message_to_chat(message: Message, *, request: UnifiedRequest) -> dict[str, Any]:
+def _message_to_chat(
+    message: Message,
+    *,
+    request: UnifiedRequest,
+    drops: capabilities.ContentDrops,
+) -> list[dict[str, Any]]:
     if message.role == MessageRole.TOOL:
-        results = [part for part in message.parts if isinstance(part, ToolResultPart)]
-        first = results[0] if results else ToolResultPart(call_id="")
-        return {
-            "role": "tool",
-            "tool_call_id": first.call_id,
-            "content": first.content,
-        }
+        return _tool_message_to_chat(message)
+    if message.role == MessageRole.SYSTEM:
+        # Mid-conversation system content has no place in a Chat history, so it
+        # is demoted to a user turn wrapped as a system reminder: the model still
+        # sees a directive, and the conversation order survives.
+        text = "\n".join(
+            part.text for part in message.parts if isinstance(part, TextPart)
+        )
+        if text:
+            return [
+                {
+                    "role": "user",
+                    "content": capabilities.as_reminder(text),
+                }
+            ]
+        return []
 
     content_parts: list[ContentPart] = []
     tool_calls: list[dict[str, Any]] = []
@@ -505,13 +631,23 @@ def _message_to_chat(message: Message, *, request: UnifiedRequest) -> dict[str, 
             if part.origin == _ORIGIN or request.replay_reasoning:
                 reasoning_text.append(part.text)
         elif isinstance(part, ToolCallPart):
+            arguments = part.arguments
+            if part.kind is ToolKind.CUSTOM:
+                arguments = capabilities.unwrap_custom_tool_input(arguments)
             tool_calls.append(
                 {
                     "id": part.call_id,
                     "type": "function",
-                    "function": {"name": part.name, "arguments": part.arguments},
+                    "function": {
+                        "name": capabilities.namespaced_name(part.namespace, part.name),
+                        "arguments": arguments,
+                    },
                 }
             )
+        elif isinstance(part, ServerToolPart):
+            # Chat cannot carry a provider-executed tool, so its trace becomes
+            # plain text rather than disappearing from the history.
+            content_parts.append(TextPart(text=_server_tool_note(part)))
         else:
             content_parts.append(part)
 
@@ -521,7 +657,62 @@ def _message_to_chat(message: Message, *, request: UnifiedRequest) -> dict[str, 
         result["reasoning_content"] = "".join(reasoning_text)
     if tool_calls:
         result["tool_calls"] = tool_calls
-    return result
+
+    if message.role is MessageRole.USER:
+        # A user turn that lost every part would be forwarded as empty content,
+        # which upstreams reject with an error that hides the real cause.
+        drops.keep(len(content_parts) + len(tool_calls))
+        drops.end_turn()
+    return [result]
+
+
+def _tool_message_to_chat(message: Message) -> list[dict[str, Any]]:
+    """Emit one Chat tool message per result, hoisting media to a user turn.
+
+    Chat tool messages carry text only, so images a tool returned are re-sent as
+    a user turn instead of being flattened away.
+    """
+    messages: list[dict[str, Any]] = []
+    media: list[dict[str, Any]] = []
+    for part in message.parts:
+        if not isinstance(part, ToolResultPart):
+            continue
+        text = part.content or _parts_text(part.parts)
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": part.call_id,
+                "content": text,
+            }
+        )
+        for nested in part.parts:
+            if isinstance(nested, ImagePart):
+                media.append(_image_to_chat(nested))
+            elif isinstance(nested, FilePart):
+                media.append(_file_to_chat(nested))
+    if media:
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Files returned by the tool call:"},
+                    *media,
+                ],
+            }
+        )
+    return messages
+
+
+def _parts_text(parts: list[ContentPart]) -> str:
+    return "\n".join(part.text for part in parts if isinstance(part, TextPart))
+
+
+def _server_tool_note(part: ServerToolPart) -> str:
+    label = part.name or part.kind.value
+    detail = part.arguments
+    if part.output:
+        detail = f"{detail} {_parts_text(part.output)}".strip()
+    return f"[{label}] {detail}".strip()
 
 
 def _parts_to_chat_content(parts: list[ContentPart]) -> Any:
@@ -535,11 +726,24 @@ def _parts_to_chat_content(parts: list[ContentPart]) -> Any:
             media.append(_image_to_chat(part))
         elif isinstance(part, FilePart):
             media.append(_file_to_chat(part))
+        elif isinstance(part, AudioPart):
+            media.append(_audio_to_chat(part))
+        elif isinstance(part, Refusal):
+            text.append(part.text)
     joined = "\n".join(text)
     if not media:
         return joined
     text_part = {"type": "text", "text": joined}
     return [*([text_part] if joined else []), *media]
+
+
+def _audio_to_chat(part: AudioPart) -> dict[str, Any]:
+    if part.url:
+        return {"type": "input_audio", "input_audio": {"url": part.url}}
+    audio: dict[str, Any] = {"data": part.data}
+    if part.format:
+        audio["format"] = part.format
+    return {"type": "input_audio", "input_audio": audio}
 
 
 def _image_to_chat(part: ImagePart) -> dict[str, Any]:
@@ -571,7 +775,20 @@ def _file_to_chat(part: FilePart) -> dict[str, Any]:
 
 
 def _tool_to_chat(tool: ToolDefinition) -> dict[str, Any]:
-    function: dict[str, Any] = {"name": tool.name}
+    name = capabilities.namespaced_name(tool.namespace, tool.name)
+    if tool.kind is ToolKind.CUSTOM:
+        description, parameters = capabilities.render_custom_tool(
+            tool.description, tool.format
+        )
+        return {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": parameters,
+            },
+        }
+    function: dict[str, Any] = {"name": name}
     if tool.description:
         function["description"] = tool.description
     if tool.parameters is not None:
@@ -583,7 +800,12 @@ def _tool_to_chat(tool: ToolDefinition) -> dict[str, Any]:
 
 def _tool_choice_to_chat(choice: ToolChoice) -> Any:
     if choice.mode == ToolChoiceMode.FUNCTION:
-        return {"type": "function", "function": {"name": choice.name}}
+        return {
+            "type": "function",
+            "function": {
+                "name": capabilities.namespaced_name(choice.namespace, choice.name)
+            },
+        }
     if choice.mode == ToolChoiceMode.REQUIRED:
         return "required"
     return choice.mode.value
