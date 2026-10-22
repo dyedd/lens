@@ -1,22 +1,14 @@
-"""Helpers for features that protocols provide unevenly.
+"""Degradations for parts a target protocol cannot carry.
 
-A converter that meets a part its target cannot carry has three options: drop the
-part, replace it with a textual stand-in, or refuse the request. Doing the first
-two blindly loses information silently; refusing outright fails requests that
-were almost entirely expressible. The reference gateways settle on a per-turn
-rule, adopted here:
+A converter that meets such a part has three choices: drop it, replace it with
+text, or refuse the request. Dropping silently loses data; refusing fails a
+request that was almost entirely expressible. The rule used here works per user
+turn: a part the target cannot carry is dropped and the rest of the turn still
+goes out, but a turn left with nothing is refused, because an emptied turn
+breaks the conversation and hides the cause behind a confusing upstream error.
 
-* a part the target cannot carry is dropped from its turn, and the rest of the
-  turn still goes out;
-* if a *user* turn ends up with nothing sendable, the request is refused,
-  because an emptied user turn breaks the conversation and hides the real
-  cause behind a confusing upstream error;
-* system and developer content never mask an emptied user turn, and a later
-  turn never clears an earlier refusal.
-
-The remaining helpers cover the two degradations that are otherwise lossy:
-free-form custom tools (rendered as a single-string function) and namespaced
-tool names (flattened to ``ns__tool``).
+Two other losses have a reversible stand-in: a free-form custom tool becomes a
+single-string function, and a namespaced tool name flattens to ``ns__tool``.
 """
 
 from __future__ import annotations
@@ -26,59 +18,55 @@ from dataclasses import dataclass
 
 
 class UnsupportedContentError(ValueError):
-    """A request turn carried nothing the target protocol could send."""
-
-    def __init__(self, part_type: str) -> None:
-        self.part_type = part_type
-        super().__init__(
-            f"{part_type} content cannot be sent to this upstream protocol"
-        )
+    """A user turn carried nothing the target protocol could send."""
 
 
 @dataclass(slots=True)
 class ContentDrops:
-    """Track parts dropped from user turns and refuse only emptied turns.
-
-    Callers record one ``drop`` per part the target cannot carry, then close the
-    turn with the number of parts that were actually sent. ``raise_if_empty``
-    reports the first turn that ended up sending nothing.
-    """
+    """Watch user turns and refuse only the ones a drop left empty."""
 
     _turn: str = ""
-    _first: str = ""
-    _sendable: int = 0
+    _emptied: str = ""
+    _sent: int = 0
 
     def drop(self, part_type: str) -> None:
-        """Record that a part of the current turn cannot be sent."""
+        """Record a part of the current turn that cannot be sent."""
         if not self._turn:
             self._turn = part_type
 
-    def keep(self, count: int = 1) -> None:
-        """Record parts of the current turn that will be sent."""
-        self._sendable += count
+    def keep(self, count: int) -> None:
+        """Record how many parts of the current turn will be sent."""
+        self._sent += count
 
     def end_turn(self) -> None:
         """Close the current turn, remembering if a drop emptied it."""
-        if self._turn and self._sendable <= 0 and not self._first:
-            self._first = self._turn
+        if self._turn and not self._sent and not self._emptied:
+            self._emptied = self._turn
         self._turn = ""
-        self._sendable = 0
+        self._sent = 0
 
     def raise_if_empty(self) -> None:
-        """Raise for the first user turn that a drop left empty."""
-        if self._first:
-            raise UnsupportedContentError(self._first)
+        """Raise for the first user turn a drop left empty."""
+        if self._emptied:
+            raise UnsupportedContentError(
+                f"{self._emptied} content cannot be sent to this upstream protocol"
+            )
 
 
-def custom_tool_as_function(
+def render_custom_tool(
     description: str, tool_format: dict[str, object] | None
 ) -> tuple[str, dict[str, object]]:
-    """Render a custom (free-form) tool as a single-string function tool.
+    """Render a free-form tool as a single-string function.
 
-    Targets without custom tools accept the declaration this way; the call comes
-    back as ``{"input": "..."}`` and :func:`unwrap_custom_tool_arguments`
-    reverses it.
+    The call comes back as ``{"input": "..."}``, which
+    :func:`unwrap_custom_tool_input` reverses.
     """
+    definition = (tool_format or {}).get("definition")
+    if isinstance(definition, str) and definition.strip():
+        description = (
+            f"{description}\n\nInput must match this grammar:\n"
+            f"```\n{definition.strip()}\n```"
+        )
     schema: dict[str, object] = {
         "type": "object",
         "properties": {
@@ -90,29 +78,12 @@ def custom_tool_as_function(
         "required": ["input"],
         "additionalProperties": False,
     }
-    grammar = _grammar_text(tool_format)
-    if grammar:
-        description = (
-            f"{description}\n\nInput must match this grammar:\n```\n{grammar}\n```"
-        )
     return description, schema
 
 
-def _grammar_text(tool_format: dict[str, object] | None) -> str:
-    if not tool_format:
-        return ""
-    for key in ("definition", "grammar", "syntax"):
-        value = tool_format.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
-
-
-def unwrap_custom_tool_arguments(arguments: str) -> str:
-    """Recover raw custom-tool input from the ``{"input": ...}`` wrapper."""
+def unwrap_custom_tool_input(arguments: str) -> str:
+    """Recover the raw input from the ``{"input": ...}`` wrapper."""
     text = (arguments or "").strip()
-    if not text:
-        return ""
     try:
         parsed = json.loads(text)
     except ValueError:
@@ -126,6 +97,14 @@ def unwrap_custom_tool_arguments(arguments: str) -> str:
 
 def namespaced_name(namespace: str, name: str) -> str:
     """Flatten a namespaced tool name for protocols without namespaces."""
-    if not namespace:
-        return name
-    return f"{namespace}__{name}"
+    return f"{namespace}__{name}" if namespace else name
+
+
+def as_reminder(text: str) -> str:
+    """Wrap a mid-conversation instruction so it reads as a directive.
+
+    Only Anthropic and Responses keep system content outside the turn history.
+    The others receive it in place, wrapped so the model does not read it as
+    something the user said.
+    """
+    return f"<system-reminder>\n{text}\n</system-reminder>"

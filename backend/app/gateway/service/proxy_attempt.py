@@ -187,9 +187,10 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
             # `additional_tools`; not every Responses upstream accepts that
             # encoding, while all of them read the top-level `tools` array.
             upstream_body = lift_additional_tools(upstream_body)
-        if channel.protocol == ProtocolKind.ANTHROPIC:
-            # Foreign reasoning envelopes cannot be replayed to Anthropic.
-            upstream_body = strip_foreign_reasoning(upstream_body)
+        # A history can carry reasoning state this upstream cannot read.
+        upstream_body = strip_foreign_reasoning(
+            upstream_body, channel.protocol, target.model_name
+        )
 
     try:
         upstream_body = apply_param_rules(
