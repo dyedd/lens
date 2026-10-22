@@ -20,6 +20,7 @@ from ..converters import (
     needs_protocol_conversion,
     strip_foreign_reasoning,
 )
+from ..converters.responses_common import lift_additional_tools
 from ..router import RouteTarget
 from ..router.cooldown import ErrorCategory, classify_error
 from .app_state import app_state
@@ -104,14 +105,18 @@ class FailureLedger:
 
     errors: list[str] = field(default_factory=list)
     status_codes: list[int | None] = field(default_factory=list)
+    error_types: list[str] = field(default_factory=list)
     last_log_failure: LogFailure | None = None
 
-    def record(self, message: str, status_code: int | None) -> None:
+    def record(
+        self, message: str, status_code: int | None, error_type: str = "upstream_error"
+    ) -> None:
         self.errors.append(message)
         self.status_codes.append(status_code)
+        self.error_types.append(error_type)
 
     def final_failure(self) -> tuple[int, str, str]:
-        return _final_upstream_failure(self.errors, self.status_codes)
+        return _final_upstream_failure(self.errors, self.status_codes, self.error_types)
 
 
 @dataclass(slots=True)
@@ -168,6 +173,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
                     status_code=400,
                     detail=str(exc),
                     router_status_code=None,
+                    error_type="bad_request",
                     skip_route_failure=True,
                 ),
                 upstream_body=request.body,
@@ -176,6 +182,11 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
         upstream_body = dict(request.body)
         if target.model_name:
             upstream_body["model"] = target.model_name
+        if channel.protocol == ProtocolKind.OPENAI_RESPONSES:
+            # Codex >= 0.149 nests tool definitions in `input` items of type
+            # `additional_tools`; not every Responses upstream accepts that
+            # encoding, while all of them read the top-level `tools` array.
+            upstream_body = lift_additional_tools(upstream_body)
         if channel.protocol == ProtocolKind.ANTHROPIC:
             # Foreign reasoning envelopes cannot be replayed to Anthropic.
             upstream_body = strip_foreign_reasoning(upstream_body)
@@ -536,7 +547,7 @@ async def _record_target_failure(
             fault_protocol=run.target.fault_protocol,
             cooldown_seconds=exc.router_cooldown_seconds,
         )
-    run.failures.record(message, exc.status_code)
+    run.failures.record(message, exc.status_code, exc.error_type)
     run.attempt.status_code = exc.status_code
     run.attempt.duration_ms = elapsed_ms(run.attempt_started_at)
     run.attempt.error_message = message
@@ -574,7 +585,9 @@ async def _record_target_failure(
 
 
 def _final_upstream_failure(
-    errors: list[str], failure_status_codes: list[int | None]
+    errors: list[str],
+    failure_status_codes: list[int | None],
+    failure_error_types: list[str],
 ) -> tuple[int, str, str]:
     for error, status_code in zip(errors, failure_status_codes, strict=False):
         if _is_request_too_large_error(status_code, error):
@@ -585,7 +598,15 @@ def _final_upstream_failure(
         and failure_status_codes
         and all(status_code in (400, 422) for status_code in failure_status_codes)
     ):
-        return failure_status_codes[0] or 400, "upstream_error", errors[0]
+        # A request Lens itself could not convert is a client error, not an
+        # upstream failure: no target ever saw it.
+        error_type = (
+            "bad_request"
+            if failure_error_types
+            and all(value == "bad_request" for value in failure_error_types)
+            else "upstream_error"
+        )
+        return failure_status_codes[0] or 400, error_type, errors[0]
     if failure_status_codes and all(
         status_code == 504 for status_code in failure_status_codes
     ):

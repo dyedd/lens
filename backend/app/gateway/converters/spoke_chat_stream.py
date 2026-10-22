@@ -16,7 +16,10 @@ from .unified_response import FinishReason
 from .unified_stream import (
     BlockKind,
     BlockStart,
+    CitationDelta,
     ReasoningDelta,
+    RefusalDelta,
+    ServerToolStatusDelta,
     StreamFinish,
     StreamStart,
     TextDelta,
@@ -170,9 +173,17 @@ async def serialize_chat_stream(
                 )
             continue
         if isinstance(event, TextDelta):
+            if not event.text:
+                # Strict clients (AI SDK, Qoder) treat an empty content delta as
+                # a protocol error, and it carries no information anyway.
+                continue
             yield chunk({"content": event.text})
             continue
         if isinstance(event, ReasoningDelta):
+            if not event.text:
+                # ``reasoning_content: ""`` is the classic cause of a rejected
+                # stream; a real reasoning delta always has text.
+                continue
             yield chunk({"reasoning_content": event.text})
             continue
         if isinstance(event, ToolCallArgsDelta):
@@ -190,6 +201,22 @@ async def serialize_chat_stream(
         if isinstance(event, StreamFinish):
             finish_reason = _chat_wire_finish_reason(event.reason)
             usage = _chat_stream_usage_wire(event.usage)
+            continue
+        if isinstance(event, RefusalDelta):
+            # Chat has no refusal channel, so the refusal text streams as content
+            # instead of being dropped.
+            if event.text:
+                yield chunk({"content": event.text})
+            continue
+        if isinstance(event, CitationDelta):
+            # Chat has no annotation channel on a delta; the citation is folded
+            # into the text so the source is not silently lost.
+            url = event.citation.url
+            if url:
+                yield chunk({"content": f" [{url}]"})
+            continue
+        if isinstance(event, ServerToolStatusDelta):
+            # Chat cannot express a provider tool lifecycle, so nothing streams.
             continue
     # A tool call whose upstream sent no argument delta still needs an identity
     # frame; otherwise the client never learns the call happened.

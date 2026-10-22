@@ -10,6 +10,58 @@ from .validation import required_string
 _REASONING_ENVELOPE_PREFIX = "lens-responses-reasoning-v1:"
 
 
+def lift_additional_tools(body: Mapping[str, Any]) -> dict[str, Any]:
+    """Move ``additional_tools`` input items into the top-level ``tools`` array.
+
+    Codex CLI >= 0.149 sends tool definitions as ``input`` items of type
+    ``additional_tools`` for some models instead of a top-level ``tools``
+    array. Upstreams that only read the documented top-level array, and Lens'
+    own conversion layer, would otherwise ignore or reject those definitions.
+    The carrier items are dropped and their tools are appended after any
+    existing top-level tools, skipping duplicate names.
+    """
+    items = body.get("input")
+    if not isinstance(items, list):
+        return dict(body)
+
+    carried: list[Mapping[str, Any]] = []
+    kept: list[Any] = []
+    found = False
+    for item in items:
+        if isinstance(item, Mapping) and item.get("type") == "additional_tools":
+            found = True
+            tools = item.get("tools")
+            if isinstance(tools, list):
+                carried.extend(tool for tool in tools if isinstance(tool, Mapping))
+            continue
+        kept.append(item)
+    if not found:
+        return dict(body)
+
+    existing = body.get("tools")
+    merged: list[Any] = list(existing) if isinstance(existing, list) else []
+    names = {
+        tool.get("name")
+        for tool in merged
+        if isinstance(tool, Mapping) and isinstance(tool.get("name"), str)
+    }
+    for tool in carried:
+        name = tool.get("name")
+        if isinstance(name, str):
+            if name in names:
+                continue
+            names.add(name)
+        merged.append(tool)
+
+    normalized = dict(body)
+    normalized["input"] = kept
+    if merged:
+        normalized["tools"] = merged
+    else:
+        normalized.pop("tools", None)
+    return normalized
+
+
 def usage_int(usage: Mapping[str, Any], key: str) -> int:
     value = usage.get(key)
     if value is None:
