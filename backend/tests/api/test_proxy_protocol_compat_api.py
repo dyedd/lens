@@ -108,6 +108,257 @@ def test_same_protocol_responses_request_preserves_body_shape(
     assert captured_body == {**body, "model": "responses-upstream"}
 
 
+def test_same_protocol_responses_lifts_additional_tools(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    captured_body: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        captured_body.update(json.loads(body_bytes))
+        return httpx.Response(
+            500,
+            json={"error": {"message": "stop after capture"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_RESPONSES.value],
+            model_name="responses-upstream",
+        )
+    )
+    create_model_group(
+        name="responses-client",
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_RESPONSES
+                ),
+                "credential_id": "cred-1",
+                "model_name": "responses-upstream",
+                "enabled": True,
+            }
+        ],
+    )
+    tool = {"type": "function", "name": "shell", "parameters": {"type": "object"}}
+    message = {
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "input_text", "text": "hi"}],
+    }
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "responses-client",
+            "input": [
+                message,
+                {"type": "additional_tools", "role": "developer", "tools": [tool]},
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    assert captured_body["input"] == [message]
+    assert captured_body["tools"] == [tool]
+
+
+def test_responses_additional_tools_convert_to_chat_tools(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    captured_body: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        captured_body.update(json.loads(body_bytes))
+        return httpx.Response(
+            500,
+            json={"error": {"message": "stop after capture"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_CHAT.value],
+            model_name="chat-upstream",
+        )
+    )
+    create_model_group(
+        name="codex-client",
+        items=[_chat_group_item("chat-upstream")],
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "codex-client",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "hi"}],
+                },
+                {
+                    "type": "additional_tools",
+                    "role": "developer",
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": "shell",
+                            "parameters": {"type": "object"},
+                        }
+                    ],
+                },
+            ],
+            "tool_choice": "auto",
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    assert captured_body["model"] == "chat-upstream"
+    assert captured_body["tools"] == [
+        {
+            "type": "function",
+            "function": {"name": "shell", "parameters": {"type": "object"}},
+        }
+    ]
+    assert captured_body["messages"][0]["role"] == "user"
+    assert "additional_tools" not in json.dumps(captured_body)
+
+
+def test_responses_conversion_error_is_bad_request(
+    client,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_CHAT.value],
+            model_name="chat-upstream",
+        )
+    )
+    create_model_group(
+        name="codex-client",
+        items=[_chat_group_item("chat-upstream")],
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "codex-client",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "hi"},
+                        {"type": "mystery_part", "text": "?"},
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert error["type"] == "bad_request"
+    assert "mystery_part" in error["message"]
+
+
+def test_responses_state_items_are_skipped_in_conversion(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    captured_body: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert not stream
+        captured_body.update(json.loads(body_bytes))
+        return httpx.Response(
+            500,
+            json={"error": {"message": "stop after capture"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_CHAT.value],
+            model_name="chat-upstream",
+        )
+    )
+    create_model_group(
+        name="codex-client",
+        items=[_chat_group_item("chat-upstream")],
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "codex-client",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "hi"}],
+                },
+                {"type": "item_reference", "id": "msg_stored"},
+                {"type": "compaction", "encrypted_content": "opaque"},
+                {"type": "tool_search_output", "tools": []},
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    assert captured_body["messages"] == [{"role": "user", "content": "hi"}]
+    serialized = json.dumps(captured_body)
+    for skipped in ("item_reference", "compaction", "tool_search_output"):
+        assert skipped not in serialized
+
+
 @pytest.mark.parametrize(
     ("client_protocol", "route"),
     [
@@ -786,3 +1037,439 @@ def test_chat_upstream_repeated_tool_index_converts_to_separate_calls(
             {"path": "", "pattern": "**/*"},
             {"path": "content/wiki", "pattern": ""},
         ]
+
+
+# --- IR v2 / P0 behaviour ---------------------------------------------------
+
+
+def _capture_upstream(monkeypatch, *, status: int = 500) -> dict[str, Any]:
+    """Intercept the upstream call and record the body Lens built."""
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    captured: dict[str, Any] = {}
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        captured.update(json.loads(body_bytes))
+        return httpx.Response(
+            status,
+            json={"error": {"message": "stop after capture"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    return captured
+
+
+def _responses_client_group(create_model_group) -> None:
+    create_model_group(
+        name="codex-client",
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_RESPONSES
+                ),
+                "credential_id": "cred-1",
+                "model_name": "responses-upstream",
+                "enabled": True,
+            }
+        ],
+    )
+
+
+def _chat_upstream_site(create_site) -> None:
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_CHAT.value],
+            model_name="chat-upstream",
+        )
+    )
+
+
+def test_responses_custom_tool_degrades_to_chat_function(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """A free-form custom tool becomes a single-string function for Chat."""
+    captured = _capture_upstream(monkeypatch)
+    _chat_upstream_site(create_site)
+    create_model_group(
+        name="codex-client",
+        items=[_chat_group_item("chat-upstream")],
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "codex-client",
+            "input": "patch it",
+            "tools": [
+                {
+                    "type": "custom",
+                    "name": "apply_patch",
+                    "description": "Apply a patch",
+                    "format": {
+                        "type": "grammar",
+                        "syntax": "lark",
+                        "definition": "start: x",
+                    },
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    tools = captured["tools"]
+    assert len(tools) == 1
+    assert tools[0]["type"] == "function"
+    function = tools[0]["function"]
+    assert function["name"] == "apply_patch"
+    assert "start: x" in function["description"]
+    assert function["parameters"]["properties"]["input"]["type"] == "string"
+
+
+def test_responses_namespace_tools_flatten_for_chat(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """Namespaced tools flatten to ``ns__tool`` on a protocol without namespaces."""
+    captured = _capture_upstream(monkeypatch)
+    _chat_upstream_site(create_site)
+    create_model_group(
+        name="codex-client",
+        items=[_chat_group_item("chat-upstream")],
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "codex-client",
+            "input": "search the docs",
+            "tools": [
+                {
+                    "type": "namespace",
+                    "name": "docs",
+                    "tools": [{"type": "function", "name": "search", "parameters": {}}],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    assert captured["tools"][0]["function"]["name"] == "docs__search"
+
+
+def test_responses_server_tool_is_not_rejected(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """A hosted tool the Chat target cannot run degrades instead of failing."""
+    captured = _capture_upstream(monkeypatch)
+    _chat_upstream_site(create_site)
+    create_model_group(
+        name="codex-client",
+        items=[_chat_group_item("chat-upstream")],
+    )
+
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "codex-client",
+            "input": "find today's news",
+            "tools": [{"type": "web_search"}],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    assert "tools" not in captured
+
+
+def test_anthropic_server_tool_is_not_rejected_for_chat(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """Anthropic's hosted web search does not fail a Chat-bound request."""
+    captured = _capture_upstream(monkeypatch)
+    _chat_upstream_site(create_site)
+    create_model_group(
+        name="claude-client",
+        items=[_chat_group_item("chat-upstream")],
+    )
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "claude-client",
+            "max_tokens": 64,
+            "messages": [{"role": "user", "content": "search"}],
+            "tools": [
+                {"type": "web_search_20250305", "name": "web_search"},
+                {
+                    "name": "lookup",
+                    "input_schema": {"type": "object", "properties": {}},
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    assert [tool["function"]["name"] for tool in captured["tools"]] == ["lookup"]
+
+
+def test_anthropic_tool_result_media_survives_into_responses(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """An image a tool returned stays inline instead of being flattened away."""
+    captured = _capture_upstream(monkeypatch)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.OPENAI_RESPONSES.value],
+            model_name="responses-upstream",
+        )
+    )
+    create_model_group(
+        name="claude-client",
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "pc-1", ProtocolKind.OPENAI_RESPONSES
+                ),
+                "credential_id": "cred-1",
+                "model_name": "responses-upstream",
+                "enabled": True,
+            }
+        ],
+    )
+
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "claude-client",
+            "max_tokens": 64,
+            "tools": [
+                {"name": "shot", "input_schema": {"type": "object", "properties": {}}}
+            ],
+            "messages": [
+                {"role": "user", "content": "take a screenshot"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_1",
+                            "name": "shot",
+                            "input": {},
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_1",
+                            "content": [
+                                {"type": "text", "text": "here it is"},
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/png",
+                                        "data": "AAAA",
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    output = next(
+        item for item in captured["input"] if item.get("type") == "function_call_output"
+    )
+    assert output["output"][0] == {"type": "input_text", "text": "here it is"}
+    assert output["output"][1]["type"] == "input_image"
+
+
+def test_audio_user_turn_degrades_when_text_accompanies_it(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """Audio is dropped from a user turn that still carries sendable text."""
+    captured = _capture_upstream(monkeypatch)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.ANTHROPIC.value],
+            model_name="claude-upstream",
+        )
+    )
+    create_model_group(
+        name="chat-client",
+        items=[_anthropic_group_item("claude-upstream")],
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "chat-client",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "transcribe this"},
+                        {
+                            "type": "input_audio",
+                            "input_audio": {"data": "AAAA", "format": "wav"},
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    blocks = [
+        block
+        for message in captured["messages"]
+        for block in message["content"]
+        if isinstance(block, dict)
+    ]
+    assert [block["text"] for block in blocks] == ["transcribe this"]
+
+
+def test_unanswered_tool_call_gets_a_result_for_anthropic(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """An aborted tool call is answered before the history reaches Anthropic."""
+    captured = _capture_upstream(monkeypatch)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.ANTHROPIC.value],
+            model_name="claude-upstream",
+        )
+    )
+    create_model_group(
+        name="chat-client",
+        items=[_anthropic_group_item("claude-upstream")],
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "chat-client",
+            "messages": [
+                {"role": "user", "content": "run it"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "run", "arguments": "{}"},
+                        }
+                    ],
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    blocks = [
+        block
+        for message in captured["messages"]
+        for block in message["content"]
+        if isinstance(block, dict)
+    ]
+    results = [block for block in blocks if block.get("type") == "tool_result"]
+    assert [block["tool_use_id"] for block in results] == ["call_1"]
+    assert results[0]["is_error"] is True
+
+
+def test_cache_control_ttl_survives_conversion(
+    client,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """A Chat client's breakpoint keeps its object and TTL on an Anthropic target."""
+    captured = _capture_upstream(monkeypatch)
+    create_site(
+        valid_site_payload(
+            protocols=[ProtocolKind.ANTHROPIC.value],
+            model_name="claude-upstream",
+        )
+    )
+    create_model_group(
+        name="chat-client",
+        items=[_anthropic_group_item("claude-upstream")],
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "chat-client",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "hi",
+                            "cache_control": {"type": "ephemeral", "ttl": "1h"},
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 502, response.text
+    blocks = [
+        block
+        for message in captured["messages"]
+        for block in message["content"]
+        if isinstance(block, dict)
+    ]
+    assert blocks[0]["text"] == "hi"
+    assert blocks[0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}

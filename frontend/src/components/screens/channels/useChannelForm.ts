@@ -10,17 +10,12 @@ import {
   paramDraftsFromJson,
 } from "./channelAdvancedJson";
 import { resolveBaseUrlId } from "./channelForm";
-import {
-  formBaseUrlsForPayload,
-  toForm,
-  toPayload,
-} from "./channelFormConversion";
+import { toForm, toPayload } from "./channelFormConversion";
 import {
   aggregateModelGroupKey,
   applyApiKeyDrafts,
   buildModels,
   createLocalId,
-  duplicateProtocolConfigKeys,
   emptyForm,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
@@ -46,11 +41,7 @@ function escapeRegExp(name: string) {
   return name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function validateChannelForm(
-  form: FormState,
-  duplicatedConfigCount: number,
-  locale: Locale,
-) {
+function validateChannelForm(form: FormState, locale: Locale) {
   const credentials = applyApiKeyDrafts(form).credentials;
   if (!form.name.trim()) {
     toast.error(locale === "zh-CN" ? "请填写渠道名称" : "Enter a channel name");
@@ -103,24 +94,16 @@ function validateChannelForm(
   if (invalidProtocolBaseUrlCount(form)) {
     toast.error(
       locale === "zh-CN"
-        ? "协议配置地址来源无效"
-        : "Protocol config Base URL is invalid",
-    );
-    return false;
-  }
-  if (duplicatedConfigCount) {
-    toast.error(
-      locale === "zh-CN"
-        ? "同一个渠道内不允许同一地址重复配置同一种协议"
-        : "The same URL cannot expose the same protocol twice",
+        ? "有地址已留空，该地址下的模型不会被保存；请补全地址或删除该地址"
+        : "A base URL is empty, so its models cannot be saved. Fill it in or remove it",
     );
     return false;
   }
   if (invalidModelProtocolCount(form)) {
     toast.error(
       locale === "zh-CN"
-        ? "请为每个模型选择自动透传或指定上游协议"
-        : "Choose automatic forwarding or an upstream protocol for every model",
+        ? "请为每个模型选择上游协议"
+        : "Choose an upstream protocol for every model",
     );
     return false;
   }
@@ -155,11 +138,6 @@ export function useChannelForm(locale: Locale) {
     group_id: string;
     model_names: string[];
   } | null>(null);
-  const submittedBaseUrls = useMemo(() => formBaseUrlsForPayload(form), [form]);
-  const duplicatedProtocolConfigKeys = useMemo(
-    () => duplicateProtocolConfigKeys(form.protocolConfigs, submittedBaseUrls),
-    [form.protocolConfigs, submittedBaseUrls],
-  );
   const currentSnapshot = useMemo(
     () =>
       JSON.stringify({
@@ -182,9 +160,6 @@ export function useChannelForm(locale: Locale) {
       }),
     );
   }
-  function confirmDiscardChanges() {
-    return true;
-  }
   function openCreate() {
     setEditingSiteId(null);
     setPendingGroupPlacement(null);
@@ -198,12 +173,11 @@ export function useChannelForm(locale: Locale) {
     setIsDialogOpen(true);
   }
   function closeEditor() {
-    if (!confirmDiscardChanges()) return;
     setIsDialogOpen(false);
     setEditingSiteId(null);
   }
   function validateSiteForm() {
-    return validateChannelForm(form, duplicatedProtocolConfigKeys.size, locale);
+    return validateChannelForm(form, locale);
   }
   function updateModelProtocols(key: string, protocols: ProtocolKind[]) {
     if (!protocols.length) {
@@ -422,7 +396,6 @@ export function useChannelForm(locale: Locale) {
     form,
     setForm,
     applyPreparedForm,
-    confirmDiscardChanges,
     openCreate,
     openEdit,
     closeEditor,
