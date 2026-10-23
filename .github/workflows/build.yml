@@ -116,7 +116,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=edge,enable=${{ github.event_name == 'push' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=ref,event=tag,enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
@@ -201,7 +201,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=edge,enable=${{ github.event_name == 'push' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' }}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=ref,event=tag,enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
@@ -227,3 +227,35 @@ jobs:
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
             $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
+
+      - name: Prune old main image versions
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          # 关联仓库通常可用 GITHUB_TOKEN；否则配置 read:packages + delete:packages 的 PRUNE_TOKEN。
+          GH_TOKEN: ${{ secrets.PRUNE_TOKEN || secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.repository }}
+          KEEP: "30"
+        run: |
+          set -euo pipefail
+
+          package="${REPO#*/}"
+          versions_file="$(mktemp)"
+          trap 'rm -f "$versions_file"' EXIT
+
+          # 发布版本带有 latest/版本标签，不在纯 sha 候选中；按创建时间倒序清理纯 sha 版本。
+          gh api --paginate \
+            "/users/${OWNER}/packages/container/${package}/versions?per_page=100" \
+            --jq '.[] | select((.metadata.container.tags // []) as $tags | ($tags | length) > 0 and ([$tags[] | startswith("sha-")] | all)) | [.id, .created_at] | @tsv' \
+            | sort -k2,2r > "$versions_file"
+
+          total="$(wc -l < "$versions_file")"
+          echo "纯 sha 版本共 ${total} 个，保留最近 ${KEEP} 个"
+          [ "$total" -le "$KEEP" ] && exit 0
+
+          tail -n +$((KEEP + 1)) "$versions_file" | cut -f1 | while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            gh api --method DELETE \
+              "/users/${OWNER}/packages/container/${package}/versions/${id}"
+            echo "已删除版本 ${id}"
+          done
