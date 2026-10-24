@@ -14,6 +14,8 @@ Lens 是统一处理认证、模型组路由、协议转换、上游调用、故
 
 所有代码改动遵循 [STYLING.md](STYLING.md)。前端界面视觉遵循 [DESIGN.md](DESIGN.md)：分页、弹窗、表格外壳和井的 token 以该文件为准。修改前读取通用、类型命名、领域术语、动作动词和模块边界，再读取对应的 Python 或 TypeScript / React 章节。
 
+- 前端文案遵循 “Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.”：让页面结构、字段标签和控件承担主要解释，只保留会影响操作、状态、风险或可访问性的辅助说明。
+
 ## 工作流
 
 1. 先看 `git status`、相关调用链和现有测试，再确定最小改动范围。

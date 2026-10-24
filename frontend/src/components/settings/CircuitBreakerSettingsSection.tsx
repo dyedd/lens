@@ -119,8 +119,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "同一实际模型连续发生上游 5xx 的触发次数；503 明确提供 Retry-After 时立即冷却。",
-            "Consecutive upstream 5xx responses required for the same actual model; a 503 with Retry-After triggers cooldown immediately.",
+            "同一模型连续 5xx 的触发次数；带 Retry-After 的 503 立即冷却。",
+            "Consecutive 5xx responses for one model; 503 with Retry-After cools immediately.",
           ),
           min: "1",
         },
@@ -134,8 +134,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "未进入冷却时按相邻失败间隔计算；冷却结束后持续无新失败超过该时间，连续失败计数和退避历史才重新开始。",
-            "Before cooldown this measures the gap between failures; after recovery, failure counts and backoff restart only after this much time without another failure.",
+            "冷却恢复后，无新失败超过该时长才重置计数和退避。",
+            "After cooldown, reset counts and backoff after this long without a new failure.",
           ),
           min: "1",
           max: "604800",
@@ -175,8 +175,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "认证失败时冷却对应 Key，不影响其他启用 Key。",
-            "Cooldown for the rejected key without blocking other enabled keys.",
+            "只冷却失败的 Key。",
+            "Cools only the failed key.",
           ),
           min: "0",
           max: "604800",
@@ -191,8 +191,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "无法从响应内容确认故障范围时，404 保守地只冷却当前实际模型。",
-            "When the response does not prove a broader fault, a 404 conservatively cools only the current actual model.",
+            "无法确认更大故障范围时，只冷却当前模型。",
+            "Cools only the current model when a wider fault is unproven.",
           ),
           min: "0",
           max: "604800",
@@ -256,8 +256,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "同一模型或 Key 重复进入冷却时应用的倍率，范围为 1 到 10。",
-            "Multiplier applied when the same model or key re-enters cooldown, from 1 to 10.",
+            "重复冷却时的倍率（1–10）。",
+            "Multiplier for repeated cooldowns (1–10).",
           ),
           min: "1",
           max: "10",
@@ -273,8 +273,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "所有分类冷却和自动退避的硬上限；设为 0 会关闭全部自动冷却。",
-            "Hard upper bound for every cooldown category and automatic backoff; set to 0 to disable all automatic cooldown.",
+            "所有冷却和退避的上限；0 关闭自动冷却。",
+            "Cap for cooldowns and backoff; 0 disables automatic cooldown.",
           ),
           min: "0",
           max: "604800",
@@ -289,8 +289,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "全部候选都在冷却时，请求最多等待多久再重新选路；设为 0 立即返回。",
-            "When every candidate is cooling, how long a request may wait for the soonest recovery before reselecting; set to 0 to fail immediately.",
+            "候选都冷却时的最长等待；0 立即返回。",
+            "Max wait when all candidates cool; 0 returns immediately.",
           ),
           min: "0",
           max: "604800",
@@ -305,8 +305,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "同一模型窗口内达到该数量的不同 Key 限流后升级为模型冷却；设为 0 关闭升级。",
-            "Escalate to model cooldown after this many distinct keys are rate-limited in one window; 0 disables escalation.",
+            "窗口内达到该 Key 数后升级为模型冷却；0 关闭。",
+            "Escalate to model cooldown at this key count; 0 disables.",
           ),
           min: "0",
           max: "100",
@@ -332,8 +332,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "故障切换成功后优先继续使用备用目标的时间；设为 0 关闭。",
-            "Prefer the successful failover target for this long; 0 disables affinity.",
+            "故障切换成功后的优先使用时长；0 关闭。",
+            "Prefer the successful failover target for this long; 0 disables.",
           ),
           min: "0",
           max: "3600",
@@ -369,8 +369,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "控制近期失败率对排序的影响，范围为 0 到 1。",
-            "Controls how strongly recent failures affect ranking, from 0 to 1.",
+            "近期失败率的排序影响（0–1）。",
+            "Recent failure impact on ranking (0–1).",
           ),
           min: "0",
           max: "1",
@@ -386,8 +386,8 @@ function _getCircuitBreakerFieldGroups(
           ),
           description: titleForLocale(
             locale,
-            "达到该样本数后使用完整失败率惩罚；样本较少时影响会减弱。",
-            "The full failure-rate penalty applies at this sample count; smaller samples have less influence.",
+            "达到该样本数后使用完整惩罚。",
+            "Full penalty starts at this sample count.",
           ),
           min: "1",
         },
@@ -425,8 +425,8 @@ export function CircuitBreakerSettingsSection({
                   )}
                   description={titleForLocale(
                     locale,
-                    "关闭后仅按所选路由策略的原始顺序或等权轮询选择可用模型。",
-                    "When disabled, available models use the configured order or equal-weight round robin for the selected strategy.",
+                    "关闭后按原始顺序或轮询。",
+                    "Off: use configured order or round robin.",
                   )}
                 >
                   <Switch

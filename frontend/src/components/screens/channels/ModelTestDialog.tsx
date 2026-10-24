@@ -496,8 +496,8 @@ export function ModelTestDialog({
             <DialogTitle>{isChinese ? "删除模型" : "Delete model"}</DialogTitle>
             <DialogDescription>
               {isChinese
-                ? `从当前渠道移除「${target?.modelName || "-"}」？保存后生效。`
-                : `Remove "${target?.modelName || "-"}" from this channel? Changes take effect after saving.`}
+                ? `从当前渠道移除「${target?.modelName || "-"}」；保存后生效。`
+                : `Remove "${target?.modelName || "-"}"; changes apply on save.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

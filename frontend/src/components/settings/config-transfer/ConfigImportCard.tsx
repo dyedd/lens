@@ -185,13 +185,6 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
           </Button>
         }
       >
-        <p className="text-xs leading-5 text-muted-foreground">
-          {titleForLocale(
-            locale,
-            "导入会覆盖现有的渠道、模型组、价格和计划任务。备份中的请求日志或网关密钥也会覆盖当前数据。",
-            "Importing overwrites existing channels, model groups, prices, and scheduled tasks. Request logs or gateway keys in the backup also replace current data.",
-          )}
-        </p>
         <div className="space-y-3">
           <Input
             ref={fileInputRef}

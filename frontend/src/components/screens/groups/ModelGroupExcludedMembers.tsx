@@ -40,11 +40,6 @@ export function ModelGroupExcludedMembers({
           {excludedMembers.length}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {isZh
-          ? "这些模型不会被规则或同名匹配的归组流程再加入本组；恢复后重新成为成员。"
-          : "Match rules and placement will not add these back. Restore one to make it a member again."}
-      </p>
       <ul className="flex flex-col rounded-md bg-muted/35 p-1">
         {excludedMembers.map((member) => {
           const identity = formatCredentialIdentity(member, locale);

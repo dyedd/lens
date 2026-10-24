@@ -113,15 +113,6 @@ function GroupMembersPopover({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[420px] p-2">
-        <p className="px-1 pb-1.5 text-xs text-muted-foreground">
-          {group.strategy === "failover"
-            ? locale === "zh-CN"
-              ? "按顺序切换"
-              : "Fail over in order"
-            : locale === "zh-CN"
-              ? "轮流使用"
-              : "Round robin"}
-        </p>
         <ol className="max-h-72 space-y-0.5 overflow-y-auto">
           {group.display_members.map((member, index) => (
             <li

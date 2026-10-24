@@ -82,12 +82,12 @@ function removalDescription(target: RemoveRequest | null, isZh: boolean) {
   if (names.length <= 1) {
     const name = names[0] ?? "";
     return isZh
-      ? `将从 ${providerCount} 个渠道的 API Key 中移除「${name}」。`
+      ? `从 ${providerCount} 个渠道的 API Key 中移除「${name}」。`
       : `Remove "${name}" from ${providerCount} channel API keys.`;
   }
   return isZh
-    ? `将从渠道中移除选中的 ${names.length} 个模型，涉及 ${providerCount} 个渠道的 API Key。`
-    : `Remove ${names.length} selected models across ${providerCount} channel API keys.`;
+    ? `移除 ${names.length} 个模型，涉及 ${providerCount} 个渠道的 API Key。`
+    : `Remove ${names.length} models across ${providerCount} channel API keys.`;
 }
 
 function UnplacedModelName({
@@ -257,13 +257,6 @@ export function UnplacedModelsPanel({
                 {unplacedModels.length}
               </span>
             </button>
-            {isOpen ? (
-              <p className="text-xs text-muted-foreground">
-                {isZh
-                  ? "这些模型名与其他模型组或模型相近，系统未自动建组，需要你裁决：并入已有组、单独建组或删除。"
-                  : "These names collide with existing groups or models, so automatic grouping paused. Join a group, create one, or remove them."}
-              </p>
-            ) : null}
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">

@@ -55,8 +55,8 @@ export function ConfigImportConfirmDialog({
           <DialogDescription>
             {titleForLocale(
               locale,
-              "当前实例中的相关配置会被备份文件覆盖，请确认文件内容无误后继续。",
-              "The related configuration in this instance will be overwritten by the backup file.",
+              "相关配置将被备份覆盖。",
+              "Related configuration will be overwritten.",
             )}
           </DialogDescription>
         </DialogHeader>
