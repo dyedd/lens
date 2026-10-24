@@ -1347,7 +1347,7 @@ def test_all_upstream_fail_returns_first_specific_message(
     assert attempted == ["m-a", "m-b"]
 
 
-def test_all_channels_in_cooldown_logs_the_cooled_channel_names(
+def test_all_channels_in_cooldown_keeps_one_detailed_failure_log(
     client,
     admin_headers,
     monkeypatch,
@@ -1394,14 +1394,17 @@ def test_all_channels_in_cooldown_logs_the_cooled_channel_names(
     )
 
     assert response.status_code == 503, response.text
+    assert response.json()["error"]["message"].startswith(
+        "All 2 matching route targets are in cooldown"
+    )
     assert int(response.headers["retry-after"]) > 0
     page = client.get("/api/admin/request-logs/page", headers=admin_headers)
     assert page.status_code == 200, page.text
+    assert page.json()["total"] == 1
     item = page.json()["items"][0]
-    assert item["error_message"].startswith(
-        "All 2 matching route targets are in cooldown"
-    )
-    assert item["attempt_count"] == 2
+    assert "First:" in item["error_message"]
+    assert "Second:" in item["error_message"]
+    assert item["error_message"].count("rate limited") == 2
 
     detail_response = client.get(
         f"/api/admin/request-logs/{item['id']}",
@@ -1413,9 +1416,9 @@ def test_all_channels_in_cooldown_logs_the_cooled_channel_names(
         "First",
         "Second",
     ]
-    assert [attempt["status_code"] for attempt in attempts] == [503, 503]
+    assert [attempt["status_code"] for attempt in attempts] == [429, 429]
     assert [attempt["success"] for attempt in attempts] == [False, False]
-    assert all("rate_limit" in attempt["error_message"] for attempt in attempts)
+    assert all("rate limited" in attempt["error_message"] for attempt in attempts)
 
 
 def _anthropic_group(
