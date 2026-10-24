@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/Button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -144,11 +143,6 @@ function PriceEditor({
       <DialogContent className="flex max-h-[min(86dvh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[620px]">
         <DialogHeader className="shrink-0 space-y-1.5 gap-0 px-4 py-4 pr-12">
           <DialogTitle>{isChinese ? "模型价格" : "Model prices"}</DialogTitle>
-          <DialogDescription>
-            {isChinese
-              ? "设置模型的计费方式和单价，用于估算调用成本。"
-              : "Set the billing method and rates used to estimate model costs."}
-          </DialogDescription>
         </DialogHeader>
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
@@ -240,14 +234,14 @@ function PriceEditor({
             {mode === "tokens" && hasImageMember ? (
               <p className="text-xs leading-5 text-muted-foreground">
                 {isChinese
-                  ? "输入不含图片 Token；图片 Token 按“图片输入”单价计费。"
-                  : "Input excludes image tokens, which use the Image input rate."}
+                  ? "图片 Token 按“图片输入”单价计费。"
+                  : "Image tokens use the Image input rate."}
               </p>
             ) : null}
             <p className="text-xs leading-5 text-muted-foreground">
               {isChinese
-                ? "手动价格不会被自动同步覆盖。点击解锁图标可恢复自动价格。"
-                : "Manual prices are kept during automatic sync. Click the unlock icon to restore automatic pricing."}
+                ? "手动价格不会被同步覆盖；点击解锁可恢复自动价格。"
+                : "Manual prices survive sync; unlock to restore automatic pricing."}
             </p>
           </div>
           <DialogFooter className="shrink-0 px-4 pt-3 pb-4">

@@ -53,7 +53,6 @@ type Props = {
   barData: Array<Record<string, number | string>>;
   barModels: string[];
   isChineseLocale: boolean;
-  modelCardDescription: string;
   modelRange: TimeRange;
   modelTrendTitle: string;
   modelsIsError: boolean;
@@ -80,7 +79,6 @@ export function ModelAnalyticsCard(props: Props) {
     barData,
     barModels,
     isChineseLocale,
-    modelCardDescription,
     modelRange,
     modelTrendTitle,
     modelsIsError,
@@ -110,14 +108,9 @@ export function ModelAnalyticsCard(props: Props) {
   return (
     <section className="space-y-3 px-1">
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">
-            {isChineseLocale ? "模型使用情况" : "Model usage"}
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {modelCardDescription}
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">
+          {isChineseLocale ? "模型使用情况" : "Model usage"}
+        </h3>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           <SegmentedControl
             value={pieMetric}

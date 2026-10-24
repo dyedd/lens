@@ -106,13 +106,6 @@ export function RegexRuleLibrarySection({ locale }: { locale: Locale }) {
           </Button>
         }
       >
-        <p className="text-xs text-muted-foreground">
-          {titleForLocale(
-            locale,
-            "维护模型组匹配和站点自动接入/排除使用的正则规则。修改后会立即影响引用它的模型组和渠道。",
-            "Manage regex rules used by model groups and channel onboarding. Changes apply immediately wherever a rule is used.",
-          )}
-        </p>
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">

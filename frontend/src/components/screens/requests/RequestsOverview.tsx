@@ -427,8 +427,8 @@ export function RequestsOverview({
         title={titleForLocale(locale, "清空请求日志", "Clear request logs")}
         description={titleForLocale(
           locale,
-          "确定删除全部请求日志？此操作将永久清空历史记录且无法撤销。",
-          "Are you sure you want to clear all request logs? This action is permanent and cannot be undone.",
+          "将永久删除全部请求日志。",
+          "Permanently delete all request logs.",
         )}
         isBusy={clearingLogs}
         onOpenChange={setClearDialogOpen}

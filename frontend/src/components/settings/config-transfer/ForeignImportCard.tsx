@@ -93,13 +93,6 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
         ) : null
       }
     >
-      <p className="text-xs leading-5 text-muted-foreground">
-        {titleForLocale(
-          locale,
-          "读取其他平台的备份文件，选择要加入 Lens 的渠道。现有渠道不会被修改。",
-          "Read a backup from another platform and choose which channels to add to Lens. Existing channels are unchanged.",
-        )}
-      </p>
       <div className="space-y-3">
         <input
           ref={fileInputRef}

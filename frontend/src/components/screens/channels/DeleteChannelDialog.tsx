@@ -27,8 +27,8 @@ export function DeleteChannelDialog({
       title={locale === "zh-CN" ? "确认删除渠道" : "Delete channel"}
       description={
         locale === "zh-CN"
-          ? `将删除渠道「${name}」。删除后该渠道下的协议配置、模型和模型组成员会一起移除。`
-          : `Delete channel "${name}". Protocol configs, models, and group members under this channel will be removed together.`
+          ? `删除渠道「${name}」及其协议配置、模型和模型组成员。`
+          : `Delete channel "${name}" and its protocol configs, models, and group members.`
       }
       isBusy={Boolean(deleteTarget) && busyId === deleteTarget?.id}
       onOpenChange={(open) => {

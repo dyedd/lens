@@ -290,8 +290,8 @@ export function BatchImportDialog({
               <div className="space-y-3">
                 <p className="text-xs leading-5 text-muted-foreground">
                   {isZh
-                    ? "智能识别 Octopus、CLIProxyAPI、metapi、Sub2API、ccLoad、All API Hub 导出的 JSON、YAML 或 CSV 格式。"
-                    : "Supports JSON, YAML, or CSV exports from Octopus, CLIProxyAPI, metapi, Sub2API, ccLoad, and All API Hub."}
+                    ? "支持 Octopus、CLIProxyAPI、metapi、Sub2API、ccLoad、All API Hub 的 JSON/YAML/CSV。"
+                    : "Supports JSON, YAML, and CSV exports from Octopus, CLIProxyAPI, metapi, Sub2API, ccLoad, and All API Hub."}
                 </p>
 
                 <input

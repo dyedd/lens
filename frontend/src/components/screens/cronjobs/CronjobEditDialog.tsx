@@ -21,7 +21,7 @@ import {
   type TaskDraft,
   taskDraft,
 } from "./cronjobDrafts";
-import { cronjobDescription, cronjobTitle } from "./cronjobView";
+import { cronjobTitle } from "./cronjobView";
 
 export function CronjobEditDialog({
   locale,
@@ -59,7 +59,6 @@ export function CronjobEditDialog({
       <AppDialogContent
         className="sm:max-w-lg"
         title={cronjobTitle(locale, task)}
-        description={cronjobDescription(locale, task)}
         footer={
           <>
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>

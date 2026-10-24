@@ -46,8 +46,8 @@ export function AddChannelModelsDialog({
         title={locale === "zh-CN" ? "添加模型" : "Add models"}
         description={
           locale === "zh-CN"
-            ? "每行输入一个模型名，也可用逗号分隔。模型会添加到所有 API Key，并按上游列表持续同步。"
-            : "Enter one model name per line or separate names with commas. Models are added to every API key and remain tracked in the upstream catalog."
+            ? "每行一个模型名，可用逗号分隔；会加入所有 API Key 并持续同步。"
+            : "One model per line or comma-separated; added to every API key and kept in sync."
         }
         footer={
           <>

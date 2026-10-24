@@ -280,8 +280,8 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
         )}
         description={titleForLocale(
           locale,
-          `确定删除选中的 ${selectedKeys.length} 个网关密钥？此操作无法撤销。`,
-          `Are you sure you want to delete ${selectedKeys.length} selected gateway keys? This action cannot be undone.`,
+          `删除 ${selectedKeys.length} 个网关密钥？此操作不可撤销。`,
+          `Delete ${selectedKeys.length} gateway keys? This cannot be undone.`,
         )}
         isBusy={busyId === "bulk"}
         onOpenChange={setBulkDeleteOpen}

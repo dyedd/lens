@@ -183,8 +183,8 @@ export function ChannelRemoteModelsDialog({
         }
         description={
           locale === "zh-CN"
-            ? "已汇总所有地址和 API Key 的模型列表。选中的模型会加入渠道，后续按上游列表自动更新。"
-            : "Models from every URL and API key are listed here. Selected models are added to the channel and follow the upstream catalog."
+            ? "汇总所有地址和 API Key 的模型；选中后加入渠道并持续同步。"
+            : "Models from all URLs and keys; selected models join the channel and stay synced."
         }
         footer={
           <>
