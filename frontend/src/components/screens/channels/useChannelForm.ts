@@ -16,7 +16,9 @@ import {
   applyApiKeyDrafts,
   buildModels,
   createLocalId,
+  duplicateBaseUrlCount,
   emptyForm,
+  emptyProtocolConfig,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
   isAggregateModelGroupKey,
@@ -49,6 +51,14 @@ function validateChannelForm(form: FormState, locale: Locale) {
   }
   if (!form.base_urls.some((item) => item.url.trim())) {
     toast.error(locale === "zh-CN" ? "请填写渠道地址" : "Enter a channel URL");
+    return false;
+  }
+  if (duplicateBaseUrlCount(form.base_urls)) {
+    toast.error(
+      locale === "zh-CN"
+        ? "同一个渠道内不允许重复配置同一地址"
+        : "The same endpoint cannot be configured twice in one channel",
+    );
     return false;
   }
   if (!credentials.some((item) => item.api_key.trim())) {
@@ -222,16 +232,22 @@ export function useChannelForm(locale: Locale) {
     }));
   }
   function addBaseUrl() {
+    const id = createLocalId("baseurl");
     setForm((current) => ({
       ...current,
       base_urls: [
         ...current.base_urls,
         {
-          id: createLocalId("baseurl"),
+          id,
           url: "",
+          kind: "china",
           shareKeys: true,
           newApiKeysLines: "",
         },
+      ],
+      protocolConfigs: [
+        ...current.protocolConfigs,
+        emptyProtocolConfig(id),
       ],
     }));
   }

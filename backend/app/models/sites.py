@@ -46,12 +46,14 @@ def _canonicalize_site_tags(values: list[str]) -> list[str]:
 SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
 
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
+SiteBaseUrlKind = Literal["default", "protocol", "china"]
 
 
 class SiteBaseUrl(StrictBaseModel):
     id: str
     url: HttpUrl
     sort_order: int = Field(default=0, ge=0)
+    kind: SiteBaseUrlKind = "default"
 
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)
 
@@ -59,6 +61,7 @@ class SiteBaseUrl(StrictBaseModel):
 class SiteBaseUrlInput(StrictBaseModel):
     id: str | None = None
     url: HttpUrl
+    kind: SiteBaseUrlKind = "default"
 
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)
 

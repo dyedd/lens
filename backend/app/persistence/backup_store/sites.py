@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context_windows import coerce_context_window
 from app.core.runtime_channel_ids import compose_runtime_channel_id
+from app.core.urls import canonicalize_base_url
 from app.models.protocols import ProtocolKind
 from app.models.sites import SiteConfig, SiteCredentialInput
 from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
@@ -35,7 +36,12 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
     base_urls_by_site: dict[str, list[dict[str, object]]] = {}
     for row in rows.base_urls:
         base_urls_by_site.setdefault(row.site_id, []).append(
-            {"id": row.id, "url": row.url, "sort_order": row.sort_order}
+            {
+                "id": row.id,
+                "url": row.url,
+                "sort_order": row.sort_order,
+                "kind": row.kind or "default",
+            }
         )
 
     credentials_by_site: dict[str, list[dict[str, object]]] = {}
@@ -195,6 +201,7 @@ async def replace_sites(
             )
         )
         site_base_url_ids: set[str] = set()
+        site_base_url_values: set[str] = set()
         site_credential_ids: set[str] = set()
 
         for base_url in site.base_urls:
@@ -202,12 +209,19 @@ async def replace_sites(
                 raise ValueError(f"Duplicate base url id in backup: {base_url.id}")
             base_url_ids.add(base_url.id)
             site_base_url_ids.add(base_url.id)
+            canonical_url = canonicalize_base_url(str(base_url.url))
+            if canonical_url in site_base_url_values:
+                raise ValueError(
+                    f"Duplicate base URL in backup site {site.name}: {canonical_url}"
+                )
+            site_base_url_values.add(canonical_url)
             session.add(
                 SiteBaseUrlEntity(
                     id=base_url.id,
                     site_id=site.id,
                     url=str(base_url.url),
                     sort_order=base_url.sort_order,
+                    kind=base_url.kind,
                 )
             )
 

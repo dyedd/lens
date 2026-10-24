@@ -423,6 +423,53 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
 
+def test_site_endpoint_kinds_round_trip_and_reject_canonical_duplicates(
+    client, admin_headers, create_site
+) -> None:
+    """端点类型能往返保存，规范化后的重复地址会被拒绝。"""
+    payload = valid_site_payload(
+        name="Endpoint kinds",
+        base_id="endpoint-main",
+        credential_id="endpoint-key",
+        protocol_config_id="endpoint-main-config",
+    )
+    payload["base_urls"] = [
+        {"id": "endpoint-main", "url": "https://global.example/v1", "kind": "default"},
+        {"id": "endpoint-china", "url": "https://cn.example/v1", "kind": "china"},
+    ]
+    payload["protocols"].append(
+        {
+            "id": "endpoint-china-config",
+            "base_url_id": "endpoint-china",
+            "models": [
+                {
+                    "credential_id": "endpoint-key",
+                    "model_name": "gpt-4o",
+                    "enabled": True,
+                    "protocol": "openai_chat",
+                }
+            ],
+        }
+    )
+
+    site = create_site(payload)
+    assert [item["kind"] for item in site["base_urls"]] == ["default", "china"]
+
+    duplicate = valid_site_payload(
+        name="Duplicate endpoint",
+        base_id="duplicate-main",
+        credential_id="duplicate-key",
+        protocol_config_id="duplicate-config",
+    )
+    duplicate["base_urls"].append(
+        {"id": "duplicate-copy", "url": "https://upstream.example", "kind": "china"}
+    )
+    response = client.post("/api/admin/sites", headers=admin_headers, json=duplicate)
+
+    assert response.status_code == 400, response.text
+    assert "Duplicate base URL" in response.json()["error"]["message"]
+
+
 def test_list_sites_filters_by_exact_tag(client, admin_headers, create_site) -> None:
     create_site(valid_site_payload(tags=["production", "OpenAI"]))
     create_site(

@@ -5,6 +5,7 @@ from pydantic import Field, HttpUrl, field_validator
 from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
 from .sites import (
+    SiteBaseUrlKind,
     SiteConfig,
     SiteTags,
     canonicalize_text_list,
@@ -17,6 +18,7 @@ from .validation import StrictBaseModel
 class SiteImportBaseUrlInput(StrictBaseModel):
     ref: str
     url: HttpUrl
+    kind: SiteBaseUrlKind = "default"
 
     _require_non_empty_ref = field_validator("ref")(require_non_empty_text)
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)

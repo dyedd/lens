@@ -6,14 +6,17 @@ import type {
 import type { ProtocolKind } from "./protocols";
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";
+export type SiteBaseUrlKind = "default" | "protocol" | "china";
 export type SiteBaseUrl = {
   id: string;
   url: string;
   sort_order: number;
+  kind: SiteBaseUrlKind;
 };
 export type SiteBaseUrlInput = {
   id?: string | null;
   url: string;
+  kind?: SiteBaseUrlKind;
 };
 export type SiteCredential = {
   id: string;
@@ -157,6 +160,7 @@ export type ChannelModelSyncResponse = {
 export type SiteBatchImportBaseUrlInput = {
   ref: string;
   url: string;
+  kind?: SiteBaseUrlKind;
 };
 export type SiteBatchImportCredentialInput = {
   ref: string;
