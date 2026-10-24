@@ -1,4 +1,4 @@
-"""Move model sync settings to sites and flag models missing upstream.
+"""将模型同步设置迁移到站点，并标记上游缺失的模型。
 
 Revision ID: a9d3f7c1e5b2
 Revises: d4e5f6a7b8c9
@@ -78,7 +78,7 @@ def upgrade() -> None:
         batch.drop_column("auto_sync_model_pattern")
         batch.drop_column("auto_sync_supported_models")
 
-    # Per-site switches only take effect while the shared cronjob runs.
+    # 站点级开关只有在共享定时任务运行时才会生效。
     conn.execute(
         sa.text(
             "UPDATE cronjobs SET enabled = 1, status = 'idle', next_run_at = :now "

@@ -1,4 +1,4 @@
-"""add image token input pricing"""
+"""增加图像输入 token 计价。"""
 
 from collections.abc import Sequence
 

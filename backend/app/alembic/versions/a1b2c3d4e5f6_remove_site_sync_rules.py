@@ -1,4 +1,4 @@
-"""Remove obsolete site-level sync regex filters.
+"""移除已废弃的站点级同步正则过滤。
 
 Revision ID: a1b2c3d4e5f6
 Revises: f7a8b9c0d1e2

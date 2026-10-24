@@ -1,4 +1,4 @@
-"""store the request rate multiplier snapshot
+"""保存请求倍率快照。
 
 Revision ID: b7e9f1c3a5d2
 Revises: a4c8e2f6b1d9

@@ -1,4 +1,4 @@
-"""Add context windows to channel models and model groups.
+"""为渠道模型和模型组增加上下文窗口。
 
 Revision ID: e4a6c8b0d2f1
 Revises: c7e9a1b3d5f8

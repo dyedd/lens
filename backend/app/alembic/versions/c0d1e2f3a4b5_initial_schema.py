@@ -1,4 +1,4 @@
-"""Initial schema through the site tags migration."""
+"""包含站点标签迁移在内的初始 schema。"""
 
 from collections.abc import Sequence
 

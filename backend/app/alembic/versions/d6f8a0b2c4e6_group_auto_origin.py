@@ -1,8 +1,6 @@
-"""Track group origin and add source filters for automatic grouping.
+"""记录模型组来源，并为自动分组增加来源过滤。
 
-Auto-created groups are cleaned up again once their last member goes away,
-so the pipeline needs to know which groups it created. Groups also gain a
-site-tag source filter and sites gain vendor prefixes for name matching.
+自动创建的组在最后一个成员移除后会被清理，因此需要记录来源。
 """
 
 from collections.abc import Sequence

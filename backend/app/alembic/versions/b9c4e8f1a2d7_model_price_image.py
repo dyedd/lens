@@ -1,4 +1,4 @@
-"""add per-image model pricing
+"""增加按张计价的模型价格。
 
 Revision ID: b9c4e8f1a2d7
 Revises: f6c2d8e0b4a1

@@ -1,4 +1,4 @@
-"""convert upstream JSON objects to structured rules
+"""将上游 JSON 对象转换为结构化规则。
 
 Revision ID: b2c3d4e5f6a7
 Revises: a7b8c9d0e1f2

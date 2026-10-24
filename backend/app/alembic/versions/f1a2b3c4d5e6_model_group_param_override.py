@@ -1,4 +1,4 @@
-"""add model group parameter override
+"""增加模型组参数覆盖。
 
 Revision ID: f1a2b3c4d5e6
 Revises: e2a6c4f8b0d3

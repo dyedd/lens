@@ -1,9 +1,6 @@
-"""Remove the Auto upstream protocol.
+"""移除 Auto 上游协议。
 
-Existing automatic-forwarding models are assigned a concrete upstream protocol:
-Anthropic sites stay Anthropic, Gemini sites stay Gemini, and every other site
-uses OpenAI Chat. The assignment is intentionally data-preserving: if a model
-already has the target protocol row, the Auto duplicate is removed.
+自动转发模型按站点类型换成具体协议：Anthropic 保持 Anthropic，Gemini 保持 Gemini，其余用 OpenAI Chat。
 
 Revision ID: c9f2a4b6d8e0
 Revises: a3c5e7f9b1d2
@@ -91,8 +88,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # The previous Auto value cannot be reconstructed for every migrated model;
-    # leaving the concrete assignments in place is safer than guessing.
+    # 无法为每个已迁移模型还原此前的 Auto 值；
+    # 保留这些具体赋值比猜测更安全。
     pass
 
 

@@ -1,4 +1,4 @@
-"""move model request headers to model groups
+"""将模型请求头迁移到模型组。
 
 Revision ID: a7b8c9d0e1f2
 Revises: f1a2b3c4d5e6

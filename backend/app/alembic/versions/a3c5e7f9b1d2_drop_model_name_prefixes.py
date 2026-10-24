@@ -1,4 +1,4 @@
-"""Drop vendor-prefix aliasing from site model matching."""
+"""移除站点模型匹配中的厂商前缀别名机制。"""
 
 from collections.abc import Sequence
 

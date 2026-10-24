@@ -1,4 +1,4 @@
-"""Restore explicit model sync targets and enable sync by default.
+"""恢复显式的模型同步目标，并默认开启同步。
 
 Revision ID: f7a8b9c0d1e2
 Revises: d9f1b3c5e7a2

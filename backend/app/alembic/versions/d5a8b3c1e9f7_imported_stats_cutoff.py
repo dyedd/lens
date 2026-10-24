@@ -1,8 +1,6 @@
-"""Record when imported daily stats were captured.
+"""记录导入的每日统计的采集时间。
 
-Imported stats used to shadow a whole local day, so requests made after the
-import on that same day disappeared from the overview. Each imported day now
-carries the instant of its snapshot, which lets live rows after it still count.
+每个导入日记录快照时刻，此后的实时记录仍会被计入。
 """
 
 from collections.abc import Sequence
@@ -21,8 +19,8 @@ def upgrade() -> None:
     op.add_column(
         "imported_stats_daily", sa.Column("imported_at", sa.DateTime(), nullable=True)
     )
-    # Existing snapshots are treated as captured now: rows already in the
-    # database stay excluded, while activity after this upgrade counts.
+    # 既有快照按当前时刻采集处理：已在库中的记录保持排除，
+    # 而本次升级之后的活动仍会计入。
     op.get_bind().execute(
         sa.text("UPDATE imported_stats_daily SET imported_at = :value"),
         {"value": datetime.now(UTC).replace(tzinfo=None)},

@@ -1,8 +1,4 @@
-"""Give model groups an optional regex rule that overrides name matching.
-
-A group joins channel models by its own name; referencing library regex rules
-replaces that, so members follow the rules instead of the name.
-"""
+"""为模型组提供可选的、可覆盖名称匹配的正则规则。"""
 
 from collections.abc import Sequence
 

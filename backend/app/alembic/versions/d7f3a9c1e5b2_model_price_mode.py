@@ -1,4 +1,4 @@
-"""add model price mode
+"""增加模型价格模式。
 
 Revision ID: d7f3a9c1e5b2
 Revises: c5e7a1d9b3f4
