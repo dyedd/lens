@@ -25,6 +25,10 @@ type CircuitBreakerKey =
   | "circuitBreakerNetworkCooldown"
   | "circuitBreakerBackoffMultiplier"
   | "circuitBreakerMaxCooldown"
+  | "failoverCooledWaitSeconds"
+  | "circuitBreakerEscalateThreshold"
+  | "circuitBreakerEscalateWindowSeconds"
+  | "failoverAffinitySeconds"
   | "healthWindowSeconds"
   | "healthPenaltyWeight"
   | "healthMinSamples";
@@ -274,6 +278,65 @@ function _getCircuitBreakerFieldGroups(
           ),
           min: "0",
           max: "604800",
+        },
+        {
+          key: "failoverCooledWaitSeconds",
+          id: "settings-failover-cooled-wait-seconds",
+          label: titleForLocale(
+            locale,
+            "故障转移等待上限（秒）",
+            "Failover wait cap (seconds)",
+          ),
+          description: titleForLocale(
+            locale,
+            "全部候选都在冷却时，请求最多等待多久再重新选路；设为 0 立即返回。",
+            "When every candidate is cooling, how long a request may wait for the soonest recovery before reselecting; set to 0 to fail immediately.",
+          ),
+          min: "0",
+          max: "604800",
+        },
+        {
+          key: "circuitBreakerEscalateThreshold",
+          id: "settings-circuit-breaker-escalate-threshold",
+          label: titleForLocale(
+            locale,
+            "限流升级 Key 数",
+            "Rate-limit escalation key count",
+          ),
+          description: titleForLocale(
+            locale,
+            "同一模型窗口内达到该数量的不同 Key 限流后升级为模型冷却；设为 0 关闭升级。",
+            "Escalate to model cooldown after this many distinct keys are rate-limited in one window; 0 disables escalation.",
+          ),
+          min: "0",
+          max: "100",
+        },
+        {
+          key: "circuitBreakerEscalateWindowSeconds",
+          id: "settings-circuit-breaker-escalate-window",
+          label: titleForLocale(
+            locale,
+            "限流升级窗口（秒）",
+            "Rate-limit escalation window (seconds)",
+          ),
+          min: "0",
+          max: "604800",
+        },
+        {
+          key: "failoverAffinitySeconds",
+          id: "settings-failover-affinity-seconds",
+          label: titleForLocale(
+            locale,
+            "故障切换亲和窗口（秒）",
+            "Failover affinity window (seconds)",
+          ),
+          description: titleForLocale(
+            locale,
+            "故障切换成功后优先继续使用备用目标的时间；设为 0 关闭。",
+            "Prefer the successful failover target for this long; 0 disables affinity.",
+          ),
+          min: "0",
+          max: "3600",
         },
       ],
     },

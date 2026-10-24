@@ -131,7 +131,7 @@ def _parse_retry_after_seconds(value: str | None) -> float | None:
 
 def _is_request_level_client_error(status_code: int) -> bool:
     """4xx errors that signal a request-body problem; failover cannot fix them."""
-    return status_code in (400, 422)
+    return status_code in (400, 413, 422)
 
 
 async def _read_response_body(

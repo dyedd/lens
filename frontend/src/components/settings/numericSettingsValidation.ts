@@ -19,6 +19,7 @@ export type NumericSettingKey =
   | "circuitBreakerNetworkCooldown"
   | "circuitBreakerBackoffMultiplier"
   | "circuitBreakerMaxCooldown"
+  | "failoverCooledWaitSeconds"
   | "healthWindowSeconds"
   | "healthPenaltyWeight"
   | "healthMinSamples";
@@ -156,6 +157,14 @@ const NUMERIC_SETTING_RULES: ReadonlyArray<{
     key: "circuitBreakerMaxCooldown",
     labelZh: "最大冷却秒数",
     labelEn: "Max cooldown seconds",
+    type: "integer",
+    min: 0,
+    max: 604_800,
+  },
+  {
+    key: "failoverCooledWaitSeconds",
+    labelZh: "故障转移等待上限",
+    labelEn: "Failover wait cap",
     type: "integer",
     min: 0,
     max: 604_800,

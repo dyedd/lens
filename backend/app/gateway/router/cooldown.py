@@ -58,6 +58,10 @@ class CooldownPolicy:
     network_cooldown_seconds: int = 60
     backoff_multiplier: float = 2.0
     max_cooldown_seconds: int = 600
+    # 同一个实际模型上一把 Key 的失败不足以证明整条渠道故障。窗口内命中的
+    # 不同 Key 达到该数量时，才把冷却升级到模型域；0 表示从不升级。
+    escalate_threshold: int = 2
+    escalate_window_seconds: int = 60
     detection_rules: tuple[CompiledCooldownDetectionRule, ...] = ()
 
     def threshold(self, category: ErrorCategory) -> int:
@@ -130,6 +134,33 @@ def _relative_cooldown_from_headers(
     return None
 
 
+def default_scope(category: ErrorCategory) -> CooldownScope:
+    """Return the narrowest fault domain a category proves on its own.
+
+    Auth and rate-limit responses belong to one credential: a throttled or
+    revoked key says nothing about its sibling keys on the same channel.
+    Not-found, server, timeout and network failures belong to the channel
+    model endpoint, so they cool every key serving that model.
+    """
+    if category in (ErrorCategory.AUTH, ErrorCategory.RATE_LIMIT):
+        return "key"
+    return "model"
+
+
+def _status_category(status_code: int | None) -> ErrorCategory | None:
+    if status_code in (401, 403):
+        return ErrorCategory.AUTH
+    if status_code == 429:
+        return ErrorCategory.RATE_LIMIT
+    if status_code == 404:
+        return ErrorCategory.NOT_FOUND
+    if status_code in (408, 504):
+        return ErrorCategory.TIMEOUT
+    if status_code is not None and 500 <= status_code < 600:
+        return ErrorCategory.SERVER
+    return None
+
+
 def classify_error(
     status_code: int | None,
     error_body: str | None = None,
@@ -152,21 +183,10 @@ def classify_error(
             else float(rule.cooldown_seconds),
         )
 
-    category: ErrorCategory | None
-    scope: CooldownScope
-    if status_code in (401, 403):
-        category, scope = ErrorCategory.AUTH, "key"
-    elif status_code == 429:
-        category, scope = ErrorCategory.RATE_LIMIT, "model"
-    elif status_code == 404:
-        category, scope = ErrorCategory.NOT_FOUND, "model"
-    elif status_code in (408, 504):
-        category, scope = ErrorCategory.TIMEOUT, "model"
-    elif status_code is not None and 500 <= status_code < 600:
-        category, scope = ErrorCategory.SERVER, "model"
-    else:
+    category = _status_category(status_code)
+    if category is None:
         return None
-    return ErrorClassification(category, scope, header_cooldown)
+    return ErrorClassification(category, default_scope(category), header_cooldown)
 
 
 def compile_detection_rules(
@@ -209,6 +229,13 @@ ModelKey = tuple[str, str, str]
 CredentialKey = tuple[str, str, str]
 
 
+class ClaimDecision(NamedTuple):
+    """Whether one request may use a target, and whether it acts as a probe."""
+
+    allowed: bool
+    is_probe: bool = False
+
+
 @dataclass(slots=True)
 class CooldownState:
     consecutive_failures: int = 0
@@ -218,6 +245,8 @@ class CooldownState:
     last_cooldown: float = 0.0
     last_failure_at: float = 0.0
     failure_revision: int = 0
+    # 冷却到期后只允许一个请求探测该目标，成功后才会放行全量流量。
+    probe_lease_until: float = 0.0
 
 
 def model_key(
@@ -279,12 +308,18 @@ class CooldownLedger:
         error: str,
         category: ErrorCategory,
         cooldown_seconds: float | None,
+        was_probe: bool = False,
     ) -> None:
         now = monotonic()
         self._failure_revision += 1
         state = self._model_states.setdefault(key, CooldownState())
         self._record_failure(
-            state, error, category, cooldown_seconds=cooldown_seconds, now=now
+            state,
+            error,
+            category,
+            cooldown_seconds=cooldown_seconds,
+            now=now,
+            was_probe=was_probe,
         )
 
     def record_credential_failure(
@@ -294,12 +329,18 @@ class CooldownLedger:
         error: str,
         category: ErrorCategory,
         cooldown_seconds: float | None,
+        was_probe: bool = False,
     ) -> None:
         now = monotonic()
         self._failure_revision += 1
         state = self._credential_states.setdefault(key, CooldownState())
         self._record_failure(
-            state, error, category, cooldown_seconds=cooldown_seconds, now=now
+            state,
+            error,
+            category,
+            cooldown_seconds=cooldown_seconds,
+            now=now,
+            was_probe=was_probe,
         )
 
     def record_success(
@@ -369,6 +410,81 @@ class CooldownLedger:
         )
         return f"{category}, {remaining_seconds(state.cooled_until, now=now)}s left"
 
+    def remaining_seconds_for(
+        self,
+        model: ModelKey,
+        credential: CredentialKey,
+        *,
+        now: float,
+        channel_model_key: ModelKey | None = None,
+    ) -> float:
+        """Seconds until every fault domain of a target recovers; 0 when available."""
+        return max(
+            (
+                state.cooled_until - now
+                for state in self._target_states(model, credential, channel_model_key)
+                if state is not None and state.cooled_until > now
+            ),
+            default=0.0,
+        )
+
+    def claim_probe(
+        self,
+        model: ModelKey,
+        credential: CredentialKey,
+        *,
+        now: float,
+        lease_seconds: float,
+        channel_model_key: ModelKey | None = None,
+    ) -> ClaimDecision:
+        """Allow a request for one target, leasing a single probe when cooling.
+
+        A target with no active cooldown is always claimable. While cooling, the
+        first request takes a short lease and every concurrent request is turned
+        away until that probe either succeeds (cooldown cleared) or fails (a new
+        cooldown starts the next lease window).
+        """
+        states = [
+            state
+            for state in self._target_states(model, credential, channel_model_key)
+            if state is not None
+        ]
+        # 冷却未到期时一律拒绝，等待到期后才放行探测。
+        if any(state.cooled_until > now for state in states):
+            return ClaimDecision(allowed=False)
+        recovering = [
+            state
+            for state in states
+            if state.cooled_until > 0 or state.last_cooldown > 0
+        ]
+        if not recovering:
+            return ClaimDecision(allowed=True)
+        # 冷却刚到期时只放行一个探测请求，避免全部请求同时涌入。
+        if any(state.probe_lease_until > now for state in recovering):
+            return ClaimDecision(allowed=False)
+        lease_until = now + max(lease_seconds, 0.0)
+        for state in recovering:
+            state.probe_lease_until = lease_until
+        return ClaimDecision(allowed=True, is_probe=True)
+
+    def _target_states(
+        self,
+        model: ModelKey,
+        credential: CredentialKey,
+        channel_model_key: ModelKey | None,
+    ) -> tuple[CooldownState | None, ...]:
+        """Every cooldown domain that decides whether one target is usable."""
+        channel_state = (
+            self._model_states.get(channel_model_key)
+            if channel_model_key is not None
+            else None
+        )
+        return (
+            channel_state,
+            self._model_states.get(model),
+            self._credential_states.get(credential),
+        )
+
     def prune_stale(self, *, now: float) -> None:
         stale_before = now - self._policy.failure_window_seconds
         for key, state in list(self._model_states.items()):
@@ -392,6 +508,7 @@ class CooldownLedger:
         *,
         cooldown_seconds: float | None,
         now: float,
+        was_probe: bool = False,
     ) -> None:
         if state.cooled_until > now:
             state.failure_revision = self._failure_revision
@@ -411,6 +528,7 @@ class CooldownLedger:
         state.last_error_category = category
         state.last_failure_at = now
         state.failure_revision = self._failure_revision
+        state.probe_lease_until = 0.0
         initial_cooldown = self._policy.initial_cooldown(category)
         if initial_cooldown <= 0 or self._policy.max_cooldown_seconds <= 0:
             state.consecutive_failures = 0
@@ -420,11 +538,14 @@ class CooldownLedger:
 
         state.consecutive_failures += 1
         threshold = (
-            1 if cooldown_seconds is not None else self._policy.threshold(category)
+            1
+            if cooldown_seconds is not None and not was_probe
+            else self._policy.threshold(category)
         )
         if state.consecutive_failures < threshold:
             return
-        if cooldown_seconds is not None:
+        # 只有探测失败才重新放大退避：被冷却拒之门外的常规请求不该把恢复推远。
+        if cooldown_seconds is not None and not was_probe:
             cooldown = min(
                 max(cooldown_seconds, 0.0), float(self._policy.max_cooldown_seconds)
             )
@@ -471,6 +592,7 @@ __all__ = [
     "classify_error",
     "compile_detection_rules",
     "credential_key",
+    "default_scope",
     "model_key",
     "parse_cooldown_seconds",
     "remaining_seconds",

@@ -6,6 +6,7 @@ from time import monotonic
 from ...models.channels import ChannelConfig
 from ...models.routing import ChannelCredentialHealth, ChannelHealth, ModelHealth
 from .cooldown import (
+    ClaimDecision,
     CooldownLedger,
     CooldownPolicy,
     CooldownState,
@@ -52,6 +53,8 @@ class HealthTracker:
         self._channel_signature: _ChannelSignature = None
         self._channel_execution_signatures: dict[str, tuple[object, ...]] = {}
         self._credential_signatures: dict[tuple[str, str], str] = {}
+        # (channel, model, fault protocol) -> {credential id: last failure time}
+        self._escalations: dict[tuple[str, str, str], dict[str, float]] = {}
 
     def configure(
         self,
@@ -85,6 +88,8 @@ class HealthTracker:
         if routing_environment_changed:
             self._cooldowns.clear()
             self._scores.clear()
+        if policy_changed or routing_environment_changed:
+            self._escalations.clear()
         self._routing_environment_signature = routing_environment_signature
         self._next_stale_prune_at = 0.0
         self._prune_stale_states(now=monotonic())
@@ -127,6 +132,7 @@ class HealthTracker:
         fault_protocol: str,
         scope: str,
         cooldown_seconds: float | None,
+        was_probe: bool = False,
     ) -> None:
         if category == ErrorCategory.AUTH or scope == "key":
             self._cooldowns.record_credential_failure(
@@ -134,6 +140,17 @@ class HealthTracker:
                 error=error,
                 category=category,
                 cooldown_seconds=cooldown_seconds,
+                was_probe=was_probe,
+            )
+            self._escalate_throttled_model(
+                channel_id,
+                model_name,
+                fault_protocol,
+                category,
+                credential_id,
+                error=error,
+                cooldown_seconds=cooldown_seconds,
+                was_probe=was_probe,
             )
         else:
             state_key = (
@@ -147,17 +164,76 @@ class HealthTracker:
                 error=error,
                 category=category,
                 cooldown_seconds=cooldown_seconds,
+                was_probe=was_probe,
             )
         self._prune_stale_states(now=monotonic())
 
-    def is_target_available(self, target: RouteTarget, *, now: float) -> bool:
-        channel_id = target.channel.id
-        states = (
-            self._cooldowns.model_state(model_key(channel_id, "")),
-            self._cooldowns.model_state(_target_model_key(target)),
-            self._cooldowns.credential_state(_target_credential_key(target)),
+    def _escalate_throttled_model(
+        self,
+        channel_id: str,
+        model_name: str | None,
+        fault_protocol: str,
+        category: ErrorCategory,
+        credential_id: str | None,
+        *,
+        error: str,
+        cooldown_seconds: float | None,
+        was_probe: bool,
+    ) -> None:
+        """Cool the whole model once several keys of it throttle at once.
+
+        A single throttled key says nothing about its siblings, so cooling only
+        keys keeps paying for the same discovery on every request.
+        """
+        policy = self._cooldowns.policy
+        if (
+            was_probe
+            or category is not ErrorCategory.RATE_LIMIT
+            or policy.escalate_threshold <= 0
+            or policy.escalate_window_seconds <= 0
+        ):
+            return
+        now = monotonic()
+        key = (channel_id, model_name or "", fault_protocol)
+        seen = self._escalations.setdefault(key, {})
+        cutoff = now - policy.escalate_window_seconds
+        for seen_credential, seen_at in list(seen.items()):
+            if seen_at <= cutoff:
+                seen.pop(seen_credential, None)
+        seen[credential_id or ""] = now
+        if len(seen) < policy.escalate_threshold:
+            return
+        seen.clear()
+        self._cooldowns.record_model_failure(
+            model_key(channel_id, model_name, fault_protocol),
+            error=error,
+            category=category,
+            cooldown_seconds=cooldown_seconds,
         )
-        return all(state is None or state.cooled_until <= now for state in states)
+
+    def claim_target(
+        self, target: RouteTarget, *, now: float, lease_seconds: float
+    ) -> ClaimDecision:
+        """Whether one request may use this target, leasing its recovery probe."""
+        return self._cooldowns.claim_probe(
+            _target_model_key(target),
+            _target_credential_key(target),
+            now=now,
+            lease_seconds=lease_seconds,
+            channel_model_key=model_key(target.channel.id, ""),
+        )
+
+    def cooldown_remaining_seconds(self, target: RouteTarget, *, now: float) -> float:
+        """Seconds until the target becomes usable again; 0 means available now."""
+        return self._cooldowns.remaining_seconds_for(
+            _target_model_key(target),
+            _target_credential_key(target),
+            now=now,
+            channel_model_key=model_key(target.channel.id, ""),
+        )
+
+    def is_target_available(self, target: RouteTarget, *, now: float) -> bool:
+        return self.cooldown_remaining_seconds(target, now=now) <= 0.0
 
     def score(self, target: RouteTarget) -> float:
         return self._scores.score(_target_model_key(target))
@@ -264,6 +340,20 @@ class HealthTracker:
         self._next_stale_prune_at = now + max(prune_interval, 1)
         self._cooldowns.prune_stale(now=now)
         self._scores.prune(now=now)
+        self._prune_escalations(now=now)
+
+    def _prune_escalations(self, *, now: float) -> None:
+        window = self._cooldowns.policy.escalate_window_seconds
+        if window <= 0:
+            self._escalations.clear()
+            return
+        cutoff = now - window
+        for key, seen in list(self._escalations.items()):
+            for credential, seen_at in list(seen.items()):
+                if seen_at <= cutoff:
+                    seen.pop(credential, None)
+            if not seen:
+                self._escalations.pop(key, None)
 
 
 def _configured_model_names(channel: ChannelConfig) -> set[str]:
