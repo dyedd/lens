@@ -37,6 +37,26 @@ def endpoint_priority(channel: ChannelConfig, requested_protocol: ProtocolKind) 
     return {"default": 0, "china": 1}.get(channel.endpoint_kind, 0)
 
 
+@dataclass(frozen=True, slots=True)
+class TargetKey:
+    """Identify one executable target inside the cooldown and attempt ledgers."""
+
+    channel_id: str
+    credential_id: str | None
+    model_name: str | None
+    fault_protocol: str
+
+
+def target_key(target: RouteTarget) -> TargetKey:
+    """Return the identity used to deduplicate attempts for a target."""
+    return TargetKey(
+        target.channel.id,
+        target.credential_id,
+        target.model_name,
+        target.fault_protocol,
+    )
+
+
 @lru_cache(maxsize=2048)
 def _compile_model_pattern(pattern: str) -> re.Pattern[str]:
     return re.compile(pattern)

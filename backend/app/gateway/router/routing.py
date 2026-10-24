@@ -9,31 +9,38 @@ from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouteState
-from .targets import RouteTarget, build_route_targets, endpoint_priority
+from .targets import (
+    RouteTarget,
+    build_route_targets,
+    endpoint_priority,
+    target_key,
+)
 
 
 @dataclass(slots=True)
 class RouteSelection:
-    """Contain a selected primary route and its ordered fallbacks."""
+    """Contain the selected primary route and every remaining candidate.
+
+    ``fallbacks`` also carries targets that are cooling right now: the failover
+    loop claims a single recovery probe on them instead of failing the request.
+    """
 
     primary: RouteTarget
     fallbacks: list[RouteTarget] = field(default_factory=list)
 
-
-class CooldownRoutingError(LookupError):
-    """Every matching target is cooling down; carries them for the attempt log."""
-
-    def __init__(
-        self, message: str, cooled_targets: list[tuple[RouteTarget, str]]
-    ) -> None:
-        super().__init__(message)
-        self.cooled_targets = cooled_targets
+    def ordered(self) -> list[RouteTarget]:
+        """Return the primary followed by every fallback in selection order."""
+        return [self.primary, *self.fallbacks]
 
 
 class RouteHealth(Protocol):
     """What route planning needs to know about target health."""
 
     def is_target_available(self, target: RouteTarget, *, now: float) -> bool: ...
+
+    def cooldown_remaining_seconds(
+        self, target: RouteTarget, *, now: float
+    ) -> float: ...
 
     def score(self, target: RouteTarget) -> float: ...
 
@@ -69,6 +76,24 @@ class RoutePlanner:
     def __init__(self, health: RouteHealth) -> None:
         self._health = health
         self._swrr_nodes: dict[tuple[str, str, str, str], _SWRRNode] = {}
+        self._affinity_seconds = 0.0
+        self._affinity: dict[str, tuple[RouteTarget, float]] = {}
+        self._affinity_armed: set[str] = set()
+
+    def configure_affinity(self, seconds: float) -> None:
+        self._affinity_seconds = max(seconds, 0.0)
+        if self._affinity_seconds <= 0:
+            self._affinity.clear()
+
+    def note_failure(self, route_key: str) -> None:
+        self._affinity_armed.add(route_key)
+
+    def note_success(self, route_key: str, target: RouteTarget) -> None:
+        if route_key not in self._affinity_armed:
+            return
+        self._affinity_armed.discard(route_key)
+        if self._affinity_seconds > 0:
+            self._affinity[route_key] = (target, monotonic() + self._affinity_seconds)
 
     def reset_weights(self) -> None:
         self._swrr_nodes.clear()
@@ -92,7 +117,7 @@ class RoutePlanner:
         cursor_key: str | None,
         required_context_tokens: int | None = None,
     ) -> RouteSelection:
-        active = self._build_active_pool(
+        pool = self._build_active_pool(
             channels,
             protocol,
             requested_model,
@@ -101,25 +126,18 @@ class RoutePlanner:
             route_targets,
             required_context_tokens=required_context_tokens,
         )
-        if not active:
-            all_matching = self._build_active_pool(
-                channels,
-                protocol,
-                requested_model,
-                allowed_channel_ids,
-                use_model_matching,
-                route_targets,
-                required_context_tokens=required_context_tokens,
-                skip_health_filter=True,
-            )
-            if all_matching:
-                now = monotonic()
-                cooled = [
-                    (target, self._health.cooldown_reason(target, now=now))
-                    for target in all_matching
-                ]
-                detail = f"All {len(all_matching)} matching channels are in cooldown"
-                raise CooldownRoutingError(detail, cooled)
+        now = monotonic()
+        available = [
+            target
+            for target in pool
+            if self._health.is_target_available(target, now=now)
+        ]
+        cooling = [
+            target
+            for target in pool
+            if not self._health.is_target_available(target, now=now)
+        ]
+        if not available and not cooling:
             detail = f"No enabled channels available for protocol={protocol.value}"
             if requested_model:
                 detail = f"No enabled channels matched {requested_model}"
@@ -127,44 +145,67 @@ class RoutePlanner:
 
         route_key = cursor_key or protocol.value
         preferred_priority = max(
-            endpoint_priority(target.channel, protocol) for target in active
+            (endpoint_priority(target.channel, protocol) for target in available),
+            default=0,
         )
-        preferred = [
+        preferred_available = [
             target
-            for target in active
+            for target in available
             if endpoint_priority(target.channel, protocol) == preferred_priority
         ]
-        fallback = [
+        fallback_available = [
             target
-            for target in active
+            for target in available
             if endpoint_priority(target.channel, protocol) < preferred_priority
         ]
-
-        def order_group(group: list[RouteTarget]) -> list[RouteTarget]:
-            if not group:
-                return []
-            primary_index = (
-                0
-                if strategy == RoutingStrategy.FAILOVER
-                else self._swrr_pick_index(group, route_key, mutate=True)
+        ordered_available = [
+            *self._order_available(preferred_available, route_key, strategy),
+            *self._order_available(fallback_available, route_key, strategy),
+        ]
+        affinity = self._affinity.get(route_key)
+        if affinity is not None:
+            affinity_target, until = affinity
+            if until <= now:
+                self._affinity.pop(route_key, None)
+            else:
+                for index, target in enumerate(ordered_available):
+                    if target_key(target) == target_key(affinity_target):
+                        ordered_available.insert(0, ordered_available.pop(index))
+                        break
+        cooling.sort(
+            key=lambda target: (
+                -endpoint_priority(target.channel, protocol),
+                self._health.cooldown_remaining_seconds(target, now=now),
             )
-            primary = group[primary_index]
-            remaining = [
-                target for index, target in enumerate(group) if index != primary_index
-            ]
-            if strategy != RoutingStrategy.FAILOVER:
-                remaining.sort(key=self._health.score, reverse=True)
-            return [primary, *remaining]
+        )
+        primary = ordered_available[0] if ordered_available else cooling[0]
+        remaining = ordered_available[1:] if ordered_available else cooling[1:]
+        if cooling and ordered_available:
+            remaining = [*remaining, *cooling]
+        return RouteSelection(primary=primary, fallbacks=remaining)
 
-        ordered = [*order_group(preferred), *order_group(fallback)]
-        return RouteSelection(primary=ordered[0], fallbacks=ordered[1:])
+    def _order_available(
+        self,
+        available: list[RouteTarget],
+        route_key: str,
+        strategy: RoutingStrategy,
+    ) -> list[RouteTarget]:
+        if not available:
+            return []
+        if strategy == RoutingStrategy.FAILOVER:
+            return list(available)
+        primary_index = self._swrr_pick_index(available, route_key, mutate=True)
+        primary = available[primary_index]
+        fallbacks = [
+            target for index, target in enumerate(available) if index != primary_index
+        ]
+        fallbacks.sort(key=self._health.score, reverse=True)
+        return [primary, *fallbacks]
 
     def build_route_state(
         self, channels: list[ChannelConfig], protocol: ProtocolKind, *, now: float
     ) -> RouteState:
-        pool = self._build_active_pool(
-            channels, protocol, None, skip_health_filter=True
-        )
+        pool = self._build_active_pool(channels, protocol, None)
         ordered_targets, next_channel_id = self._prepare_diagnostic_targets(
             pool,
             strategy=RoutingStrategy.ROUND_ROBIN,
@@ -208,9 +249,8 @@ class RoutePlanner:
         route_targets: list[RouteTarget] | None = None,
         *,
         required_context_tokens: int | None = None,
-        skip_health_filter: bool = False,
     ) -> list[RouteTarget]:
-        active = _keep_targets_fitting_context(
+        pool = _keep_targets_fitting_context(
             build_route_targets(
                 channels,
                 protocol,
@@ -221,17 +261,9 @@ class RoutePlanner:
             ),
             required_context_tokens,
         )
-        if skip_health_filter:
-            return active
-
-        now = monotonic()
-        active = [
-            target
-            for target in active
-            if self._health.is_target_available(target, now=now)
-        ]
-        active = self._prefer_native_targets(active, protocol)
-        return active
+        # Native protocol targets win over converted ones regardless of health:
+        # a converted sibling must not shadow the channel's own protocol.
+        return self._prefer_native_targets(pool, protocol)
 
     @staticmethod
     def _prefer_native_targets(
@@ -324,12 +356,12 @@ class RoutePlanner:
         preferred_priority = max(
             endpoint_priority(target.channel, protocol) for target in available
         )
-        preferred = [
+        preferred_available = [
             target
             for target in available
             if endpoint_priority(target.channel, protocol) == preferred_priority
         ]
-        fallback = [
+        fallback_available = [
             target
             for target in available
             if endpoint_priority(target.channel, protocol) < preferred_priority
@@ -351,5 +383,9 @@ class RoutePlanner:
                 remaining.sort(key=self._health.score, reverse=True)
             return [primary, *remaining]
 
-        ordered_available = [*order_group(preferred), *order_group(fallback)]
+        ordered_available = [
+            *order_group(preferred_available),
+            *order_group(fallback_available),
+        ]
+        cooled.sort(key=lambda target: -endpoint_priority(target.channel, protocol))
         return ordered_available + cooled, ordered_available[0].channel.id

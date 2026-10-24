@@ -40,6 +40,11 @@ const CIRCUIT_BREAKER_TIMEOUT_COOLDOWN = "circuit_breaker_timeout_cooldown";
 const CIRCUIT_BREAKER_NETWORK_COOLDOWN = "circuit_breaker_network_cooldown";
 const CIRCUIT_BREAKER_BACKOFF_MULTIPLIER = "circuit_breaker_backoff_multiplier";
 const CIRCUIT_BREAKER_MAX_COOLDOWN = "circuit_breaker_max_cooldown";
+const FAILOVER_COOLED_WAIT_SECONDS = "failover_cooled_wait_seconds";
+const CIRCUIT_BREAKER_ESCALATE_THRESHOLD = "circuit_breaker_escalate_threshold";
+const CIRCUIT_BREAKER_ESCALATE_WINDOW =
+  "circuit_breaker_escalate_window_seconds";
+const FAILOVER_AFFINITY_SECONDS = "failover_affinity_seconds";
 const HEALTH_SCORING_ENABLED = "health_scoring_enabled";
 const HEALTH_WINDOW_SECONDS = "health_window_seconds";
 const HEALTH_PENALTY_WEIGHT = "health_penalty_weight";
@@ -78,6 +83,10 @@ export interface SettingsDraft {
   circuitBreakerNetworkCooldown: string;
   circuitBreakerBackoffMultiplier: string;
   circuitBreakerMaxCooldown: string;
+  failoverCooledWaitSeconds: string;
+  circuitBreakerEscalateThreshold: string;
+  circuitBreakerEscalateWindowSeconds: string;
+  failoverAffinitySeconds: string;
   isHealthScoringEnabled: boolean;
   healthWindowSeconds: string;
   healthPenaltyWeight: string;
@@ -131,6 +140,10 @@ export function createEmptySettingsDraft(): SettingsDraft {
     circuitBreakerNetworkCooldown: "60",
     circuitBreakerBackoffMultiplier: "2",
     circuitBreakerMaxCooldown: "600",
+    failoverCooledWaitSeconds: "0",
+    circuitBreakerEscalateThreshold: "2",
+    circuitBreakerEscalateWindowSeconds: "60",
+    failoverAffinitySeconds: "30",
     isHealthScoringEnabled: true,
     healthWindowSeconds: "300",
     healthPenaltyWeight: "0.5",
@@ -179,6 +192,12 @@ export function createSettingsDraft(
       mapping.get(CIRCUIT_BREAKER_BACKOFF_MULTIPLIER) ?? "2",
     circuitBreakerMaxCooldown:
       mapping.get(CIRCUIT_BREAKER_MAX_COOLDOWN) ?? "600",
+    failoverCooledWaitSeconds: mapping.get(FAILOVER_COOLED_WAIT_SECONDS) ?? "0",
+    circuitBreakerEscalateThreshold:
+      mapping.get(CIRCUIT_BREAKER_ESCALATE_THRESHOLD) ?? "2",
+    circuitBreakerEscalateWindowSeconds:
+      mapping.get(CIRCUIT_BREAKER_ESCALATE_WINDOW) ?? "60",
+    failoverAffinitySeconds: mapping.get(FAILOVER_AFFINITY_SECONDS) ?? "30",
     isHealthScoringEnabled:
       (mapping.get(HEALTH_SCORING_ENABLED) ?? "true").trim().toLowerCase() ===
       "true",
@@ -274,6 +293,22 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
     {
       key: CIRCUIT_BREAKER_MAX_COOLDOWN,
       value: draft.circuitBreakerMaxCooldown.trim() || "600",
+    },
+    {
+      key: FAILOVER_COOLED_WAIT_SECONDS,
+      value: draft.failoverCooledWaitSeconds.trim() || "0",
+    },
+    {
+      key: CIRCUIT_BREAKER_ESCALATE_THRESHOLD,
+      value: draft.circuitBreakerEscalateThreshold.trim() || "2",
+    },
+    {
+      key: CIRCUIT_BREAKER_ESCALATE_WINDOW,
+      value: draft.circuitBreakerEscalateWindowSeconds.trim() || "60",
+    },
+    {
+      key: FAILOVER_AFFINITY_SECONDS,
+      value: draft.failoverAffinitySeconds.trim() || "30",
     },
     {
       key: HEALTH_SCORING_ENABLED,

@@ -149,6 +149,7 @@ class UpstreamRequestError(HTTPException):
         router_status_code: int | None,
         router_error_category: ErrorCategory | None = None,
         router_error_scope: str = "model",
+        router_retry_action: str | None = None,
         router_cooldown_seconds: float | None = None,
         error_type: str = "upstream_error",
         skip_route_failure: bool = False,
@@ -159,6 +160,7 @@ class UpstreamRequestError(HTTPException):
         self.router_status_code = router_status_code
         self.router_error_category = router_error_category
         self.router_error_scope = router_error_scope
+        self.router_retry_action = router_retry_action
         self.router_cooldown_seconds = router_cooldown_seconds
         self.error_type = error_type
         self.skip_route_failure = skip_route_failure
@@ -220,9 +222,12 @@ class StreamCapture:
     request_log_id: int | None = None
     stream_started_at: float = 0.0
     route_started_revision: int = -1
+    route_cursor_key: str = ""
+    route_was_probe: bool = False
     error_status_code: int | None = None
     error_category: ErrorCategory | None = None
     error_cooldown_seconds: float | None = None
+    error_retry_action: str | None = None
     skip_route_failure: bool = False
     content_decoder: codecs.IncrementalDecoder = field(
         default_factory=_new_incremental_utf8_decoder
@@ -281,6 +286,11 @@ def record_stream_error(
         capture.error_status_code = status_code
     if category is not None and capture.error_category is None:
         capture.error_category = category
+        capture.error_retry_action = (
+            "retry_key"
+            if category in (ErrorCategory.AUTH, ErrorCategory.RATE_LIMIT)
+            else "retry_channel"
+        )
     if cooldown_seconds is not None and capture.error_cooldown_seconds is None:
         capture.error_cooldown_seconds = cooldown_seconds
     if skip_route_failure:

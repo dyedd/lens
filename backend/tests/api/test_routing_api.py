@@ -331,3 +331,193 @@ def test_editor_save_keeps_rule_members_added_while_it_was_open(
         "second-cred",
     ]
     assert saved.json()["excluded_items"] == []
+
+
+def _site_with_two_credentials(name: str, prefix: str) -> dict[str, Any]:
+    """Build a site whose single model is served by two credentials."""
+    payload = valid_site_payload(
+        name=name,
+        base_id=f"{prefix}-base",
+        credential_id=f"{prefix}-c1",
+        protocol_config_id=f"{prefix}-pc",
+        model_name="gpt-4o",
+    )
+    payload["credentials"][0]["api_key"] = f"{prefix}-secret-1"
+    payload["credentials"].append(
+        {
+            "id": f"{prefix}-c2",
+            "name": "secondary-key",
+            "api_key": f"{prefix}-secret-2",
+        }
+    )
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": f"{prefix}-c2",
+            "model_name": "gpt-4o",
+            "enabled": True,
+            "protocol": "openai_chat",
+        }
+    )
+    return payload
+
+
+def _chat_group(client, key: dict[str, Any], model: str) -> Any:
+    return client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": model, "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+
+def test_rate_limited_credential_fails_over_to_sibling_key(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    """一把 Key 限流只冷却它自己，同渠道其它 Key 仍可承接请求。"""
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    create_site(_site_with_two_credentials("Multi", "multi"))
+    group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "key-group"},
+    )
+    assert group.status_code == 201, group.text
+    channel_id = openai_chat_channel_id("multi-pc")
+    update = client.put(
+        f"/api/admin/model-groups/{group.json()['id']}",
+        headers=admin_headers,
+        json={
+            "strategy": "failover",
+            "items": [
+                {
+                    "channel_id": channel_id,
+                    "credential_id": "multi-c1",
+                    "model_name": "gpt-4o",
+                    "enabled": True,
+                },
+                {
+                    "channel_id": channel_id,
+                    "credential_id": "multi-c2",
+                    "model_name": "gpt-4o",
+                    "enabled": True,
+                },
+            ],
+        },
+    )
+    assert update.status_code == 200, update.text
+
+    used_keys: list[str] = []
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        authorization = httpx.Headers(upstream.headers)["authorization"]
+        used_keys.append(authorization)
+        if authorization.endswith("multi-secret-1"):
+            return httpx.Response(
+                429,
+                json={"error": {"message": "rate limited"}},
+                request=httpx.Request("POST", upstream.url),
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "model": json.loads(body_bytes)["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+    key = create_gateway_key()
+
+    first = _chat_group(client, key, "key-group")
+
+    assert first.status_code == 200, first.text
+    assert used_keys == ["Bearer multi-secret-1", "Bearer multi-secret-2"]
+
+    second = _chat_group(client, key, "key-group")
+
+    assert second.status_code == 200, second.text
+    assert used_keys[-1] == "Bearer multi-secret-2"
+    assert len(used_keys) == 3
+
+
+def test_repeated_rate_limits_escalate_to_model_cooldown(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    payload = _site_with_two_credentials("Multi", "escalate")
+    payload["credentials"].append(
+        {"id": "escalate-c3", "name": "third-key", "api_key": "escalate-secret-3"}
+    )
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "escalate-c3",
+            "model_name": "gpt-4o",
+            "enabled": True,
+            "protocol": "openai_chat",
+        }
+    )
+    create_site(payload)
+    group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "escalate-group"},
+    )
+    assert group.status_code == 201, group.text
+    channel_id = openai_chat_channel_id("escalate-pc")
+    items = [
+        {
+            "channel_id": channel_id,
+            "credential_id": f"escalate-c{i}",
+            "model_name": "gpt-4o",
+            "enabled": True,
+        }
+        for i in range(1, 4)
+    ]
+    updated = client.put(
+        f"/api/admin/model-groups/{group.json()['id']}",
+        headers=admin_headers,
+        json={"strategy": "failover", "items": items},
+    )
+    assert updated.status_code == 200, updated.text
+    used: list[str] = []
+
+    async def limited(
+        _client: httpx.AsyncClient, upstream: Any, *, stream: bool, body_bytes: bytes
+    ) -> httpx.Response:
+        used.append(httpx.Headers(upstream.headers)["authorization"])
+        return httpx.Response(
+            429,
+            json={"error": {"message": "rate limited"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", limited)
+    response = _chat_group(client, create_gateway_key(), "escalate-group")
+    assert response.status_code == 429, response.text
+    assert len(used) == 2
