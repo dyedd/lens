@@ -412,7 +412,11 @@ class CooldownLedger:
             if state.last_error_category is not None
             else "unknown"
         )
-        return f"{category}, {remaining_seconds(state.cooled_until, now=now)}s left"
+        detail = state.last_error or category
+        return (
+            f"{detail} ({category}, "
+            f"{remaining_seconds(state.cooled_until, now=now)}s left)"
+        )
 
     def remaining_seconds_for(
         self,
