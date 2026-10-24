@@ -105,6 +105,17 @@ class RequestLogCommands:
             await session.refresh(entity)
             return to_request_log(entity)
 
+    async def discard_running_request_log(self, log_id: int) -> None:
+        """Drop a request log that never reached a terminal state."""
+        async with self.session_factory() as session:
+            await session.execute(
+                delete(RequestLogEntity).where(
+                    RequestLogEntity.id == log_id,
+                    RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_RUNNING_STATUSES),
+                )
+            )
+            await session.commit()
+
     async def update_request_log_runtime(
         self,
         log_id: int,

@@ -413,6 +413,29 @@ def _all_cooled_failure(failures: FailureLedger) -> tuple[int, str, str]:
     return 503, "routing_error", message
 
 
+def _summarize_attempt_failures(log_ctx: RequestLogger) -> str | None:
+    """Keep one readable diagnostic for every failed route target."""
+    details: list[str] = []
+    seen: set[tuple[str, str | None, str | None]] = set()
+    for attempt in log_ctx.attempts:
+        if attempt.success or not attempt.error_message:
+            continue
+        detail = attempt.error_message.strip()
+        if not detail:
+            continue
+        key = (
+            attempt.channel_id,
+            attempt.credential_id,
+            attempt.model_name,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        channel_name = attempt.channel_name.strip() or attempt.channel_id
+        details.append(f"{channel_name}: {detail}")
+    return "; ".join(details) or None
+
+
 async def _finalize_proxy_failure(
     *,
     protocol: ProtocolKind,
@@ -422,23 +445,32 @@ async def _finalize_proxy_failure(
     failures: FailureLedger,
     is_stream_body: bool,
 ) -> Response:
-    if not failures.errors and failures.cooled_waits:
+    all_targets_cooled = not failures.errors and bool(failures.cooled_waits)
+    if all_targets_cooled:
         failed_status_code, failed_error_type, failed_message = _all_cooled_failure(
             failures
         )
     else:
         failed_status_code, failed_error_type, failed_message = failures.final_failure()
-    if failures.last_log_failure is not None:
+    if all_targets_cooled:
+        # 客户端重试期间没有新的上游尝试，不重复制造同一条失败日志。
+        await app_state.request_log_store.commands.discard_running_request_log(
+            log_ctx.request_log_id
+        )
+    elif failures.last_log_failure is not None:
+        failure_details = _summarize_attempt_failures(log_ctx)
+        if failure_details is not None:
+            failures.last_log_failure.error_message = failure_details
         await failures.last_log_failure.write(log_ctx)
     else:
-        # 没有真正打到上游（全部候选冷却）时也要把日志定稿，否则会停在连接中。
+        # 没有真实失败上下文时也要把日志定稿，否则会停在连接中。
         log_ctx.plan_route(
             requested_group_name=plan.requested_group_name if plan else requested_model,
             resolved_group_name=plan.resolved_group_name if plan else None,
         )
         await log_ctx.record_failure(
             status_code=failed_status_code,
-            error_message=failed_message,
+            error_message=_summarize_attempt_failures(log_ctx) or failed_message,
             is_stream=is_stream_body,
         )
     retry_after = failures.retry_after_seconds
