@@ -73,8 +73,8 @@ function ChannelModelSection({
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
             {isZh
-              ? "输入或获取的模型都会按上游列表持续同步；匹配自动接入规则的新模型会在同步时自动加入。"
-              : "Entered and fetched models stay synchronized with the upstream catalog; new models matching the onboarding rules join on each sync."}
+              ? "模型按上游列表同步，匹配接入规则的新模型会自动加入。"
+              : "Models follow the upstream catalog; new matches are added automatically."}
           </div>
         </div>
       </div>

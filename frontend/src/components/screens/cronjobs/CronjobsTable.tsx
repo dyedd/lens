@@ -20,11 +20,7 @@ import type { CronjobItem } from "@/lib/api/cronjobs";
 import { formatLogDateTime } from "@/lib/datetime";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-import {
-  cronjobDescription,
-  cronjobScheduleLabel,
-  cronjobTitle,
-} from "./cronjobView";
+import { cronjobScheduleLabel, cronjobTitle } from "./cronjobView";
 
 type CronjobsTableProps = {
   locale: Locale;
@@ -149,14 +145,9 @@ export function CronjobsTable({
                   </div>
                 </TableCell>
                 <TableCell className="max-w-[18rem]">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">
-                      {cronjobTitle(locale, task)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {cronjobDescription(locale, task)}
-                    </p>
-                  </div>
+                  <p className="truncate font-medium text-foreground">
+                    {cronjobTitle(locale, task)}
+                  </p>
                 </TableCell>
                 <TableCell>
                   <button

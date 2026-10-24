@@ -104,8 +104,8 @@ export function RegexRuleEditorDialog({
           rule && rule.groups.length + rule.sites.length > 0
             ? titleForLocale(
                 locale,
-                `修改会同步应用到 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道`,
-                `Changes apply to ${rule.groups.length} groups and ${rule.sites.length} channels`,
+                `会影响 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道`,
+                `Affects ${rule.groups.length} groups and ${rule.sites.length} channels`,
               )
             : undefined
         }
@@ -247,13 +247,13 @@ export function DeleteRegexRuleDialog({
         usageLines.length
           ? titleForLocale(
               locale,
-              `删除规则「${rule.name}」？将从 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道中移除。`,
-              `Delete rule "${rule.name}"? It will be removed from ${rule.groups.length} groups and ${rule.sites.length} channels.`,
+              `删除规则「${rule.name}」？将从 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道移除。`,
+              `Delete rule "${rule.name}"? Removes it from ${rule.groups.length} groups and ${rule.sites.length} channels.`,
             )
           : titleForLocale(
               locale,
-              `删除规则「${rule.name}」？没有模型组或渠道使用它。`,
-              `Delete rule "${rule.name}"? No group or channel uses it.`,
+              `删除规则「${rule.name}」？当前没有引用。`,
+              `Delete rule "${rule.name}"? Nothing references it.`,
             )
       }
       isBusy={isDeleting}

@@ -361,8 +361,8 @@ export function ChannelsOverview({
         title={locale === "zh-CN" ? "删除渠道" : "Delete channels"}
         description={
           locale === "zh-CN"
-            ? `将删除选中的 ${selectedSites.length} 个渠道。渠道下的协议配置、模型和模型组成员也会一并移除。`
-            : `${selectedSites.length} selected channels will be removed together with their protocol configs, models, and group members.`
+            ? `删除 ${selectedSites.length} 个渠道及其协议配置、模型和成员。`
+            : `Delete ${selectedSites.length} channels and their configs, models, and members.`
         }
         isDisabled={Boolean(busyId)}
         onOpenChange={setBulkDeleteOpen}

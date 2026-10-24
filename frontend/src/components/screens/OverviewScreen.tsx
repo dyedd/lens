@@ -38,11 +38,8 @@ export function OverviewScreen() {
   const [pieMetric, setPieMetric] = useState<PieMetric>("cost");
   const [heatmapMetric, setHeatmapMetric] = useState<HeatmapMetric>("requests");
   const modelDays = Number(modelRange);
-  const {
-    label: pieMetricLabel,
-    trendTitle: modelTrendTitle,
-    cardDescription: modelCardDescription,
-  } = getPieMetricLabels(pieMetric, isChineseLocale);
+  const { label: pieMetricLabel, trendTitle: modelTrendTitle } =
+    getPieMetricLabels(pieMetric, isChineseLocale);
   const modelQuery = useMemo(
     () =>
       `/admin/overview-models?${new URLSearchParams({ days: String(modelDays), metric: pieMetric }).toString()}`,
@@ -201,7 +198,7 @@ export function OverviewScreen() {
       barModels: safeModels,
     };
   }, [modelDays, models, timeZone]);
-  const heatmap = useMemo(() => {
+  const heatmapPoints = useMemo(() => {
     const pointMap = new Map(
       (heatmapQuery.data ?? []).map((item) => [
         parseDateKey(item.date),
@@ -230,10 +227,7 @@ export function OverviewScreen() {
         waitTimeMs: point?.waitTimeMs ?? 0,
       };
     });
-    return {
-      points,
-      total: points.reduce((sum, point) => sum + point.count, 0),
-    };
+    return points;
   }, [heatmapQuery.data]);
 
   return (
@@ -253,8 +247,7 @@ export function OverviewScreen() {
         totalTokens={totalTokens}
       />
       <RequestHeatmap
-        points={heatmap.points}
-        total={heatmap.total}
+        points={heatmapPoints}
         metric={heatmapMetric}
         onMetricChange={setHeatmapMetric}
         isChineseLocale={isChineseLocale}
@@ -264,7 +257,6 @@ export function OverviewScreen() {
         barData={barData}
         barModels={barModels}
         isChineseLocale={isChineseLocale}
-        modelCardDescription={modelCardDescription}
         modelRange={modelRange}
         modelTrendTitle={modelTrendTitle}
         modelsIsError={modelsQuery.isError}

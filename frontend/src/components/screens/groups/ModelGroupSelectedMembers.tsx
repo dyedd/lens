@@ -109,16 +109,7 @@ export function ModelGroupSelectedMembers({
           {locale === "zh-CN" ? "添加成员" : "Add members"}
         </Button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          {strategy === "failover"
-            ? locale === "zh-CN"
-              ? "按渠道顺序尝试；拖动可调整优先级。"
-              : "Try channels in order. Drag to set priority."
-            : locale === "zh-CN"
-              ? "按顺序轮流使用渠道成员；拖动可调整顺序。"
-              : "Rotate through channel members. Drag to reorder."}
-        </p>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-1">
           <Select
             value={memberStatusFilter}

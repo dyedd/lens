@@ -396,8 +396,8 @@ export function ModelTestSettingsSection({
         title={titleForLocale(locale, "删除测试问题", "Delete test prompts")}
         description={titleForLocale(
           locale,
-          `删除选中的 ${selectedCount} 个测试问题。`,
-          `Delete ${selectedCount} selected test prompts.`,
+          `删除 ${selectedCount} 个测试问题。`,
+          `Delete ${selectedCount} test prompts.`,
         )}
         isDisabled={selectedCount === 0}
         onOpenChange={setBulkDeleteOpen}

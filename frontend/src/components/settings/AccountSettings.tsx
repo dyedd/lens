@@ -117,8 +117,8 @@ export function AccountSettings({
           )}
           description={titleForLocale(
             locale,
-            "请输入当前密码以确认本次账号修改。",
-            "Enter your current password to confirm this account change.",
+            "输入当前密码确认修改。",
+            "Enter your current password to confirm.",
           )}
           footer={
             <>

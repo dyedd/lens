@@ -19,7 +19,6 @@ import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -133,11 +132,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                       ? "新建模型组"
                       : "Create model group"}
                 </SheetTitle>
-                <SheetDescription className="mt-1 truncate text-xs">
-                  {locale === "zh-CN"
-                    ? "模型名称、渠道成员和排除项"
-                    : "Model name, channel members, and exclusions"}
-                </SheetDescription>
               </div>
             </div>
           </SheetHeader>
@@ -306,11 +300,6 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
             <SheetTitle>
               {locale === "zh-CN" ? "添加渠道成员" : "Add channel members"}
             </SheetTitle>
-            <SheetDescription className="text-xs">
-              {locale === "zh-CN"
-                ? "选择成员加入当前模型组；已排除的模型会恢复为成员。"
-                : "Choose members for this group. Excluded models are restored when added."}
-            </SheetDescription>
           </SheetHeader>
           <section
             aria-label={locale === "zh-CN" ? "可选模型" : "Available models"}
@@ -368,8 +357,8 @@ export function DeleteGroupDialog({
       title={locale === "zh-CN" ? "删除模型组" : "Delete model group"}
       description={
         locale === "zh-CN"
-          ? `删除模型组「${deleteTarget?.name ?? ""}」？如果渠道仍提供这些模型，自动同步可能再次加入它们。要停止调用，请先在渠道中停用模型。`
-          : `Delete model group "${deleteTarget?.name ?? ""}"? If channels still provide its models, automatic sync may add them again. Disable the models in the channel to stop calls.`
+          ? `删除模型组「${deleteTarget?.name ?? ""}」？渠道仍提供的模型可能被同步回来；要停用请先停用渠道模型。`
+          : `Delete model group "${deleteTarget?.name ?? ""}"? Channels may sync its models back; disable them in the channel to stop calls.`
       }
       isBusy={Boolean(deleteTarget) && busyId === deleteTarget?.id}
       onOpenChange={(open) => {

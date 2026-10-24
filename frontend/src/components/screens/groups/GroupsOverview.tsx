@@ -429,8 +429,8 @@ export function GroupsOverview({
           title={locale === "zh-CN" ? "合并模型组" : "Merge groups"}
           description={
             locale === "zh-CN"
-              ? `将「${mergeRequest?.source.name ?? ""}」的成员并入「${mergeRequest?.target.name ?? ""}」，引用改指向目标组，然后删除「${mergeRequest?.source.name ?? ""}」。`
-              : `Move the name, match rules and members of "${mergeRequest?.source.name ?? ""}" into "${mergeRequest?.target.name ?? ""}", repoint references, then delete "${mergeRequest?.source.name ?? ""}".`
+              ? `将「${mergeRequest?.source.name ?? ""}」的成员和引用并入「${mergeRequest?.target.name ?? ""}」，然后删除源组。`
+              : `Move members and references from "${mergeRequest?.source.name ?? ""}" to "${mergeRequest?.target.name ?? ""}", then delete the source group.`
           }
           footer={
             <>
@@ -465,8 +465,8 @@ export function GroupsOverview({
         title={locale === "zh-CN" ? "删除模型组" : "Delete groups"}
         description={
           locale === "zh-CN"
-            ? `将删除选中的 ${selectedGroups.length} 个模型组。`
-            : `${selectedGroups.length} selected groups will be removed.`
+            ? `删除选中的 ${selectedGroups.length} 个模型组。`
+            : `Delete ${selectedGroups.length} selected groups.`
         }
         isDisabled={Boolean(busyId)}
         onOpenChange={setBulkDeleteOpen}

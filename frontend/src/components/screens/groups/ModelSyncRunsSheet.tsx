@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/Badge";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/Sheet";
@@ -167,11 +166,6 @@ export function ModelSyncRunsSheet({
       <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
         <SheetHeader className="shrink-0 px-4 py-4 pr-14">
           <SheetTitle>{isZh ? "同步记录" : "Sync history"}</SheetTitle>
-          <SheetDescription className="mt-1 text-xs">
-            {isZh
-              ? "每次模型同步新增了哪些模型、进了哪些组、哪些等你确认、哪些已退场。"
-              : "What each model sync added, where models went, what needs your call, and what retired."}
-          </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           {runsQuery.isLoading ? (
@@ -185,8 +179,8 @@ export function ModelSyncRunsSheet({
           ) : !runs.length ? (
             <p className="rounded-md bg-muted/35 px-3 py-6 text-center text-xs text-muted-foreground">
               {isZh
-                ? "还没有同步记录。渠道保存后和定时任务运行时会自动记录同步结果。"
-                : "No sync runs yet. Runs are recorded after channel saves and scheduled syncs."}
+                ? "渠道保存或定时同步后会记录。"
+                : "Recorded after channel saves or scheduled syncs."}
             </p>
           ) : (
             <Accordion type="multiple" className="border-y border-border/60">

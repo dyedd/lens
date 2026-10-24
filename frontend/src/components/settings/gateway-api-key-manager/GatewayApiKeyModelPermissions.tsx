@@ -76,8 +76,8 @@ export function GatewayApiKeyModelPermissions({
           <SettingsHint
             description={titleForLocale(
               locale,
-              "关闭时可调用当前全部启用模型组；开启后必须至少选择一个模型组。",
-              "When disabled, the key can use every enabled model group. When enabled, select at least one group.",
+              "关闭可用全部启用组；开启后至少选择一个。",
+              "Off: all enabled groups. On: select at least one.",
             )}
           />
         </div>

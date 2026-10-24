@@ -68,21 +68,14 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
         </Button>
       }
     >
-      <p className="text-xs leading-5 text-muted-foreground">
-        {titleForLocale(
-          locale,
-          "设置、渠道与密钥、模型组、价格和计划任务。",
-          "settings, channels and keys, model groups, prices, and scheduled tasks.",
-        )}
-      </p>
       <SettingsFieldList>
         <SettingsFieldRow
           htmlFor="config-export-logs"
           title={titleForLocale(locale, "包含请求日志", "Include request logs")}
           description={titleForLocale(
             locale,
-            "导出所有请求日志明细，文件可能较大",
-            "Export all request log details; the file may be large",
+            "日志明细可能较大",
+            "Log details may make the file large",
           )}
         >
           <Switch
@@ -96,8 +89,8 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
           title={titleForLocale(locale, "包含网关密钥", "Include gateway keys")}
           description={titleForLocale(
             locale,
-            "会把网关鉴权 Key 一并写入备份，导出后请妥善保管",
-            "Gateway auth keys will be included in the backup; keep the file secure",
+            "包含鉴权 Key，请妥善保管",
+            "Includes auth keys; keep the file secure",
           )}
         >
           <Switch

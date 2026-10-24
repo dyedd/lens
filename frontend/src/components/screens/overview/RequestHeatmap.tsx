@@ -54,7 +54,6 @@ function getMonthLabel(month: number, isChinese: boolean) {
 
 type Props = {
   points: HeatmapPoint[];
-  total: number;
   metric: HeatmapMetric;
   onMetricChange: (metric: HeatmapMetric) => void;
   isChineseLocale: boolean;
@@ -63,7 +62,6 @@ type Props = {
 /** Render the request activity heatmap. */
 export function RequestHeatmap({
   points,
-  total,
   metric,
   onMetricChange,
   isChineseLocale,
@@ -101,29 +99,9 @@ export function RequestHeatmap({
   return (
     <section className="space-y-3 px-1">
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">
-            {isChineseLocale ? "请求活动" : "Request activity"}
-          </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {isChineseLocale ? (
-              <>
-                最近一年，共{" "}
-                <span className="font-medium tabular-nums text-foreground">
-                  {formatCompact(total)}
-                </span>{" "}
-                次请求
-              </>
-            ) : (
-              <>
-                <span className="font-medium tabular-nums text-foreground">
-                  {formatCompact(total)}
-                </span>{" "}
-                requests over the last year
-              </>
-            )}
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">
+          {isChineseLocale ? "请求活动" : "Request activity"}
+        </h3>
         <SegmentedControl
           value={metric}
           onValueChange={onMetricChange}

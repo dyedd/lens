@@ -198,8 +198,8 @@ export function ModelGroupSettings({
                     ? "格式无效，示例：200K、1M、128000"
                     : "Invalid format. Examples: 200K, 1M, 128000"
                   : isZh
-                    ? "仅用于没单独设置上下文的成员。请求估算超出某个成员的上下文时跳过它，改用上下文更大的成员；成员都没设置则不按上下文过滤。"
-                    : "Only covers members without their own context window. A request estimated past a member's window skips it for a larger one; with nothing configured, routing ignores context."}
+                    ? "仅用于未单独设置上下文的成员；超出时跳过，均未设置则不筛选。"
+                    : "Applies to members without their own window; skip when exceeded, and ignore filtering if none is set."}
               </p>
             </SettingsRow>
 
@@ -224,7 +224,7 @@ export function ModelGroupSettings({
                 {form.match_rule_ids.length ? (
                   <span className="min-w-0 flex-1 text-xs text-muted-foreground">
                     {isZh
-                      ? "覆盖同名匹配，只加入匹配规则的模型。"
+                      ? "覆盖同名匹配，仅加入匹配模型。"
                       : "Replaces name matching; only matching models join."}
                   </span>
                 ) : null}
@@ -232,8 +232,8 @@ export function ModelGroupSettings({
               {isJoinNameMismatched ? (
                 <p className="text-xs text-muted-foreground">
                   {isZh
-                    ? `名称「${form.name}」不匹配所选规则，它自己的同名模型不会自动加入。`
-                    : `The name "${form.name}" matches no selected rule, so same-named models do not join.`}
+                    ? `名称「${form.name}」不匹配所选规则，不会自动加入同名模型。`
+                    : `"${form.name}" matches no selected rule; same-named models won't join.`}
                 </p>
               ) : null}
             </SettingsRow>

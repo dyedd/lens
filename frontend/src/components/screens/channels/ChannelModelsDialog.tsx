@@ -231,13 +231,8 @@ function ChannelModelsBody({
           </DialogTitle>
           <DialogDescription>
             {locale === "zh-CN"
-              ? "选择模型实际使用的上游协议；请求按该协议路由，四个 chat 协议之间会自动转换。"
-              : "Choose the upstream protocol the model speaks. Requests route by it, and the four chat protocols convert into each other."}
-            <span className="block">
-              {locale === "zh-CN"
-                ? "模型会按上游列表更新；删除模型后不会重新加入。上游已移除的模型会暂停调用。"
-                : "Models follow the upstream list. Deleted models stay out; models removed upstream are paused."}
-            </span>
+              ? "按上游协议路由；模型持续同步，删除后不回流，上游移除后暂停。"
+              : "Route by upstream protocol. Models stay synced, deleted models stay out, and removed upstream models pause."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -454,8 +449,8 @@ function ChannelModelsBody({
         title={locale === "zh-CN" ? "删除模型" : "Delete models"}
         description={
           locale === "zh-CN"
-            ? `删除选中的 ${removeRequest?.length ?? 0} 个模型，保存后生效。`
-            : `${removeRequest?.length ?? 0} selected models will be removed after you save.`
+            ? `删除 ${removeRequest?.length ?? 0} 个模型，保存后生效。`
+            : `Remove ${removeRequest?.length ?? 0} models on save.`
         }
         onOpenChange={(open) => {
           if (!open) setRemoveRequest(null);

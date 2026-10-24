@@ -24,37 +24,6 @@ export function cronjobTitle(locale: Locale, task: CronjobItem) {
   return label ? titleForLocale(locale, label[0], label[1]) : task.name;
 }
 
-export function cronjobDescription(locale: Locale, task: CronjobItem) {
-  const labels: Record<string, [string, string]> = {
-    [REQUEST_LOG_PRUNE_TASK_ID]: [
-      "按保留天数清理过期请求日志",
-      "Remove request logs older than the retention period",
-    ],
-    [REQUEST_LOG_STATS_PERSIST_TASK_ID]: [
-      "归档请求日志统计数据",
-      "Archive request log statistics",
-    ],
-    model_price_sync: [
-      "从 LiteLLM 同步模型价格",
-      "Sync model prices from LiteLLM",
-    ],
-    channel_model_sync: [
-      "按渠道配置自动同步上游模型",
-      "Update upstream models from channel configuration",
-    ],
-    credential_rate_sync: [
-      "同步 Sub2API 有效倍率与 NewAPI 分组参考倍率",
-      "Sync Sub2API effective rates and NewAPI group reference rates",
-    ],
-    version_check: [
-      "检测 GitHub releases 是否有新版本",
-      "Check GitHub releases for a newer version",
-    ],
-  };
-  const label = labels[task.id];
-  return label ? titleForLocale(locale, label[0], label[1]) : task.description;
-}
-
 export function cronjobScheduleLabel(locale: Locale, task: CronjobItem) {
   return formatScheduleSummary(taskDraft(task), locale);
 }

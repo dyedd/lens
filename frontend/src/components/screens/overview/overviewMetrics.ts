@@ -99,8 +99,5 @@ export function getPieMetricLabels(metric: PieMetric, isChinese: boolean) {
   return {
     label,
     trendTitle: isChinese ? `${label}趋势` : `${label} trend`,
-    cardDescription: isChinese
-      ? `模型分布与${label}趋势`
-      : `Model share and ${label.toLowerCase()} trend`,
   };
 }

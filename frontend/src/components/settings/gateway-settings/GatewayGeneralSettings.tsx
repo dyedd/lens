@@ -91,8 +91,8 @@ export function GatewayGeneralSettings({
         )}
         description={titleForLocale(
           locale,
-          "限定产生首个有效数据块的最长等待时间。流式与非流式请求在全部故障切换尝试中共用此预算；设为 0 表示不设上限。",
-          "Sets maximum wait for initial meaningful protocol response, shared across all failover attempts. 0 means unlimited.",
+          "首个有效数据块的最长等待时间；0 不限。",
+          "Max wait for the first response; 0 is unlimited.",
         )}
         invalid={Boolean(firstTokenTimeoutSecondsError)}
       >
@@ -123,8 +123,8 @@ export function GatewayGeneralSettings({
         )}
         description={titleForLocale(
           locale,
-          "首字输出后，相邻数据块之间的最长静默间隔。若上游停滞超过此时长将主动中断；设为 0 则不限制。",
-          "Maximum silence permitted between stream chunks after first token. 0 disables limit.",
+          "首字后数据块之间的最长间隔；0 不限。",
+          "Max gap between stream chunks; 0 is unlimited.",
         )}
         invalid={Boolean(streamIdleTimeoutSecondsError)}
       >
@@ -155,8 +155,8 @@ export function GatewayGeneralSettings({
         )}
         description={titleForLocale(
           locale,
-          "限制客户端单次提交的最大载荷大小（针对大图像或长上下文请求）；设为 0 表示不限制。",
-          "Limits client request body size (e.g. large images or long contexts). 0 means unlimited.",
+          "单次请求体上限；0 不限。",
+          "Max request body size; 0 is unlimited.",
         )}
         invalid={Boolean(maxRequestBodyBytesError)}
       >
