@@ -13,6 +13,16 @@ from ...models.model_groups import ModelGroupItemInput, ModelGroupItemState
 from ...models.protocols import ChannelStatus, ProtocolKind
 from ..converters import can_reach_protocol
 
+_ENDPOINT_PROTOCOLS: dict[str, ProtocolKind] = {
+    "openai_chat": ProtocolKind.OPENAI_CHAT,
+    "openai_responses": ProtocolKind.OPENAI_RESPONSES,
+    "openai_embedding": ProtocolKind.OPENAI_EMBEDDING,
+    "openai_image": ProtocolKind.OPENAI_IMAGE,
+    "anthropic": ProtocolKind.ANTHROPIC,
+    "gemini": ProtocolKind.GEMINI,
+    "rerank": ProtocolKind.RERANK,
+}
+
 
 @dataclass(slots=True)
 class RouteTarget:
@@ -32,36 +42,23 @@ class RouteTarget:
 
 def endpoint_priority(channel: ChannelConfig, requested_protocol: ProtocolKind) -> int:
     """按当前请求协议优先使用专用地址，其次国内地址和主地址。"""
-    protocol_kinds = {
-        "openai_chat": {ProtocolKind.OPENAI_CHAT},
-        "openai_responses": {ProtocolKind.OPENAI_RESPONSES},
-        "openai_embedding": {ProtocolKind.OPENAI_EMBEDDING},
-        "openai_image": {ProtocolKind.OPENAI_IMAGE},
-        "anthropic": {ProtocolKind.ANTHROPIC},
-        "gemini": {ProtocolKind.GEMINI},
-        "rerank": {ProtocolKind.RERANK},
-        "protocol": {channel.protocol},
-    }
-    if channel.endpoint_kind in protocol_kinds:
-        return int(requested_protocol in protocol_kinds[channel.endpoint_kind]) * 2
+    endpoint_protocol = _endpoint_protocol(channel)
+    if endpoint_protocol is not None:
+        return int(requested_protocol == endpoint_protocol) * 2
     return {"default": 0, "china": 1, "models": -1}.get(channel.endpoint_kind, 0)
 
 
 def endpoint_supports_protocol(
     channel: ChannelConfig, requested_protocol: ProtocolKind
 ) -> bool:
-    protocol_kinds = {
-        "openai_chat": ProtocolKind.OPENAI_CHAT,
-        "openai_responses": ProtocolKind.OPENAI_RESPONSES,
-        "openai_embedding": ProtocolKind.OPENAI_EMBEDDING,
-        "openai_image": ProtocolKind.OPENAI_IMAGE,
-        "anthropic": ProtocolKind.ANTHROPIC,
-        "gemini": ProtocolKind.GEMINI,
-        "rerank": ProtocolKind.RERANK,
-        "protocol": channel.protocol,
-    }
-    endpoint_protocol = protocol_kinds.get(channel.endpoint_kind)
+    endpoint_protocol = _endpoint_protocol(channel)
     return endpoint_protocol is None or endpoint_protocol == requested_protocol
+
+
+def _endpoint_protocol(channel: ChannelConfig) -> ProtocolKind | None:
+    if channel.endpoint_kind == "protocol":
+        return channel.protocol
+    return _ENDPOINT_PROTOCOLS.get(channel.endpoint_kind)
 
 
 @dataclass(frozen=True, slots=True)
