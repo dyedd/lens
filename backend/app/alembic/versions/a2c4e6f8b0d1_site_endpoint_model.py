@@ -1,4 +1,4 @@
-"""Collapse site protocol configs to one endpoint per URL.
+"""将站点协议配置收敛为每个 URL 一个端点。
 
 Revision ID: a2c4e6f8b0d1
 Revises: a1b9c3d5e7f0

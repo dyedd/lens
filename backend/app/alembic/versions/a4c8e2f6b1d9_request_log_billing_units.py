@@ -1,4 +1,4 @@
-"""add request log billing units
+"""增加请求日志计费单位。
 
 Revision ID: a4c8e2f6b1d9
 Revises: d7f3a9c1e5b2

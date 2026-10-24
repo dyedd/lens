@@ -1,4 +1,4 @@
-"""track manual model price overrides"""
+"""记录手动模型价格覆盖。"""
 
 from collections.abc import Sequence
 

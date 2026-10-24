@@ -1,4 +1,4 @@
-"""Move multimodal fallback mappings onto model groups.
+"""将多模态回退映射迁移到模型组。
 
 Revision ID: c8d4e6f0a1b2
 Revises: b2c3d4e5f6a7

@@ -1,7 +1,4 @@
-"""Move regex patterns into a shared rule library referenced by id.
-
-Site sync filters, model group match regexes, and the ``regex_rule_library``
-setting become ``regex_rules`` rows; sites and groups keep JSON id lists.
+"""把正则模式迁移到按 id 引用的共享规则库。
 
 Revision ID: c7e9a1b3d5f8
 Revises: b3d5f7a9c1e2
@@ -63,7 +60,7 @@ def _move_patterns_into_rules(conn: sa.Connection) -> None:
     rule_ids_by_pattern: dict[str, str] = {}
 
     def ensure_rule_ids(raw_pattern: str, name: str, description: str = "") -> str:
-        # Matching is always case-insensitive, so a leading (?i) is redundant.
+        # 匹配始终不区分大小写，因此开头的 (?i) 是多余的。
         pattern = raw_pattern.strip().removeprefix("(?i)").strip()
         if not pattern:
             return "[]"
@@ -84,7 +81,7 @@ def _move_patterns_into_rules(conn: sa.Connection) -> None:
             )
         return json.dumps([rule_id], ensure_ascii=True)
 
-    # Library rules go first so they keep their names.
+    # 先处理规则库规则，以保留它们的名称。
     for rule in _load_library_rules(conn):
         ensure_rule_ids(rule["pattern"], rule["name"], rule["description"])
     conn.execute(

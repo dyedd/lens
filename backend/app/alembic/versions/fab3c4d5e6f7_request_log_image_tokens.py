@@ -1,4 +1,4 @@
-"""add image input token accounting"""
+"""增加图像输入 token 统计。"""
 
 from collections.abc import Sequence
 

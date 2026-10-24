@@ -1,4 +1,4 @@
-"""add site credential rates
+"""增加站点凭证倍率。
 
 Revision ID: f6c2d8e0b4a1
 Revises: c0d1e2f3a4b5

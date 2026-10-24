@@ -1,4 +1,4 @@
-"""Request log protocol config attribution.
+"""请求日志记录所属协议配置。
 
 Revision ID: e8b5c2d9a4f7
 Revises: c8d4e6f0a1b2

@@ -1,9 +1,4 @@
-"""Replace group match rules with name-based automatic joining.
-
-Groups no longer carry names, regex rules, or site-tag filters. Members join
-when the group name matches the model name, so the rule columns go away and
-members that joined by rule now report automatic placement.
-"""
+"""用基于名称的自动加入替换模型组匹配规则。"""
 
 from collections.abc import Sequence
 

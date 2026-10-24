@@ -1,4 +1,4 @@
-"""Add automatic upstream model synchronization to protocol configs."""
+"""为协议配置增加上游模型自动同步。"""
 
 from collections.abc import Sequence
 

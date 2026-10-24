@@ -1,4 +1,4 @@
-"""Make every configured site model an upstream sync target.
+"""让每个已配置的站点模型都成为上游同步目标。
 
 Revision ID: b2c4d6e8f0a1
 Revises: a1b2c3d4e5f6
@@ -24,8 +24,8 @@ def upgrade() -> None:
             sa.text(
                 "SELECT protocol_config_id, credential_id, protocol, model_name "
                 "FROM site_discovered_models "
-                # Old manual rows may have no protocol; they cannot be routed or
-                # synced, and site_protocol_config_sync_targets.protocol is NOT NULL.
+                # 旧的手工记录可能没有协议；它们无法被路由或
+                # 同步，而 site_protocol_config_sync_targets.protocol 为 NOT NULL。
                 "WHERE protocol IS NOT NULL"
             )
         ).mappings()

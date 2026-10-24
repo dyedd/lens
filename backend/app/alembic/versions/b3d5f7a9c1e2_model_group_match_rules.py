@@ -1,7 +1,6 @@
-"""Replace model group sync filters with match rules; repair pending credential ids.
+"""用匹配规则替换模型组同步过滤；并修复 pending 凭证 id。
 
-Older admin UIs could persist credential ids as ``pending-<id>`` and later save
-the same credential without the prefix, orphaning references to it.
+旧版管理界面会把凭证 id 存成 ``pending-<id>``，之后又以无前缀保存同一凭证，造成引用悬空。
 
 Revision ID: b3d5f7a9c1e2
 Revises: a9d3f7c1e5b2
@@ -22,7 +21,7 @@ depends_on: str | Sequence[str] | None = None
 
 PENDING_CREDENTIAL_PREFIX = "pending-"
 
-# (table, row id column, credential id column, unique key columns)
+# （表名、行 id 列、凭证 id 列、唯一键列）
 CREDENTIAL_REFERENCES = (
     ("site_credentials", "id", "id", ("id",)),
     ("site_credential_rates", "credential_id", "credential_id", ("credential_id",)),
@@ -42,7 +41,7 @@ CREDENTIAL_REFERENCES = (
 
 
 def _strip_pending_credential_ids(conn: sa.Connection) -> None:
-    """Rename ``pending-`` credential ids; an existing unprefixed row wins."""
+    """重命名带 ``pending-`` 前缀的凭证 id；若已存在无前缀记录则保留后者。"""
     for table, row_id, column, unique_columns in CREDENTIAL_REFERENCES:
         selected = ", ".join(dict.fromkeys((row_id, *unique_columns)))
         rows = conn.execute(sa.text(f"SELECT {selected} FROM {table}")).mappings().all()

@@ -1,8 +1,6 @@
-"""Restore site-level onboarding regex rules and drop sync targets.
+"""恢复站点级接入正则规则并删除同步目标表。
 
-Every saved site model is a sync target by definition, so the explicit
-target table only duplicated the model rows. Sites get include and exclude
-rule references back: a sync then materializes matching upstream models.
+站点模型本身就是同步目标，独立的目标表只是重复模型记录。
 """
 
 import uuid
@@ -43,7 +41,7 @@ def upgrade() -> None:
         )
 
     conn = op.get_bind()
-    # Targets saved after the last sync have no model row yet; keep them.
+    # 上次同步之后保存的目标尚无模型记录，需要保留。
     missing_rows = (
         conn.execute(
             sa.text(
