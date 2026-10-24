@@ -194,12 +194,14 @@ class RoutePlanner:
         available: list[RouteTarget],
         route_key: str,
         strategy: RoutingStrategy,
+        *,
+        mutate: bool = True,
     ) -> list[RouteTarget]:
         if not available:
             return []
         if strategy == RoutingStrategy.FAILOVER:
             return list(available)
-        primary_index = self._swrr_pick_index(available, route_key, mutate=True)
+        primary_index = self._swrr_pick_index(available, route_key, mutate=mutate)
         primary = available[primary_index]
         fallbacks = [
             target for index, target in enumerate(available) if index != primary_index
@@ -377,25 +379,13 @@ class RoutePlanner:
             if endpoint_priority(target.channel, protocol) < preferred_priority
         ]
 
-        def order_group(group: list[RouteTarget]) -> list[RouteTarget]:
-            if not group:
-                return []
-            primary_index = (
-                0
-                if strategy == RoutingStrategy.FAILOVER
-                else self._swrr_pick_index(group, route_key, mutate=False)
-            )
-            primary = group[primary_index]
-            remaining = [
-                target for index, target in enumerate(group) if index != primary_index
-            ]
-            if strategy != RoutingStrategy.FAILOVER:
-                remaining.sort(key=self._health.score, reverse=True)
-            return [primary, *remaining]
-
         ordered_available = [
-            *order_group(preferred_available),
-            *order_group(fallback_available),
+            *self._order_available(
+                preferred_available, route_key, strategy, mutate=False
+            ),
+            *self._order_available(
+                fallback_available, route_key, strategy, mutate=False
+            ),
         ]
         cooled.sort(key=lambda target: -endpoint_priority(target.channel, protocol))
         return ordered_available + cooled, ordered_available[0].channel.id

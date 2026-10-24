@@ -408,11 +408,6 @@ def _target_credential_key(target: RouteTarget) -> CredentialKey:
     )
 
 
-def _fault_protocols(channel: ChannelConfig) -> tuple[str, ...]:
-    del channel
-    return ("",)
-
-
 def _most_restrictive_state(
     states: Iterable[CooldownState | None],
 ) -> CooldownState | None:
@@ -458,7 +453,7 @@ def build_channel_health(
     now: float,
 ) -> ChannelHealth:
     """Project the runtime cooldown and score timelines into admin DTOs."""
-    fault_protocols = _fault_protocols(channel)
+    fault_protocols = ("",)
     configured_models = _configured_model_names(channel)
     model_names = configured_models | {
         key[1]
