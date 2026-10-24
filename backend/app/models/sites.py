@@ -46,7 +46,21 @@ def _canonicalize_site_tags(values: list[str]) -> list[str]:
 SiteTags = Annotated[list[str], AfterValidator(_canonicalize_site_tags)]
 
 SiteCredentialRateSource = Literal["none", "sub2api", "newapi"]
-SiteBaseUrlKind = Literal["default", "protocol", "china"]
+# Endpoint purpose is independent from the URL value: two purposes may share
+# one URL, while the purpose determines which gateway operation can use it.
+SiteBaseUrlKind = Literal[
+    "default",
+    "openai_chat",
+    "openai_responses",
+    "openai_embedding",
+    "openai_image",
+    "anthropic",
+    "gemini",
+    "rerank",
+    "models",
+    "china",
+    "protocol",
+]
 
 
 class SiteBaseUrl(StrictBaseModel):
@@ -57,6 +71,11 @@ class SiteBaseUrl(StrictBaseModel):
 
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)
 
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _normalize_legacy_kind(cls, value: object) -> object:
+        return "default" if value == "openai" else value
+
 
 class SiteBaseUrlInput(StrictBaseModel):
     id: str | None = None
@@ -64,6 +83,11 @@ class SiteBaseUrlInput(StrictBaseModel):
     kind: SiteBaseUrlKind = "default"
 
     _canonicalize_url = field_validator("url", mode="before")(canonicalize_base_url)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _normalize_legacy_kind(cls, value: object) -> object:
+        return "default" if value == "openai" else value
 
 
 class SiteCredential(StrictBaseModel):

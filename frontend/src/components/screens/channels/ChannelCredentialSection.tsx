@@ -316,12 +316,15 @@ export function ChannelCredentialSection({
                   key={credential.id}
                   className="space-y-1.5 border-b border-border/40 px-2.5 py-1.5 text-xs last:border-b-0"
                 >
-                  <div className="flex h-7 items-center gap-2">
-                    <span className="w-10 shrink-0 truncate text-xs text-muted-foreground tabular-nums">
-                      {credentialLabel({ name: "" }, index, locale)}
+                  <div className="grid min-w-0 grid-cols-[1.75rem_5rem_minmax(8rem,1fr)_5.5rem_1.5rem] items-center gap-1.5">
+                    <span
+                      className="inline-flex size-5 items-center justify-center rounded-full bg-background text-[11px] font-medium text-muted-foreground tabular-nums"
+                      aria-label={credentialLabel({ name: "" }, index, locale)}
+                    >
+                      {index + 1}
                     </span>
                     <Input
-                      className="h-7 w-20 shrink-0 px-2 text-xs"
+                      className="h-7 w-full min-w-0 px-2 text-xs"
                       value={credential.name}
                       placeholder={isZh ? "备注" : "Remark"}
                       aria-label={isZh ? "密钥备注" : "Key remark"}
@@ -348,10 +351,10 @@ export function ChannelCredentialSection({
                       }
                     >
                       <SelectTrigger
-                        className="h-7 w-[88px] shrink-0 px-2"
+                        className="h-7 w-full min-w-0 px-1"
                         aria-label={isZh ? "倍率来源" : "Rate source"}
                       >
-                        <SelectValue />
+                        <SelectValue className="min-w-0 flex-1 truncate" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">
@@ -367,7 +370,7 @@ export function ChannelCredentialSection({
                           type="button"
                           variant="ghost"
                           size="icon-sm"
-                          className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+                          className="size-6 justify-self-end text-muted-foreground hover:text-foreground"
                           aria-label={isZh ? "删除 API Key" : "Delete API key"}
                           onClick={() => removeKey(credential.id)}
                         >

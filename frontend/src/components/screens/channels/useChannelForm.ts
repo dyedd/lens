@@ -16,7 +16,6 @@ import {
   applyApiKeyDrafts,
   buildModels,
   createLocalId,
-  duplicateBaseUrlCount,
   emptyForm,
   emptyProtocolConfig,
   invalidModelProtocolCount,
@@ -51,14 +50,6 @@ function validateChannelForm(form: FormState, locale: Locale) {
   }
   if (!form.base_urls.some((item) => item.url.trim())) {
     toast.error(locale === "zh-CN" ? "请填写渠道地址" : "Enter a channel URL");
-    return false;
-  }
-  if (duplicateBaseUrlCount(form.base_urls)) {
-    toast.error(
-      locale === "zh-CN"
-        ? "同一个渠道内不允许重复配置同一地址"
-        : "The same endpoint cannot be configured twice in one channel",
-    );
     return false;
   }
   if (!credentials.some((item) => item.api_key.trim())) {
@@ -240,7 +231,27 @@ export function useChannelForm(locale: Locale) {
         {
           id,
           url: "",
-          kind: "china",
+          kind:
+            (
+              [
+                "openai_chat",
+                "openai_responses",
+                "openai_embedding",
+                "openai_image",
+                "anthropic",
+                "gemini",
+                "rerank",
+                "models",
+                "china",
+              ] as const
+            ).find(
+              (kind) =>
+                !current.base_urls.some(
+                  (item) =>
+                    (item.kind === "default" ? "openai_chat" : item.kind) ===
+                    kind,
+                ),
+            ) ?? "china",
           shareKeys: true,
           newApiKeysLines: "",
         },

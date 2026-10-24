@@ -423,10 +423,10 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
 
-def test_site_endpoint_kinds_round_trip_and_reject_canonical_duplicates(
+def test_site_endpoint_kinds_round_trip_and_allow_same_url_for_distinct_purposes(
     client, admin_headers, create_site
 ) -> None:
-    """端点类型能往返保存，规范化后的重复地址会被拒绝。"""
+    """端点类型能往返保存，不同用途可以复用同一个地址。"""
     payload = valid_site_payload(
         name="Endpoint kinds",
         base_id="endpoint-main",
@@ -464,10 +464,136 @@ def test_site_endpoint_kinds_round_trip_and_reject_canonical_duplicates(
     duplicate["base_urls"].append(
         {"id": "duplicate-copy", "url": "https://upstream.example", "kind": "china"}
     )
+    duplicate["protocols"].append(
+        {
+            "id": "duplicate-copy-config",
+            "base_url_id": "duplicate-copy",
+            "models": [
+                {
+                    "credential_id": "duplicate-key",
+                    "model_name": "gpt-4o",
+                    "enabled": True,
+                    "protocol": "openai_chat",
+                }
+            ],
+        }
+    )
     response = client.post("/api/admin/sites", headers=admin_headers, json=duplicate)
 
+    assert response.status_code == 201, response.text
+    assert len(response.json()["base_urls"]) == 2
+
+    duplicate_purpose = valid_site_payload(
+        name="Duplicate purpose",
+        base_id="purpose-main",
+        credential_id="purpose-key",
+        protocol_config_id="purpose-config",
+    )
+    duplicate_purpose["base_urls"][0]["kind"] = "openai_chat"
+    duplicate_purpose["base_urls"].append(
+        {"id": "purpose-copy", "url": "https://other.example", "kind": "openai_chat"}
+    )
+    duplicate_purpose["protocols"].append(
+        {
+            "id": "purpose-copy-config",
+            "base_url_id": "purpose-copy",
+            "models": [
+                {
+                    "credential_id": "purpose-key",
+                    "model_name": "gpt-4o",
+                    "enabled": True,
+                    "protocol": "openai_chat",
+                }
+            ],
+        }
+    )
+    invalid = client.post(
+        "/api/admin/sites", headers=admin_headers, json=duplicate_purpose
+    )
+    assert invalid.status_code == 400, invalid.text
+    assert "Duplicate endpoint purpose" in invalid.json()["error"]["message"]
+
+
+def test_legacy_openai_endpoint_kind_loads_as_default():
+    from app.models.sites import SiteBaseUrl, SiteBaseUrlInput
+
+    assert (
+        SiteBaseUrlInput(url="https://legacy.example", kind="openai").kind == "default"
+    )
+    assert (
+        SiteBaseUrl(id="legacy-base", url="https://legacy.example", kind="openai").kind
+        == "default"
+    )
+
+
+def test_site_save_regenerates_model_ids_reused_across_protocol_configs(
+    client, admin_headers
+):
+    payload = valid_site_payload(
+        name="Duplicate model ids",
+        base_id="duplicate-model-base",
+        credential_id="duplicate-model-key",
+        protocol_config_id="duplicate-model-config",
+    )
+    payload["base_urls"].append(
+        {
+            "id": "duplicate-model-base-2",
+            "url": "https://other.example/v1",
+            "kind": "china",
+        }
+    )
+    first_model = payload["protocols"][0]["models"][0]
+    first_model["id"] = "reused-model-id"
+    payload["protocols"].append(
+        {
+            "id": "duplicate-model-config-2",
+            "base_url_id": "duplicate-model-base-2",
+            "models": [{**first_model}],
+        }
+    )
+
+    response = client.post("/api/admin/sites", headers=admin_headers, json=payload)
+
+    assert response.status_code == 201, response.text
+    model_ids = [
+        model["id"]
+        for protocol_config in response.json()["protocols"]
+        for model in protocol_config["models"]
+    ]
+    assert len(model_ids) == 2
+    assert len(set(model_ids)) == 2
+
+
+def test_endpoint_purpose_allows_empty_model_config(client, admin_headers) -> None:
+    payload = valid_site_payload(
+        name="Empty endpoint",
+        base_id="empty-main",
+        credential_id="empty-key",
+        protocol_config_id="empty-config",
+    )
+    payload["base_urls"][0]["kind"] = "openai_chat"
+    payload["protocols"][0]["models"] = []
+    response = client.post("/api/admin/sites", headers=admin_headers, json=payload)
+    assert response.status_code == 201, response.text
+
+
+def test_endpoint_purpose_rejects_empty_mismatched_protocol_config(
+    client, admin_headers
+) -> None:
+    payload = valid_site_payload(
+        name="Empty mismatched endpoint",
+        base_id="empty-mismatch-main",
+        credential_id="empty-mismatch-key",
+        protocol_config_id="empty-mismatch-config",
+    )
+    payload["base_urls"][0]["kind"] = "openai_chat"
+    payload["protocols"][0]["protocols"] = ["anthropic"]
+    payload["protocols"][0]["models"] = []
+
+    response = client.post("/api/admin/sites", headers=admin_headers, json=payload)
+
     assert response.status_code == 400, response.text
-    assert "Duplicate base URL" in response.json()["error"]["message"]
+    assert "does not support" in response.json()["error"]["message"]
 
 
 def test_list_sites_filters_by_exact_tag(client, admin_headers, create_site) -> None:

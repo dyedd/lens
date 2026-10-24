@@ -135,23 +135,6 @@ export function siteEndpointUrls(site: Site) {
   return site.base_urls.map((item) => item.url.trim()).filter(Boolean);
 }
 
-function canonicalEndpointUrl(url: string) {
-  return url
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/(?:v1beta|v1)$/, "");
-}
-
-/** 按接口版本后缀清理后，统计重复的渠道地址。 */
-export function duplicateBaseUrlCount(baseUrls: Array<{ url: string }>) {
-  const counts = new Map<string, number>();
-  for (const item of baseUrls) {
-    const url = canonicalEndpointUrl(item.url);
-    if (url) counts.set(url, (counts.get(url) ?? 0) + 1);
-  }
-  return [...counts.values()].filter((count) => count > 1).length;
-}
-
 /** Shortens a base URL for dense table cells. */
 export function formatBaseUrlLabel(url: string) {
   return url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
@@ -343,7 +326,7 @@ export const emptyProtocolConfig = (
   models: [],
 });
 
-/** Creates a channel editor form with one URL and protocol config. */
+/** Creates a channel editor form with one Chat Completions endpoint. */
 export const emptyForm = (): FormState => {
   const baseUrlId = createLocalId("baseurl");
   return {

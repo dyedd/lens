@@ -6,7 +6,18 @@ import type {
 import type { ProtocolKind } from "./protocols";
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";
-export type SiteBaseUrlKind = "default" | "protocol" | "china";
+export type SiteBaseUrlKind =
+  | "default"
+  | "openai_chat"
+  | "openai_responses"
+  | "openai_embedding"
+  | "openai_image"
+  | "anthropic"
+  | "gemini"
+  | "rerank"
+  | "models"
+  | "protocol"
+  | "china";
 export type SiteBaseUrl = {
   id: string;
   url: string;

@@ -71,7 +71,9 @@ function remapModelsToCredentials(
 
 /** Rebuilds one protocol config per base URL with the keys it can use. */
 export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
-  const urls = form.base_urls.filter((item) => item.url.trim());
+  const urls = form.base_urls.filter(
+    (item) => item.url.trim() && item.kind !== "models",
+  );
   const existingByUrl = new Map(
     form.protocolConfigs.map((config) => [config.base_url_id, config] as const),
   );
@@ -80,14 +82,15 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
     const credentialIds = credentialIdsForUrl(form, url.id);
     const existing = existingByUrl.get(url.id);
     const source = existing ?? primaryConfig;
-    const protocols = protocolConfigEffectiveProtocols({
-      models: existing?.models ?? source?.models ?? [],
-    });
-    const models = existing?.models.length
-      ? existing.models.filter((model) =>
-          credentialIds.includes(model.credential_id),
-        )
+    const sourceModels = existing?.models.length
+      ? existing.models
       : remapModelsToCredentials(source?.models ?? [], credentialIds);
+    const models = sourceModels.filter(
+      (model) =>
+        credentialIds.includes(model.credential_id) &&
+        endpointSupportsProtocol(url.kind, model.protocols),
+    );
+    const protocols = protocolConfigEffectiveProtocols({ models });
     const base =
       existing ??
       ({
@@ -100,10 +103,29 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
       credential_ids: credentialIds,
       protocols: protocols.length
         ? protocols
-        : (existing?.protocols ?? source?.protocols ?? []),
+        : (existing?.protocols ?? source?.protocols ?? []).filter((protocol) =>
+            endpointSupportsProtocol(url.kind, [protocol]),
+          ),
       models: coalesceFormModels(models),
     };
   });
+}
+
+function endpointSupportsProtocol(
+  kind: FormBaseUrl["kind"],
+  protocols: ProtocolKind[],
+) {
+  const protocolByKind: Partial<Record<FormBaseUrl["kind"], ProtocolKind>> = {
+    openai_chat: "openai_chat",
+    openai_responses: "openai_responses",
+    openai_embedding: "openai_embedding",
+    openai_image: "openai_image",
+    anthropic: "anthropic",
+    gemini: "gemini",
+    rerank: "rerank",
+  };
+  const protocol = protocolByKind[kind];
+  return protocol === undefined || protocols.includes(protocol);
 }
 
 /** Converts a persisted site into channel editor state. */

@@ -54,6 +54,7 @@ class SiteProtocolConfigUpsertsMixin:
         protocol_configs: list[SiteProtocolConfigInput],
         credentials: list[SiteCredential],
         base_url_ids: set[str],
+        base_url_kinds: dict[str, str] | None = None,
     ) -> set[str]:
         protocol_config_ids: set[str] = set()
         seen_base_url_ids: set[str] = set()
@@ -96,6 +97,23 @@ class SiteProtocolConfigUpsertsMixin:
                     ]
                 )
             )
+            endpoint_kind = (base_url_kinds or {}).get(protocol_config.base_url_id)
+            allowed_protocols = {
+                "openai_chat": {"openai_chat"},
+                "openai_responses": {"openai_responses"},
+                "openai_embedding": {"openai_embedding"},
+                "openai_image": {"openai_image"},
+                "anthropic": {"anthropic"},
+                "gemini": {"gemini"},
+                "rerank": {"rerank"},
+            }.get(endpoint_kind)
+            if allowed_protocols is not None and any(
+                protocol.value not in allowed_protocols
+                for protocol in configured_protocols
+            ):
+                raise ValueError(
+                    f"Endpoint purpose {endpoint_kind} does not support the configured protocol"
+                )
             entity.protocols_json = json.dumps(
                 [protocol.value for protocol in configured_protocols],
                 ensure_ascii=True,
@@ -107,7 +125,12 @@ class SiteProtocolConfigUpsertsMixin:
                 protocol_config,
                 selected_credential_ids,
             )
-        missing_urls = base_url_ids - seen_base_url_ids
+        required_base_url_ids = {
+            base_url_id
+            for base_url_id in base_url_ids
+            if (base_url_kinds or {}).get(base_url_id) != "models"
+        }
+        missing_urls = required_base_url_ids - seen_base_url_ids
         if missing_urls:
             missing_label = ", ".join(sorted(missing_urls))
             raise ValueError(
@@ -150,6 +173,16 @@ class SiteProtocolConfigUpsertsMixin:
                 SiteDiscoveredModelEntity.protocol_config_id == protocol_config_id
             )
         )
+        used_model_ids = set(
+            (
+                await session.execute(
+                    select(SiteDiscoveredModelEntity.id).where(
+                        SiteDiscoveredModelEntity.protocol_config_id
+                        != protocol_config_id
+                    )
+                )
+            ).scalars()
+        )
         seen_models: set[tuple[str, str, str]] = set()
         seen_row_ids: set[str] = set()
 
@@ -175,7 +208,7 @@ class SiteProtocolConfigUpsertsMixin:
 
             is_upstream_missing = model.upstream_missing
             model_id = model.id
-            if not model_id or model_id in seen_row_ids:
+            if not model_id or model_id in seen_row_ids or model_id in used_model_ids:
                 model_id = str(uuid.uuid4())
             seen_row_ids.add(model_id)
 
@@ -286,6 +319,7 @@ class SiteConfigUpsertsMixin(
             payload.protocols,
             built_credentials,
             base_url_ids,
+            {item.id: item.kind for item in built_base_urls},
         )
         await self._upsert_credential_rates(
             session,

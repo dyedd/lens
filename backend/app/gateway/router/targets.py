@@ -32,9 +32,36 @@ class RouteTarget:
 
 def endpoint_priority(channel: ChannelConfig, requested_protocol: ProtocolKind) -> int:
     """按当前请求协议优先使用专用地址，其次国内地址和主地址。"""
-    if channel.endpoint_kind == "protocol":
-        return int(channel.protocol == requested_protocol) * 2
-    return {"default": 0, "china": 1}.get(channel.endpoint_kind, 0)
+    protocol_kinds = {
+        "openai_chat": {ProtocolKind.OPENAI_CHAT},
+        "openai_responses": {ProtocolKind.OPENAI_RESPONSES},
+        "openai_embedding": {ProtocolKind.OPENAI_EMBEDDING},
+        "openai_image": {ProtocolKind.OPENAI_IMAGE},
+        "anthropic": {ProtocolKind.ANTHROPIC},
+        "gemini": {ProtocolKind.GEMINI},
+        "rerank": {ProtocolKind.RERANK},
+        "protocol": {channel.protocol},
+    }
+    if channel.endpoint_kind in protocol_kinds:
+        return int(requested_protocol in protocol_kinds[channel.endpoint_kind]) * 2
+    return {"default": 0, "china": 1, "models": -1}.get(channel.endpoint_kind, 0)
+
+
+def endpoint_supports_protocol(
+    channel: ChannelConfig, requested_protocol: ProtocolKind
+) -> bool:
+    protocol_kinds = {
+        "openai_chat": ProtocolKind.OPENAI_CHAT,
+        "openai_responses": ProtocolKind.OPENAI_RESPONSES,
+        "openai_embedding": ProtocolKind.OPENAI_EMBEDDING,
+        "openai_image": ProtocolKind.OPENAI_IMAGE,
+        "anthropic": ProtocolKind.ANTHROPIC,
+        "gemini": ProtocolKind.GEMINI,
+        "rerank": ProtocolKind.RERANK,
+        "protocol": channel.protocol,
+    }
+    endpoint_protocol = protocol_kinds.get(channel.endpoint_kind)
+    return endpoint_protocol is None or endpoint_protocol == requested_protocol
 
 
 @dataclass(frozen=True, slots=True)

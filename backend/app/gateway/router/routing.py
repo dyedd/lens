@@ -13,6 +13,7 @@ from .targets import (
     RouteTarget,
     build_route_targets,
     endpoint_priority,
+    endpoint_supports_protocol,
     target_key,
 )
 
@@ -130,12 +131,16 @@ class RoutePlanner:
         available = [
             target
             for target in pool
-            if self._health.is_target_available(target, now=now)
+            if endpoint_supports_protocol(target.channel, protocol)
+            and target.channel.endpoint_kind != "models"
+            and self._health.is_target_available(target, now=now)
         ]
         cooling = [
             target
             for target in pool
-            if not self._health.is_target_available(target, now=now)
+            if endpoint_supports_protocol(target.channel, protocol)
+            and target.channel.endpoint_kind != "models"
+            and not self._health.is_target_available(target, now=now)
         ]
         if not available and not cooling:
             detail = f"No enabled channels available for protocol={protocol.value}"
@@ -344,6 +349,11 @@ class RoutePlanner:
         available: list[RouteTarget] = []
         cooled: list[RouteTarget] = []
         for target in targets:
+            if (
+                not endpoint_supports_protocol(target.channel, protocol)
+                or target.channel.endpoint_kind == "models"
+            ):
+                continue
             (
                 available
                 if self._health.is_target_available(target, now=now)
