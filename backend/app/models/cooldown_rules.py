@@ -13,6 +13,7 @@ class CooldownDetectionRule(StrictBaseModel):
     status_code: int | None = Field(default=None, ge=100, le=599)
     body_regex: str | None = Field(default=None, max_length=1000)
     scope: Literal["key", "model", "channel"] = "model"
+    action: Literal["retry_key", "retry_channel", "terminal"] | None = None
     category: Literal["auth", "not_found", "rate_limit", "server", "timeout", "network"]
     cooldown_seconds: int = Field(default=0, ge=0, le=604800)
     priority: int = Field(default=0, ge=-10000, le=10000)

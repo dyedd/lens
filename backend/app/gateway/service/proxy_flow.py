@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
+from math import ceil
 from time import perf_counter
 from typing import Any
 
@@ -15,8 +16,8 @@ from ...core.model_name_parser import parse_model_name
 from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind
-from ..router import RouteSelection, RouteTarget
-from ..router.routing import CooldownRoutingError
+from ..router import RouteSelection, RouteTarget, TargetKey, target_key
+from ..router.failover import RetryAction, next_candidate
 from .app_state import app_state
 from .auth import gateway_key_allows_model
 from .context_tokens import estimate_request_context_tokens
@@ -124,9 +125,7 @@ async def _resolve_proxy_route(
         )
         await log_ctx.record_connecting(is_stream=is_stream_body)
         return RouteResolution(plan=plan, selection=selection, error=None)
-    except (CooldownRoutingError, RoutingError) as exc:
-        if isinstance(exc, CooldownRoutingError):
-            _log_cooldown_attempts(log_ctx, exc.cooled_targets)
+    except RoutingError as exc:
         return RouteResolution(
             plan=plan,
             selection=None,
@@ -142,12 +141,21 @@ async def _resolve_proxy_route(
         )
 
 
-def _log_cooldown_attempts(
+def _record_cooled_candidates(
+    *,
     log_ctx: RequestLogger,
-    cooled_targets: list[tuple[RouteTarget, str]],
+    failures: FailureLedger,
+    ordered: list[RouteTarget],
+    tried: set[TargetKey],
 ) -> None:
-    """Record every cooled target as a skipped attempt for the chain dialog."""
-    for target, reason in cooled_targets:
+    """Record every candidate the loop skipped because it was cooling."""
+    for target in ordered:
+        if target_key(target) in tried:
+            continue
+        seconds = app_state.router.cooldown_remaining_seconds(target)
+        if seconds <= 0:
+            continue
+        failures.cooled_waits[target_key(target)] = seconds
         log_ctx.attempts.append(
             AttemptLog(
                 channel_id=target.channel.id,
@@ -158,7 +166,8 @@ def _log_cooldown_attempts(
                 status_code=503,
                 success=False,
                 duration_ms=0,
-                error_message=reason,
+                error_message=app_state.router.cooldown_reason(target)
+                or "cooling down",
             )
         )
 
@@ -174,12 +183,7 @@ async def _routing_error_response(
     failures: FailureLedger | None = None,
 ) -> JSONResponse:
     error_msg = str(exc).strip()
-    if isinstance(exc, CooldownRoutingError):
-        message = (
-            f"Gateway routing failed: all upstream targets for '{requested_model}' "
-            f"are currently in cooldown ({error_msg})"
-        )
-    elif error_msg:
+    if error_msg:
         message = f"Gateway routing failed: {error_msg}"
     else:
         message = f"Gateway routing failed for model '{requested_model}'"
@@ -265,7 +269,11 @@ async def _run_route_attempts(
 ) -> Response | None:
     """Try each available target, returning the first successful response."""
     async for current_plan, current_selection in route_plans:
-        for target in [current_selection.primary, *current_selection.fallbacks]:
+        ordered = current_selection.ordered()
+        tried: set[TargetKey] = set()
+        failed: RouteTarget | None = None
+        action = RetryAction.RETRY_CHANNEL
+        while True:
             if deadline.is_first_token_expired():
                 timeout_message = deadline.timeout_message(kind="first_token")
                 log_ctx.plan_route(
@@ -283,18 +291,49 @@ async def _run_route_attempts(
                     error_type="gateway_timeout",
                     message=timeout_message,
                 )
-            if not app_state.router.is_target_available(target):
-                continue
-            response = await run_attempt(
-                request=request,
-                plan=current_plan,
-                target=target,
-                deadline=deadline,
-                log_ctx=log_ctx,
-                failures=failures,
+            candidate = next_candidate(
+                ordered,
+                failed=failed,
+                tried=tried,
+                action=action,
+                claim=lambda target: app_state.router.claim_target(
+                    target,
+                    lease_seconds=float(request.runtime["first_token_timeout_seconds"]),
+                ),
             )
+            if candidate is None:
+                _record_cooled_candidates(
+                    log_ctx=log_ctx,
+                    failures=failures,
+                    ordered=ordered,
+                    tried=tried,
+                )
+                break
+            target, is_probe = candidate
+            tried.add(target_key(target))
+            response: Response | None = None
+            try:
+                response = await run_attempt(
+                    request=request,
+                    plan=current_plan,
+                    target=target,
+                    deadline=deadline,
+                    log_ctx=log_ctx,
+                    failures=failures,
+                    was_probe=is_probe,
+                )
+            finally:
+                if is_probe and not (
+                    response is not None and bool(request.body.get("stream"))
+                ):
+                    app_state.router.release_probe(target)
             if response is not None:
                 return response
+            failed = target
+            action = failures.last_action or RetryAction.RETRY_CHANNEL
+            app_state.router.note_failure(
+                current_plan.cursor_key or current_plan.resolved_group_name or ""
+            )
     return None
 
 
@@ -358,6 +397,22 @@ async def _check_gateway_model_access(
     )
 
 
+def _retry_after_headers(seconds: float | None) -> dict[str, str] | None:
+    """Tell the client when the soonest candidate becomes usable again."""
+    if seconds is None or seconds <= 0:
+        return None
+    return {"Retry-After": str(max(int(ceil(seconds)), 1))}
+
+
+def _all_cooled_failure(failures: FailureLedger) -> tuple[int, str, str]:
+    """Describe a request that never reached an upstream: every target cools."""
+    message = f"All {len(failures.cooled_waits)} matching route targets are in cooldown"
+    remaining = min(failures.cooled_waits.values(), default=0.0)
+    if remaining > 0:
+        message = f"{message} (retry in {max(int(ceil(remaining)), 1)}s)"
+    return 503, "routing_error", message
+
+
 async def _finalize_proxy_failure(
     *,
     protocol: ProtocolKind,
@@ -367,10 +422,16 @@ async def _finalize_proxy_failure(
     failures: FailureLedger,
     is_stream_body: bool,
 ) -> Response:
-    failed_status_code, failed_error_type, failed_message = failures.final_failure()
+    if not failures.errors and failures.cooled_waits:
+        failed_status_code, failed_error_type, failed_message = _all_cooled_failure(
+            failures
+        )
+    else:
+        failed_status_code, failed_error_type, failed_message = failures.final_failure()
     if failures.last_log_failure is not None:
         await failures.last_log_failure.write(log_ctx)
-    elif not log_ctx.attempts:
+    else:
+        # 没有真正打到上游（全部候选冷却）时也要把日志定稿，否则会停在连接中。
         log_ctx.plan_route(
             requested_group_name=plan.requested_group_name if plan else requested_model,
             resolved_group_name=plan.resolved_group_name if plan else None,
@@ -380,11 +441,16 @@ async def _finalize_proxy_failure(
             error_message=failed_message,
             is_stream=is_stream_body,
         )
+    retry_after = failures.retry_after_seconds
+    if failures.cooled_waits:
+        cooled = min(failures.cooled_waits.values())
+        retry_after = cooled if retry_after is None else min(retry_after, cooled)
     return protocol_error_response(
         protocol=protocol,
         status_code=failed_status_code,
         error_type=failed_error_type,
         message=failed_message,
+        headers=_retry_after_headers(retry_after),
     )
 
 
@@ -439,6 +505,25 @@ async def _prepare_proxy_context(
         bool(body.get("stream")),
         request_content,
     )
+
+
+def _cooled_wait_seconds(
+    failures: FailureLedger,
+    deadline: RequestDeadline,
+    runtime: Mapping[str, Any],
+) -> float | None:
+    """Return how long to wait for the soonest cooling target, when worth it."""
+    cap = float(runtime.get("failover_cooled_wait_seconds") or 0)
+    if cap <= 0 or not failures.cooled_waits:
+        return None
+    remaining = min(failures.cooled_waits.values())
+    if remaining <= 0:
+        return None
+    wait = min(remaining, cap)
+    budget = deadline.first_token_remaining_seconds()
+    if budget is not None and budget <= wait:
+        return None
+    return wait
 
 
 async def proxy_protocol(
@@ -535,28 +620,60 @@ async def proxy_protocol(
             path_suffix=path_suffix,
             multipart_files=multipart_files,
         )
-        route_plans = _iter_route_plans(
-            initial_plan=plan,
-            initial_selection=selection,
-            channels=channels,
-            protocol=protocol,
-            requested_model=requested_model,
-            parsed_model=parsed_model,
-            requested_group_name=original_requested_model,
-            body=body,
-            log_ctx=log_ctx,
-            is_stream_body=is_stream_body,
-            failures=failures,
-            required_context_tokens=required_context_tokens,
+
+        async def attempt(
+            current_plan: RoutingPlan, current_selection: RouteSelection
+        ) -> Response | None:
+            return await _run_route_attempts(
+                route_plans=_iter_route_plans(
+                    initial_plan=current_plan,
+                    initial_selection=current_selection,
+                    channels=channels,
+                    protocol=protocol,
+                    requested_model=requested_model,
+                    parsed_model=parsed_model,
+                    requested_group_name=original_requested_model,
+                    body=body,
+                    log_ctx=log_ctx,
+                    is_stream_body=is_stream_body,
+                    failures=failures,
+                    required_context_tokens=required_context_tokens,
+                ),
+                request=request,
+                deadline=deadline,
+                log_ctx=log_ctx,
+                failures=failures,
+                is_stream_body=is_stream_body,
+            )
+
+        response = await attempt(plan, selection)
+        # 全部候选都在冷却时，先在首字预算内等最早恢复再重选一次路。
+        wait_seconds = (
+            None
+            if response is not None
+            else _cooled_wait_seconds(failures, deadline, runtime)
         )
-        response = await _run_route_attempts(
-            route_plans=route_plans,
-            request=request,
-            deadline=deadline,
-            log_ctx=log_ctx,
-            failures=failures,
-            is_stream_body=is_stream_body,
-        )
+        if wait_seconds is not None:
+            await asyncio.sleep(wait_seconds)
+            retry_resolution = await _resolve_proxy_route(
+                channels=channels,
+                protocol=protocol,
+                requested_model=requested_model,
+                log_ctx=log_ctx,
+                is_stream_body=is_stream_body,
+                parsed_model=parsed_model,
+                requested_group_name=original_requested_model,
+                failures=failures,
+                required_context_tokens=required_context_tokens,
+            )
+            if retry_resolution.error is not None:
+                return retry_resolution.error
+            if (
+                retry_resolution.plan is not None
+                and retry_resolution.selection is not None
+            ):
+                plan = retry_resolution.plan
+                response = await attempt(plan, retry_resolution.selection)
         if response is not None:
             return response
 

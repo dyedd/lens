@@ -184,8 +184,13 @@ def apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
             network_cooldown_seconds=int(runtime["circuit_breaker_network_cooldown"]),
             backoff_multiplier=float(runtime["circuit_breaker_backoff_multiplier"]),
             max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
+            escalate_threshold=int(runtime["circuit_breaker_escalate_threshold"]),
+            escalate_window_seconds=int(
+                runtime["circuit_breaker_escalate_window_seconds"]
+            ),
             detection_rules=runtime["cooldown_detection_rules"],
         ),
+        affinity_seconds=float(runtime["failover_affinity_seconds"]),
     )
 
 

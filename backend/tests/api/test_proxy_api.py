@@ -1384,7 +1384,8 @@ def test_all_channels_in_cooldown_logs_the_cooled_channel_names(
         headers=gateway_headers(key),
         json={"model": "fail-group", "messages": []},
     )
-    assert first.status_code == 502, first.text
+    # 全部尝试都是限流时保留 429，客户端才能按退避策略重试。
+    assert first.status_code == 429, first.text
 
     response = client.post(
         "/v1/chat/completions",
@@ -1393,10 +1394,13 @@ def test_all_channels_in_cooldown_logs_the_cooled_channel_names(
     )
 
     assert response.status_code == 503, response.text
+    assert int(response.headers["retry-after"]) > 0
     page = client.get("/api/admin/request-logs/page", headers=admin_headers)
     assert page.status_code == 200, page.text
     item = page.json()["items"][0]
-    assert item["error_message"] == "All 2 matching channels are in cooldown"
+    assert item["error_message"].startswith(
+        "All 2 matching route targets are in cooldown"
+    )
     assert item["attempt_count"] == 2
 
     detail_response = client.get(

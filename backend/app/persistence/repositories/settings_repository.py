@@ -16,6 +16,8 @@ from app.persistence.settings_keys import (
     SETTING_CIRCUIT_BREAKER_AUTH_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER,
     SETTING_CIRCUIT_BREAKER_COOLDOWN,
+    SETTING_CIRCUIT_BREAKER_ESCALATE_THRESHOLD,
+    SETTING_CIRCUIT_BREAKER_ESCALATE_WINDOW,
     SETTING_CIRCUIT_BREAKER_FAILURE_WINDOW,
     SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN,
     SETTING_CIRCUIT_BREAKER_NETWORK_COOLDOWN,
@@ -27,6 +29,8 @@ from app.persistence.settings_keys import (
     SETTING_CIRCUIT_BREAKER_TIMEOUT_THRESHOLD,
     SETTING_COOLDOWN_DETECTION_RULES,
     SETTING_CORS_ALLOW_ORIGINS,
+    SETTING_FAILOVER_AFFINITY_SECONDS,
+    SETTING_FAILOVER_COOLED_WAIT_SECONDS,
     SETTING_FIRST_TOKEN_TIMEOUT_SECONDS,
     SETTING_HEALTH_MIN_SAMPLES,
     SETTING_HEALTH_PENALTY_WEIGHT,
@@ -192,6 +196,18 @@ class SettingsRepository:
             ),
             "circuit_breaker_max_cooldown": int(
                 mapping[SETTING_CIRCUIT_BREAKER_MAX_COOLDOWN]
+            ),
+            "failover_cooled_wait_seconds": int(
+                mapping[SETTING_FAILOVER_COOLED_WAIT_SECONDS]
+            ),
+            "circuit_breaker_escalate_threshold": int(
+                mapping[SETTING_CIRCUIT_BREAKER_ESCALATE_THRESHOLD]
+            ),
+            "circuit_breaker_escalate_window_seconds": int(
+                mapping[SETTING_CIRCUIT_BREAKER_ESCALATE_WINDOW]
+            ),
+            "failover_affinity_seconds": int(
+                mapping[SETTING_FAILOVER_AFFINITY_SECONDS]
             ),
             "health_scoring_enabled": mapping[SETTING_HEALTH_SCORING_ENABLED] == "true",
             "health_window_seconds": int(mapping[SETTING_HEALTH_WINDOW_SECONDS]),

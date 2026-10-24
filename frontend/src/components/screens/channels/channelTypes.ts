@@ -3,9 +3,9 @@ import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
   ChannelProxyMode,
   Site,
+  SiteBaseUrlKind,
   SiteCredential,
   SiteModelInput,
-  SiteBaseUrlKind,
 } from "@/lib/api/sites";
 import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { Locale } from "@/lib/I18nContext";
