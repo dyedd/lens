@@ -1,9 +1,6 @@
-"""Persist rule members with their source, exclusions, and sync run records.
+"""持久化规则成员及其来源、排除状态，并记录同步运行。
 
-Rule members used to be matched on every read. Saved rows that a group's
-rules match become rule members, so dragging them no longer pins them as
-manual; disabled ones stay disabled, which is how the editor showed them.
-Startup reconcile then saves the remaining live rule members.
+已保存且与组规则匹配的记录成为规则成员，拖动不再固定为手动，禁用的保持禁用。
 
 Revision ID: d9f1b3c5e7a2
 Revises: e4a6c8b0d2f1
@@ -104,7 +101,7 @@ def upgrade() -> None:
 
     conn = op.get_bind()
     _mark_rule_matched_members(conn)
-    # The first miss was never recorded; retirement counts from the upgrade.
+    # 首次缺失从未被记录；退役时间从本次升级开始计算。
     conn.execute(
         sa.text(
             "UPDATE site_discovered_models SET upstream_missing_since = :now "
@@ -131,8 +128,8 @@ def downgrade() -> None:
     op.drop_table("model_sync_runs")
 
     conn = op.get_bind()
-    # Exclusions are already disabled rows; enabled rule members go back to
-    # live matching, while disabled ones keep blocking it.
+    # 排除项本来就是禁用的记录；启用的规则成员恢复为实时匹配，
+    # 禁用的则继续屏蔽匹配。
     conn.execute(
         sa.text(
             "DELETE FROM model_group_items "

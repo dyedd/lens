@@ -1,4 +1,4 @@
-"""Add sites.updated_at.
+"""为站点增加 updated_at 字段。
 
 Revision ID: a1b9c3d5e7f0
 Revises: e8b5c2d9a4f7

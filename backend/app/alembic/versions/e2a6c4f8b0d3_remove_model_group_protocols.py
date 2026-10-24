@@ -1,4 +1,4 @@
-"""Remove derived model-group protocol storage."""
+"""移除派生的模型组协议存储。"""
 
 from collections.abc import Sequence
 

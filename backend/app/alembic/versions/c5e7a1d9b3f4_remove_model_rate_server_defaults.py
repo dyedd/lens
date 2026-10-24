@@ -1,4 +1,4 @@
-"""remove server defaults from model prices and credential rates
+"""移除模型价格与凭证倍率的服务端默认值。
 
 Revision ID: c5e7a1d9b3f4
 Revises: b9c4e8f1a2d7

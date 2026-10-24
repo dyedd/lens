@@ -1,7 +1,6 @@
-"""Retire the model group new-member position.
+"""废弃模型组新成员插入位置。
 
-Groups append automatically joined members at the end since the editor stopped
-exposing a placement choice, so the column no longer has a consumer.
+编辑器已不再提供插入位置选项，成员统一追加到末尾，该列已无使用方。
 """
 
 from collections.abc import Sequence
