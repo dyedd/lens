@@ -9,7 +9,10 @@ import type {
 import { headerDraftToRules } from "@/lib/upstreamRules";
 import { headerDraftsFromJson } from "./channelAdvancedJson";
 import { activeBaseUrlValue } from "./channelForm";
-import { rebuildProtocolConfigs } from "./channelFormConversion";
+import {
+  protocolForEndpointKind,
+  rebuildProtocolConfigs,
+} from "./channelFormConversion";
 import {
   acceptApiKeyDrafts,
   activeSelectedCredentialIds,
@@ -36,7 +39,10 @@ export type RemoteModelCatalog = {
 };
 
 /** Lists a native Anthropic or Gemini URL in its own protocol; every other URL as OpenAI Chat. */
-function discoveryProtocol(protocols: ProtocolKind[]): ProtocolKind {
+function discoveryProtocol(
+  protocols: ProtocolKind[],
+  fallback: ProtocolKind,
+): ProtocolKind {
   if (
     protocols.includes("openai_chat") ||
     protocols.includes("openai_responses")
@@ -46,7 +52,7 @@ function discoveryProtocol(protocols: ProtocolKind[]): ProtocolKind {
   return (
     protocols.find(
       (protocol) => protocol === "anthropic" || protocol === "gemini",
-    ) ?? "openai_chat"
+    ) ?? fallback
   );
 }
 
@@ -81,9 +87,15 @@ export function useChannelModelPicker({
       );
       const baseUrl = activeBaseUrlValue(editor, config).trim();
       if (!credentialIds.size || !baseUrl) return [];
+      const endpointKind = editor.base_urls.find(
+        (item) => item.id === config.base_url_id,
+      )?.kind;
       const payload: SiteModelFetchPayload = {
         base_url: baseUrl,
-        protocol: discoveryProtocol(config.protocols),
+        protocol: discoveryProtocol(
+          config.protocols,
+          protocolForEndpointKind(endpointKind),
+        ),
         headers,
         proxy_mode: editor.proxy_mode,
         channel_proxy: editor.channel_proxy.trim(),
@@ -204,7 +216,12 @@ export function useChannelModelPicker({
         const defaultProtocols: ProtocolKind[] =
           config.protocols.length > 0
             ? (config.protocols as ProtocolKind[])
-            : ["openai_chat"];
+            : [
+                protocolForEndpointKind(
+                  form.base_urls.find((item) => item.id === config.base_url_id)
+                    ?.kind,
+                ),
+              ];
         const [newModel] = buildModels(
           config,
           [item.credential_id],

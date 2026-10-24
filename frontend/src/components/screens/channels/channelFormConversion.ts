@@ -32,6 +32,24 @@ import type {
   FormState,
 } from "./channelTypes";
 
+const endpointProtocolByKind: Partial<
+  Record<FormBaseUrl["kind"], ProtocolKind>
+> = {
+  openai_chat: "openai_chat",
+  openai_responses: "openai_responses",
+  openai_embedding: "openai_embedding",
+  openai_image: "openai_image",
+  anthropic: "anthropic",
+  gemini: "gemini",
+  rerank: "rerank",
+};
+
+export function protocolForEndpointKind(
+  kind: FormBaseUrl["kind"] | undefined,
+): ProtocolKind {
+  return (kind && endpointProtocolByKind[kind]) ?? "openai_chat";
+}
+
 function credentialIdsForUrl(
   form: Pick<FormState, "base_urls" | "credentials">,
   urlId: string,
@@ -91,6 +109,11 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
         endpointSupportsProtocol(url.kind, model.protocols),
     );
     const protocols = protocolConfigEffectiveProtocols({ models });
+    const fallbackProtocols = (
+      existing?.protocols ??
+      source?.protocols ??
+      []
+    ).filter((protocol) => endpointSupportsProtocol(url.kind, [protocol]));
     const base =
       existing ??
       ({
@@ -103,9 +126,9 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
       credential_ids: credentialIds,
       protocols: protocols.length
         ? protocols
-        : (existing?.protocols ?? source?.protocols ?? []).filter((protocol) =>
-            endpointSupportsProtocol(url.kind, [protocol]),
-          ),
+        : fallbackProtocols.length
+          ? fallbackProtocols
+          : [protocolForEndpointKind(url.kind)],
       models: coalesceFormModels(models),
     };
   });
@@ -115,16 +138,7 @@ function endpointSupportsProtocol(
   kind: FormBaseUrl["kind"],
   protocols: ProtocolKind[],
 ) {
-  const protocolByKind: Partial<Record<FormBaseUrl["kind"], ProtocolKind>> = {
-    openai_chat: "openai_chat",
-    openai_responses: "openai_responses",
-    openai_embedding: "openai_embedding",
-    openai_image: "openai_image",
-    anthropic: "anthropic",
-    gemini: "gemini",
-    rerank: "rerank",
-  };
-  const protocol = protocolByKind[kind];
+  const protocol = endpointProtocolByKind[kind];
   return protocol === undefined || protocols.includes(protocol);
 }
 
@@ -286,7 +300,12 @@ export function toPayload(form: FormState): SitePayload {
       );
       const protocolConfigProtocols = configuredProtocols.length
         ? configuredProtocols
-        : (["openai_chat"] as ProtocolKind[]);
+        : [
+            protocolForEndpointKind(
+              baseUrls.find((item) => item.id === protocolConfig.base_url_id)
+                ?.kind,
+            ),
+          ];
       const models = protocolConfig.models
         .flatMap((model) => {
           const effectiveProtocols = model.protocols.filter((protocol) =>
