@@ -296,7 +296,10 @@ async def _run_route_attempts(
                 failed=failed,
                 tried=tried,
                 action=action,
-                claim=app_state.router.claim_target,
+                claim=lambda target: app_state.router.claim_target(
+                    target,
+                    lease_seconds=float(request.runtime["first_token_timeout_seconds"]),
+                ),
             )
             if candidate is None:
                 _record_cooled_candidates(
@@ -308,19 +311,29 @@ async def _run_route_attempts(
                 break
             target, is_probe = candidate
             tried.add(target_key(target))
-            response = await run_attempt(
-                request=request,
-                plan=current_plan,
-                target=target,
-                deadline=deadline,
-                log_ctx=log_ctx,
-                failures=failures,
-                was_probe=is_probe,
-            )
+            response: Response | None = None
+            try:
+                response = await run_attempt(
+                    request=request,
+                    plan=current_plan,
+                    target=target,
+                    deadline=deadline,
+                    log_ctx=log_ctx,
+                    failures=failures,
+                    was_probe=is_probe,
+                )
+            finally:
+                if is_probe and not (
+                    response is not None and bool(request.body.get("stream"))
+                ):
+                    app_state.router.release_probe(target)
             if response is not None:
                 return response
             failed = target
             action = failures.last_action or RetryAction.RETRY_CHANNEL
+            app_state.router.note_failure(
+                current_plan.cursor_key or current_plan.resolved_group_name or ""
+            )
     return None
 
 

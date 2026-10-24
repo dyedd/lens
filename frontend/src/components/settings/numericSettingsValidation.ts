@@ -8,6 +8,9 @@ export type NumericSettingKey =
   | "streamIdleTimeoutSeconds"
   | "maxRequestBodyBytes"
   | "circuitBreakerThreshold"
+  | "circuitBreakerEscalateThreshold"
+  | "circuitBreakerEscalateWindowSeconds"
+  | "failoverAffinitySeconds"
   | "circuitBreakerFailureWindowSeconds"
   | "circuitBreakerTimeoutThreshold"
   | "circuitBreakerNetworkThreshold"
@@ -74,6 +77,22 @@ const NUMERIC_SETTING_RULES: ReadonlyArray<{
     labelEn: "5xx failure threshold",
     type: "integer",
     min: 1,
+  },
+  {
+    key: "circuitBreakerEscalateThreshold",
+    labelZh: "限流升级阈值",
+    labelEn: "Rate-limit escalation threshold",
+    type: "integer",
+    min: 0,
+    max: 100,
+  },
+  {
+    key: "circuitBreakerEscalateWindowSeconds",
+    labelZh: "限流升级窗口",
+    labelEn: "Rate-limit escalation window",
+    type: "integer",
+    min: 0,
+    max: 604_800,
   },
   {
     key: "circuitBreakerFailureWindowSeconds",
@@ -168,6 +187,14 @@ const NUMERIC_SETTING_RULES: ReadonlyArray<{
     type: "integer",
     min: 0,
     max: 604_800,
+  },
+  {
+    key: "failoverAffinitySeconds",
+    labelZh: "故障切换亲和窗口",
+    labelEn: "Failover affinity window",
+    type: "integer",
+    min: 0,
+    max: 3600,
   },
   {
     key: "healthWindowSeconds",

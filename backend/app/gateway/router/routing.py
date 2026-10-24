@@ -78,13 +78,20 @@ class RoutePlanner:
         self._swrr_nodes: dict[tuple[str, str, str, str], _SWRRNode] = {}
         self._affinity_seconds = 0.0
         self._affinity: dict[str, tuple[RouteTarget, float]] = {}
+        self._affinity_armed: set[str] = set()
 
     def configure_affinity(self, seconds: float) -> None:
         self._affinity_seconds = max(seconds, 0.0)
         if self._affinity_seconds <= 0:
             self._affinity.clear()
 
+    def note_failure(self, route_key: str) -> None:
+        self._affinity_armed.add(route_key)
+
     def note_success(self, route_key: str, target: RouteTarget) -> None:
+        if route_key not in self._affinity_armed:
+            return
+        self._affinity_armed.discard(route_key)
         if self._affinity_seconds > 0:
             self._affinity[route_key] = (target, monotonic() + self._affinity_seconds)
 

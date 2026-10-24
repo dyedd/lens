@@ -32,6 +32,7 @@ class CompiledCooldownDetectionRule:
     status_code: int | None
     body_pattern: Pattern[str] | None
     scope: CooldownScope
+    action: str | None
     category: ErrorCategory
     cooldown_seconds: int
     priority: int
@@ -42,6 +43,7 @@ class ErrorClassification(NamedTuple):
     category: ErrorCategory
     scope: CooldownScope
     cooldown_seconds: float | None = None
+    action: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +183,7 @@ def classify_error(
             header_cooldown
             if header_cooldown is not None
             else float(rule.cooldown_seconds),
+            rule.action,
         )
 
     category = _status_category(status_code)
@@ -203,6 +206,7 @@ def compile_detection_rules(
                 status_code=status_code,
                 body_pattern=re.compile(body_regex) if body_regex else None,
                 scope=rule.scope,
+                action=rule.action,
                 category=ErrorCategory(rule.category),
                 cooldown_seconds=rule.cooldown_seconds,
                 priority=rule.priority,
@@ -467,6 +471,17 @@ class CooldownLedger:
             state.probe_lease_until = lease_until
         return ClaimDecision(allowed=True, is_probe=True)
 
+    def release_probe(
+        self,
+        model: ModelKey,
+        credential: CredentialKey,
+        *,
+        channel_model_key: ModelKey | None = None,
+    ) -> None:
+        for state in self._target_states(model, credential, channel_model_key):
+            if state is not None:
+                state.probe_lease_until = 0.0
+
     def _target_states(
         self,
         model: ModelKey,
@@ -512,6 +527,20 @@ class CooldownLedger:
     ) -> None:
         if state.cooled_until > now:
             state.failure_revision = self._failure_revision
+            if was_probe:
+                state.last_failure_at = now
+                state.last_error = error
+                state.last_error_category = category
+                state.probe_lease_until = 0.0
+                state.consecutive_failures += 1
+                cooldown = calculate_exponential_cooldown(
+                    state.last_cooldown,
+                    self._policy.initial_cooldown(category),
+                    self._policy.backoff_multiplier,
+                    self._policy.max_cooldown_seconds,
+                )
+                state.last_cooldown = cooldown
+                state.cooled_until = now + cooldown if cooldown > 0 else 0.0
             return
         failure_gap_started_at = max(state.last_failure_at, state.cooled_until)
         if (
@@ -537,11 +566,7 @@ class CooldownLedger:
             return
 
         state.consecutive_failures += 1
-        threshold = (
-            1
-            if cooldown_seconds is not None and not was_probe
-            else self._policy.threshold(category)
-        )
+        threshold = self._policy.threshold(category)
         if state.consecutive_failures < threshold:
             return
         # 只有探测失败才重新放大退避：被冷却拒之门外的常规请求不该把恢复推远。

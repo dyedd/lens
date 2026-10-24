@@ -143,6 +143,7 @@ class GatewayRouter:
         scope: str = "model",
         cooldown_seconds: float | None = None,
         was_probe: bool = False,
+        retry_action: str | None = None,
     ) -> None:
         """Record failure for its target or credential fault domain."""
         with self._lock:
@@ -156,16 +157,23 @@ class GatewayRouter:
                 scope=scope,
                 cooldown_seconds=cooldown_seconds,
                 was_probe=was_probe,
+                retry_action=retry_action,
             )
 
-    def claim_target(self, target: RouteTarget) -> ClaimDecision:
+    def claim_target(
+        self, target: RouteTarget, *, lease_seconds: float = PROBE_LEASE_SECONDS
+    ) -> ClaimDecision:
         """Return whether this request may use the target right now."""
         with self._lock:
             return self._health.claim_target(
                 target,
                 now=monotonic(),
-                lease_seconds=PROBE_LEASE_SECONDS,
+                lease_seconds=lease_seconds,
             )
+
+    def release_probe(self, target: RouteTarget) -> None:
+        with self._lock:
+            self._health.release_probe(target)
 
     def cooldown_remaining_seconds(self, target: RouteTarget) -> float:
         """Return how long the target stays unusable; 0 when available."""
@@ -180,6 +188,10 @@ class GatewayRouter:
     def note_success(self, route_key: str, target: RouteTarget) -> None:
         with self._lock:
             self._routes.note_success(route_key, target)
+
+    def note_failure(self, route_key: str) -> None:
+        with self._lock:
+            self._routes.note_failure(route_key)
 
 
 __all__ = ["GatewayRouter"]

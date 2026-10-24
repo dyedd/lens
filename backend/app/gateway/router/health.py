@@ -133,6 +133,7 @@ class HealthTracker:
         scope: str,
         cooldown_seconds: float | None,
         was_probe: bool = False,
+        retry_action: str | None = None,
     ) -> None:
         if category == ErrorCategory.AUTH or scope == "key":
             self._cooldowns.record_credential_failure(
@@ -142,16 +143,21 @@ class HealthTracker:
                 cooldown_seconds=cooldown_seconds,
                 was_probe=was_probe,
             )
-            self._escalate_throttled_model(
-                channel_id,
-                model_name,
-                fault_protocol,
-                category,
-                credential_id,
-                error=error,
-                cooldown_seconds=cooldown_seconds,
-                was_probe=was_probe,
-            )
+            if (
+                scope == "key"
+                and retry_action in (None, "retry_key")
+                and category == ErrorCategory.RATE_LIMIT
+            ):
+                self._escalate_throttled_model(
+                    channel_id,
+                    model_name,
+                    fault_protocol,
+                    category,
+                    credential_id,
+                    error=error,
+                    cooldown_seconds=cooldown_seconds,
+                    was_probe=was_probe,
+                )
         else:
             state_key = (
                 model_key(channel_id, "")
@@ -229,6 +235,13 @@ class HealthTracker:
             _target_model_key(target),
             _target_credential_key(target),
             now=now,
+            channel_model_key=model_key(target.channel.id, ""),
+        )
+
+    def release_probe(self, target: RouteTarget) -> None:
+        self._cooldowns.release_probe(
+            _target_model_key(target),
+            _target_credential_key(target),
             channel_model_key=model_key(target.channel.id, ""),
         )
 

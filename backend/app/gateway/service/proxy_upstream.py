@@ -670,9 +670,9 @@ async def execute_upstream_request(
             else None
         )
         # A larger-context target may accept what this one rejected as too long.
-        stop_fallback = _is_request_level_client_error(
-            status_code
-        ) and not is_context_window_exceeded_error(detail)
+        stop_fallback = _is_request_level_client_error(status_code) and not (
+            is_context_window_exceeded_error(detail)
+        )
         classification = classify_error(
             status_code,
             detail,
@@ -685,6 +685,7 @@ async def execute_upstream_request(
             router_status_code=status_code,
             router_error_category=classification.category if classification else None,
             router_error_scope=classification.scope if classification else "model",
+            router_retry_action=classification.action if classification else None,
             router_cooldown_seconds=(
                 retry_after_seconds
                 if retry_after_seconds is not None
