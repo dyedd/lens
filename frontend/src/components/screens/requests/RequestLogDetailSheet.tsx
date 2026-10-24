@@ -293,7 +293,7 @@ export function RequestLogDetailSheet({
       onOpenChange={(open) => !open && onClose()}
     >
       <SheetContent className="sm:max-w-[480px]">
-        <SheetHeader>
+        <SheetHeader className="pr-14">
           <div className="flex items-center justify-between gap-3">
             <SheetTitle>
               {titleForLocale(locale, "请求日志详情", "Request log detail")}
