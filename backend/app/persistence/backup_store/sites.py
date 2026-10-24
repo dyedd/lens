@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.context_windows import coerce_context_window
 from app.core.runtime_channel_ids import compose_runtime_channel_id
-from app.core.urls import canonicalize_base_url
 from app.models.protocols import ProtocolKind
 from app.models.sites import SiteConfig, SiteCredentialInput
 from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
@@ -201,7 +200,7 @@ async def replace_sites(
             )
         )
         site_base_url_ids: set[str] = set()
-        site_base_url_values: set[str] = set()
+        site_base_url_kinds: set[str] = set()
         site_credential_ids: set[str] = set()
 
         for base_url in site.base_urls:
@@ -209,12 +208,11 @@ async def replace_sites(
                 raise ValueError(f"Duplicate base url id in backup: {base_url.id}")
             base_url_ids.add(base_url.id)
             site_base_url_ids.add(base_url.id)
-            canonical_url = canonicalize_base_url(str(base_url.url))
-            if canonical_url in site_base_url_values:
+            if base_url.kind in site_base_url_kinds:
                 raise ValueError(
-                    f"Duplicate base URL in backup site {site.name}: {canonical_url}"
+                    f"Duplicate endpoint purpose in backup site {site.name}: {base_url.kind}"
                 )
-            site_base_url_values.add(canonical_url)
+            site_base_url_kinds.add(base_url.kind)
             session.add(
                 SiteBaseUrlEntity(
                     id=base_url.id,
