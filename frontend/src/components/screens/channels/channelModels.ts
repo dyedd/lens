@@ -136,7 +136,10 @@ export function siteEndpointUrls(site: Site) {
 }
 
 function canonicalEndpointUrl(url: string) {
-  return url.trim().replace(/\/+$/, "").replace(/\/(?:v1beta|v1)$/, "");
+  return url
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/(?:v1beta|v1)$/, "");
 }
 
 /** 按接口版本后缀清理后，统计重复的渠道地址。 */

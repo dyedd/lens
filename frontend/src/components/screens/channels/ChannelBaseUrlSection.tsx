@@ -11,11 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { cn } from "@/lib/classNames";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import { cn } from "@/lib/classNames";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
-import { ProtocolDropdown } from "./ProtocolDropdown";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
+import { ProtocolDropdown } from "./ProtocolDropdown";
 
 type Props = {
   form: FormState;
@@ -175,7 +175,9 @@ export function ChannelBaseUrlSection({
                           {locale === "zh-CN" ? "默认地址" : "Default"}
                         </SelectItem>
                         <SelectItem value="protocol">
-                          {locale === "zh-CN" ? "协议专用地址" : "Protocol endpoint"}
+                          {locale === "zh-CN"
+                            ? "协议专用地址"
+                            : "Protocol endpoint"}
                         </SelectItem>
                         <SelectItem value="china">
                           {locale === "zh-CN" ? "国内地址" : "China"}
@@ -223,9 +225,7 @@ export function ChannelBaseUrlSection({
                       size="icon-sm"
                       className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
                       aria-label={
-                        locale === "zh-CN"
-                          ? "删除地址"
-                          : "Remove endpoint"
+                        locale === "zh-CN" ? "删除地址" : "Remove endpoint"
                       }
                       onClick={() => onRemove(index)}
                     >
