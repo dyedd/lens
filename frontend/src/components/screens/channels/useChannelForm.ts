@@ -245,10 +245,7 @@ export function useChannelForm(locale: Locale) {
           newApiKeysLines: "",
         },
       ],
-      protocolConfigs: [
-        ...current.protocolConfigs,
-        emptyProtocolConfig(id),
-      ],
+      protocolConfigs: [...current.protocolConfigs, emptyProtocolConfig(id)],
     }));
   }
   function updateBaseUrl(index: number, patch: Partial<FormBaseUrl>) {
