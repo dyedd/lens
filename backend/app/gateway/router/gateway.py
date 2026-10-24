@@ -6,10 +6,13 @@ from time import monotonic
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouterSnapshot
-from .cooldown import CooldownPolicy, ErrorCategory
+from .cooldown import ClaimDecision, CooldownPolicy, ErrorCategory
 from .health import HealthTracker
 from .routing import RoutePlanner, RouteSelection
 from .targets import RouteTarget
+
+# 冷却到期后的探测在该目标上独占多久，避免全部请求同时涌入。
+PROBE_LEASE_SECONDS = 60.0
 
 
 class GatewayRouter:
@@ -40,6 +43,7 @@ class GatewayRouter:
         health_penalty_weight: float,
         health_min_samples: int,
         cooldown_policy: CooldownPolicy,
+        affinity_seconds: float = 0.0,
         routing_environment_signature: tuple[str, str],
     ) -> None:
         """Apply runtime cooldown and health-scoring settings."""
@@ -53,6 +57,7 @@ class GatewayRouter:
                 routing_environment_signature=routing_environment_signature,
             ):
                 self._routes.reset_weights()
+            self._routes.configure_affinity(affinity_seconds)
 
     def select(
         self,
@@ -66,7 +71,7 @@ class GatewayRouter:
         cursor_key: str | None = None,
         required_context_tokens: int | None = None,
     ) -> RouteSelection:
-        """Select a primary route and ordered fallbacks."""
+        """Select a primary route and its ordered candidates."""
         with self._lock:
             self._routes.discard_channels(self._health.reconcile_channels(channels))
             return self._routes.select(
@@ -137,6 +142,7 @@ class GatewayRouter:
         fault_protocol: str = "",
         scope: str = "model",
         cooldown_seconds: float | None = None,
+        was_probe: bool = False,
     ) -> None:
         """Record failure for its target or credential fault domain."""
         with self._lock:
@@ -149,12 +155,31 @@ class GatewayRouter:
                 fault_protocol=fault_protocol,
                 scope=scope,
                 cooldown_seconds=cooldown_seconds,
+                was_probe=was_probe,
             )
 
-    def is_target_available(self, target: RouteTarget) -> bool:
-        """Return whether a route target is currently available."""
+    def claim_target(self, target: RouteTarget) -> ClaimDecision:
+        """Return whether this request may use the target right now."""
         with self._lock:
-            return self._health.is_target_available(target, now=monotonic())
+            return self._health.claim_target(
+                target,
+                now=monotonic(),
+                lease_seconds=PROBE_LEASE_SECONDS,
+            )
+
+    def cooldown_remaining_seconds(self, target: RouteTarget) -> float:
+        """Return how long the target stays unusable; 0 when available."""
+        with self._lock:
+            return self._health.cooldown_remaining_seconds(target, now=monotonic())
+
+    def cooldown_reason(self, target: RouteTarget) -> str:
+        """Name the fault domain and remaining cooldown of a cooling target."""
+        with self._lock:
+            return self._health.cooldown_reason(target, now=monotonic())
+
+    def note_success(self, route_key: str, target: RouteTarget) -> None:
+        with self._lock:
+            self._routes.note_success(route_key, target)
 
 
 __all__ = ["GatewayRouter"]

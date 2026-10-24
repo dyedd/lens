@@ -310,7 +310,7 @@ Other settings configurable on the page include: global proxy, CORS allowed orig
 
 #### Cooldown and Health Scoring
 
-Custom cooldown detection rules configured by the administrator are matched first (setting key `cooldown_detection_rules`: status code + body regex → error category, cooldown, and scope; editable through the settings API or config backup); the status-code defaults apply when no rule matches. `401` / `403` cool the current key; `404`, `429`, `5xx`, upstream `408`, gateway timeouts, and network errors cool the actual upstream model. Other models and keys on the same channel remain routable. Ordinary `4xx` responses other than `401` / `403` / `404` / `408` / `429` usually describe the current request and do not affect cooldown. Standard `Retry-After` on `429` / `503` immediately cools the current model and takes precedence over category defaults within the maximum cooldown cap; `0` means immediate recovery.
+Custom cooldown detection rules configured by the administrator are matched first (setting key `cooldown_detection_rules`: status code + body regex → error category, cooldown, and scope; editable through the settings API or config backup); the status-code defaults apply when no rule matches. `401` / `403` / `429` cool only the current key, leaving the channel's other keys routable; `404`, `5xx`, upstream `408`, gateway timeouts, and network errors cool the actual upstream model. When two or more keys of the same channel and model are throttled inside a 60-second window, the cooldown escalates to that model so every key stops hitting the same wall. Ordinary `4xx` responses other than `401` / `403` / `404` / `408` / `429` usually describe the current request and do not affect cooldown. Standard `Retry-After` on `429` / `503` immediately cools the matching fault domain (`429` the key, `503` the model) and takes precedence over category defaults within the maximum cooldown cap; `0` means immediate recovery. After a cooldown expires only a single probe request is admitted and normal scheduling resumes once it succeeds; when every candidate is cooling the gateway replies `503` with `Retry-After`, and `failover_cooled_wait_seconds` lets a request wait for the soonest recovery before reselecting.
 
 Channels do not maintain a separate cooldown timer. For every enabled key-model binding:
 
@@ -351,11 +351,12 @@ Cooldown and health windows are runtime state in the current Lens process. They 
 | `circuit_breaker_cooldown`                   | `60`    | Initial `5xx` cooldown, range `0`–`604800` seconds |
 | `circuit_breaker_auth_cooldown`              | `300`   | Initial key cooldown for `401` / `403`, range `0`–`604800` seconds |
 | `circuit_breaker_not_found_cooldown`         | `300`   | Initial model cooldown for `404`, range `0`–`604800` seconds; affects only the current model when no broader fault domain is proven |
-| `circuit_breaker_rate_limit_cooldown`        | `60`    | Initial model cooldown for `429`, range `0`–`604800` seconds |
+| `circuit_breaker_rate_limit_cooldown`        | `60`    | Initial key cooldown for `429`, range `0`–`604800` seconds; escalates to the model once several keys are throttled in one window |
 | `circuit_breaker_timeout_cooldown`           | `60`    | Initial model cooldown for upstream `408` or gateway timeouts, range `0`–`604800` seconds |
 | `circuit_breaker_network_cooldown`           | `60`    | Initial model cooldown for network errors, range `0`–`604800` seconds |
 | `circuit_breaker_backoff_multiplier`         | `2`     | Subsequent cooldown multiplier, range `1`–`10` |
 | `circuit_breaker_max_cooldown`               | `600`   | Hard cap for all automatic cooldowns, range `0`–`604800` seconds; `0` disables them |
+| `failover_cooled_wait_seconds`               | `0`     | Longest a request may wait for the soonest cooling candidate before replying with `503` and `Retry-After`, range `0`–`604800` seconds; `0` replies immediately |
 | `health_scoring_enabled`                     | `true`  | Enables health-based ordering |
 | `health_window_seconds`                      | `300`   | Per-model sliding-window duration, range `1`–`604800` seconds |
 | `health_penalty_weight`                      | `0.5`   | Maximum health penalty ratio, range `0`–`1` |

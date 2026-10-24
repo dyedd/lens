@@ -21,8 +21,9 @@ from ..converters import (
     strip_foreign_reasoning,
 )
 from ..converters.responses_common import lift_additional_tools
-from ..router import RouteTarget
-from ..router.cooldown import ErrorCategory, classify_error
+from ..router import RouteTarget, TargetKey
+from ..router.cooldown import ErrorCategory, classify_error, default_scope
+from ..router.failover import FailurePolicy, RetryAction, policy_for
 from .app_state import app_state
 from .compat import (
     apply_deepseek_thinking_compat,
@@ -107,13 +108,27 @@ class FailureLedger:
     status_codes: list[int | None] = field(default_factory=list)
     error_types: list[str] = field(default_factory=list)
     last_log_failure: LogFailure | None = None
+    last_action: RetryAction | None = None
+    retry_after_seconds: float | None = None
+    cooled_waits: dict[TargetKey, float] = field(default_factory=dict)
 
     def record(
-        self, message: str, status_code: int | None, error_type: str = "upstream_error"
+        self,
+        message: str,
+        status_code: int | None,
+        error_type: str = "upstream_error",
+        *,
+        retry_after_seconds: float | None = None,
     ) -> None:
         self.errors.append(message)
         self.status_codes.append(status_code)
         self.error_types.append(error_type)
+        if retry_after_seconds is not None:
+            self.retry_after_seconds = (
+                retry_after_seconds
+                if self.retry_after_seconds is None
+                else min(self.retry_after_seconds, retry_after_seconds)
+            )
 
     def final_failure(self) -> tuple[int, str, str]:
         return _final_upstream_failure(self.errors, self.status_codes, self.error_types)
@@ -133,6 +148,7 @@ class _AttemptRun:
     attempt_started_at: float
     route_started_revision: int
     effective_user_agent: str
+    was_probe: bool = False
 
     @property
     def log_body_enabled(self) -> bool:
@@ -391,6 +407,7 @@ async def run_attempt(
     deadline: RequestDeadline,
     log_ctx: RequestLogger,
     failures: FailureLedger,
+    was_probe: bool = False,
 ) -> Response | None:
     """Run one upstream target. None hands the failover loop the next target."""
     channel = target.channel
@@ -418,6 +435,7 @@ async def run_attempt(
         attempt_started_at=attempt_started_at,
         route_started_revision=route_started_revision,
         effective_user_agent=request.upstream_user_agent,
+        was_probe=was_probe,
     )
     prepared = await _prepare_attempt(run)
     if not isinstance(prepared, _PreparedAttempt):
@@ -486,16 +504,18 @@ async def _record_stream_route_health(
     status_code = capture.error_status_code if capture is not None else None
     category = capture.error_category if capture is not None else None
     cooldown_seconds = capture.error_cooldown_seconds if capture is not None else None
+    scope: str | None = None
     if category is None:
         classification = classify_error(status_code)
         if classification is not None:
-            category, _, classified_cooldown = classification
+            category, scope, classified_cooldown = classification
             cooldown_seconds = cooldown_seconds or classified_cooldown
     category = category or ErrorCategory.SERVER
     app_state.router.record_failure(
         channel.id,
         format_channel_error(capture_issue),
         category=category,
+        scope=scope or default_scope(category),
         cooldown_seconds=cooldown_seconds,
         credential_id=credential_id,
         model_name=model_name,
@@ -517,6 +537,16 @@ def _last_attempt_target(
     )
 
 
+def _failure_policy(exc: UpstreamRequestError) -> FailurePolicy | None:
+    category = exc.router_error_category
+    if category is None:
+        classification = classify_error(exc.router_status_code)
+        if classification is None:
+            return None
+        return policy_for(classification.category, classification.scope)
+    return policy_for(category, exc.router_error_scope)
+
+
 async def _record_target_failure(
     run: _AttemptRun,
     exc: UpstreamRequestError,
@@ -527,28 +557,33 @@ async def _record_target_failure(
     """Log the failed attempt, feed cooldowns, and honor stop-fallback."""
     channel = run.target.channel
     message = format_channel_error(exc.detail)
-    category = exc.router_error_category
-    scope = exc.router_error_scope
-    if category is None:
-        classification = classify_error(exc.router_status_code)
-        if classification is not None:
-            category, scope, _ = classification
+    policy = _failure_policy(exc)
     if (
-        category is not None
+        policy is not None
         and not exc.skip_route_failure
         and not _is_request_too_large_error(exc.status_code, message)
     ):
         app_state.router.record_failure(
             channel.id,
             message,
-            category=category,
-            scope=scope,
+            category=policy.category,
+            scope=policy.scope,
             credential_id=run.target.credential_id,
             model_name=run.target.model_name,
             fault_protocol=run.target.fault_protocol,
             cooldown_seconds=exc.router_cooldown_seconds,
+            was_probe=run.was_probe,
         )
-    run.failures.record(message, exc.status_code, exc.error_type)
+    action = policy.action if policy is not None else RetryAction.RETRY_CHANNEL
+    if exc.stop_fallback:
+        action = RetryAction.TERMINAL
+    run.failures.last_action = action
+    run.failures.record(
+        message,
+        exc.status_code,
+        exc.error_type,
+        retry_after_seconds=exc.router_cooldown_seconds,
+    )
     run.attempt.status_code = exc.status_code
     run.attempt.duration_ms = elapsed_ms(run.attempt_started_at)
     run.attempt.error_message = message
@@ -574,7 +609,7 @@ async def _record_target_failure(
             )
         ),
     )
-    if exc.stop_fallback:
+    if action is RetryAction.TERMINAL:
         await run.failures.last_log_failure.write(run.log_ctx)
         return protocol_error_response(
             protocol=run.log_ctx.protocol,
@@ -612,6 +647,10 @@ def _final_upstream_failure(
         status_code == 504 for status_code in failure_status_codes
     ):
         return 504, "gateway_timeout", "All upstream channels timed out"
+    if failure_status_codes and all(
+        status_code == 429 for status_code in failure_status_codes
+    ):
+        return 429, "rate_limit_error", errors[0]
     if errors:
         return 502, "upstream_error", errors[0]
     return 502, "upstream_error", "All upstream channels failed"
