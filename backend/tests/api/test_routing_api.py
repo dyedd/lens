@@ -458,3 +458,66 @@ def test_rate_limited_credential_fails_over_to_sibling_key(
     assert second.status_code == 200, second.text
     assert used_keys[-1] == "Bearer multi-secret-2"
     assert len(used_keys) == 3
+
+
+def test_repeated_rate_limits_escalate_to_model_cooldown(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    payload = _site_with_two_credentials("Multi", "escalate")
+    payload["credentials"].append(
+        {"id": "escalate-c3", "name": "third-key", "api_key": "escalate-secret-3"}
+    )
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "escalate-c3",
+            "model_name": "gpt-4o",
+            "enabled": True,
+            "protocol": "openai_chat",
+        }
+    )
+    create_site(payload)
+    group = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "escalate-group"},
+    )
+    assert group.status_code == 201, group.text
+    channel_id = openai_chat_channel_id("escalate-pc")
+    items = [
+        {
+            "channel_id": channel_id,
+            "credential_id": f"escalate-c{i}",
+            "model_name": "gpt-4o",
+            "enabled": True,
+        }
+        for i in range(1, 4)
+    ]
+    updated = client.put(
+        f"/api/admin/model-groups/{group.json()['id']}",
+        headers=admin_headers,
+        json={"strategy": "failover", "items": items},
+    )
+    assert updated.status_code == 200, updated.text
+    used: list[str] = []
+
+    async def limited(
+        _client: httpx.AsyncClient, upstream: Any, *, stream: bool, body_bytes: bytes
+    ) -> httpx.Response:
+        used.append(httpx.Headers(upstream.headers)["authorization"])
+        return httpx.Response(
+            429,
+            json={"error": {"message": "rate limited"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", limited)
+    response = _chat_group(client, create_gateway_key(), "escalate-group")
+    assert response.status_code == 429, response.text
+    assert len(used) == 2

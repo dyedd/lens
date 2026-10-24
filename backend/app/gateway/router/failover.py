@@ -38,12 +38,16 @@ _ACTIONS: dict[ErrorCategory, RetryAction] = {
 }
 
 
-def policy_for(category: ErrorCategory, scope: CooldownScope) -> FailurePolicy:
+def policy_for(
+    category: ErrorCategory,
+    scope: CooldownScope,
+    action: str | RetryAction | None = None,
+) -> FailurePolicy:
     """Build the policy for an already classified failure."""
     return FailurePolicy(
         category=category,
         scope=scope,
-        action=_ACTIONS[category],
+        action=RetryAction(action) if action is not None else _ACTIONS[category],
     )
 
 

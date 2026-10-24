@@ -361,6 +361,10 @@ async def _finish_attempt(
             result.stream_capture.request_log_id = run.log_ctx.request_log_id
             result.stream_capture.stream_started_at = run.log_ctx.started_at
             result.stream_capture.route_started_revision = run.route_started_revision
+            result.stream_capture.route_cursor_key = (
+                run.plan.cursor_key or run.plan.resolved_group_name or ""
+            )
+            result.stream_capture.route_was_probe = run.was_probe
         first_token_latency_ms = (
             result.stream_capture.first_token_latency_ms
             if result.stream_capture is not None
@@ -382,6 +386,8 @@ async def _finish_attempt(
             fault_protocol=target.fault_protocol,
             result=result,
             attempts=attempt_logs_to_dicts(run.log_ctx.attempts),
+            target=target,
+            was_probe=run.was_probe,
         )
         return result.response
 
@@ -395,6 +401,9 @@ async def _finish_attempt(
         channel=channel,
         user_agent=run.effective_user_agent,
         rate_multiplier=target.rate_multiplier,
+    )
+    app_state.router.note_success(
+        run.plan.cursor_key or run.plan.resolved_group_name or "", target
     )
     return result.response
 
@@ -453,24 +462,52 @@ async def _finalize_stream_request(
     fault_protocol: str,
     result: UpstreamResult,
     attempts: list[dict[str, Any]],
+    target: RouteTarget,
+    was_probe: bool,
 ) -> None:
     """Background close-out of a streamed attempt: route health, then the log row."""
     outcome = stream_log_outcome(result, result.stream_capture)
-    await _record_stream_route_health(
-        channel=channel,
-        fault_protocol=fault_protocol,
-        capture=result.stream_capture,
-        capture_issue=outcome.capture_issue,
-        lifecycle_status=outcome.lifecycle_status,
-        attempts=attempts,
-    )
-    await record_stream_request_log(
-        log_ctx=log_ctx,
-        channel=channel,
-        result=result,
-        attempts=attempts,
-        outcome=outcome,
-    )
+    try:
+        await _record_stream_route_health(
+            channel=channel,
+            fault_protocol=fault_protocol,
+            capture=result.stream_capture,
+            capture_issue=outcome.capture_issue,
+            lifecycle_status=outcome.lifecycle_status,
+            attempts=attempts,
+        )
+        if outcome.capture_issue is None:
+            app_state.router.note_success(
+                result.stream_capture.route_cursor_key
+                if result.stream_capture is not None
+                else "",
+                target,
+            )
+        elif was_probe and not (
+            result.stream_capture is not None
+            and result.stream_capture.error_category is not None
+        ):
+            app_state.router.record_failure(
+                channel.id,
+                outcome.capture_issue,
+                category=ErrorCategory.SERVER,
+                credential_id=target.credential_id,
+                model_name=target.model_name,
+                fault_protocol=fault_protocol,
+                scope="model",
+                cooldown_seconds=None,
+                was_probe=True,
+            )
+        await record_stream_request_log(
+            log_ctx=log_ctx,
+            channel=channel,
+            result=result,
+            attempts=attempts,
+            outcome=outcome,
+        )
+    finally:
+        if was_probe:
+            app_state.router.release_probe(target)
 
 
 async def _record_stream_route_health(
@@ -508,8 +545,12 @@ async def _record_stream_route_health(
     if category is None:
         classification = classify_error(status_code)
         if classification is not None:
-            category, scope, classified_cooldown = classification
+            category, scope, classified_cooldown, classified_action = classification
             cooldown_seconds = cooldown_seconds or classified_cooldown
+        else:
+            classified_action = None
+    else:
+        classified_action = None
     category = category or ErrorCategory.SERVER
     app_state.router.record_failure(
         channel.id,
@@ -520,6 +561,12 @@ async def _record_stream_route_health(
         credential_id=credential_id,
         model_name=model_name,
         fault_protocol=fault_protocol,
+        was_probe=capture.route_was_probe if capture is not None else False,
+        retry_action=(
+            capture.error_retry_action
+            if capture is not None and capture.error_retry_action is not None
+            else classified_action
+        ),
     )
 
 
@@ -543,8 +590,10 @@ def _failure_policy(exc: UpstreamRequestError) -> FailurePolicy | None:
         classification = classify_error(exc.router_status_code)
         if classification is None:
             return None
-        return policy_for(classification.category, classification.scope)
-    return policy_for(category, exc.router_error_scope)
+        return policy_for(
+            classification.category, classification.scope, classification.action
+        )
+    return policy_for(category, exc.router_error_scope, exc.router_retry_action)
 
 
 async def _record_target_failure(
@@ -573,6 +622,7 @@ async def _record_target_failure(
             fault_protocol=run.target.fault_protocol,
             cooldown_seconds=exc.router_cooldown_seconds,
             was_probe=run.was_probe,
+            retry_action=exc.router_retry_action,
         )
     action = policy.action if policy is not None else RetryAction.RETRY_CHANNEL
     if exc.stop_fallback:
@@ -651,6 +701,10 @@ def _final_upstream_failure(
         status_code == 429 for status_code in failure_status_codes
     ):
         return 429, "rate_limit_error", errors[0]
+    if failure_status_codes and all(
+        status_code == 503 for status_code in failure_status_codes
+    ):
+        return 503, "upstream_error", errors[0]
     if errors:
         return 502, "upstream_error", errors[0]
     return 502, "upstream_error", "All upstream channels failed"
