@@ -103,6 +103,7 @@ class SiteBaseUrlEntity(Base):
     site_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     sort_order: Mapped[int] = sort_order_column()
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="default")
 
 
 class SiteCredentialEntity(Base):

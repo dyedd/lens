@@ -103,6 +103,177 @@ def _capture_stream_upstream(
     monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
 
 
+def test_endpoint_priority_uses_china_then_matching_protocol_endpoint(
+    client: Any,
+    monkeypatch: Any,
+    create_site: Any,
+    create_model_group: Any,
+    create_gateway_key: Any,
+) -> None:
+    """普通协议优先走国内地址，匹配的协议专用地址优先级更高。"""
+    payload = valid_site_payload(
+        name="Endpoint priority",
+        base_id="priority-main-base",
+        credential_id="priority-credential",
+        protocol_config_id="priority-main-config",
+        model_name="priority-model",
+    )
+    payload["credentials"][0]["api_key"] = "priority-secret"
+    payload["base_urls"] = [
+        {
+            "id": "priority-main-base",
+            "url": "https://global.example/v1",
+            "kind": "default",
+        },
+        {
+            "id": "priority-china-base",
+            "url": "https://cn.example/v1",
+            "kind": "china",
+        },
+        {
+            "id": "priority-gemini-base",
+            "url": "https://gemini.example/v1",
+            "kind": "protocol",
+        },
+    ]
+    payload["protocols"] = [
+        {
+            "id": "priority-main-config",
+            "base_url_id": "priority-main-base",
+            "models": [
+                {
+                    "credential_id": "priority-credential",
+                    "model_name": "priority-model",
+                    "enabled": True,
+                    "protocol": "openai_chat",
+                }
+            ],
+        },
+        {
+            "id": "priority-china-config",
+            "base_url_id": "priority-china-base",
+            "models": [
+                {
+                    "credential_id": "priority-credential",
+                    "model_name": "priority-model",
+                    "enabled": True,
+                    "protocol": "openai_chat",
+                }
+            ],
+        },
+        {
+            "id": "priority-gemini-config",
+            "base_url_id": "priority-gemini-base",
+            "models": [
+                {
+                    "credential_id": "priority-credential",
+                    "model_name": "priority-model",
+                    "enabled": True,
+                    "protocol": "gemini",
+                }
+            ],
+        },
+    ]
+    create_site(payload)
+    create_model_group(
+        name="priority-model",
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "priority-main-config", ProtocolKind.OPENAI_CHAT
+                ),
+                "credential_id": "priority-credential",
+                "model_name": "priority-model",
+                "enabled": True,
+            },
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "priority-china-config", ProtocolKind.OPENAI_CHAT
+                ),
+                "credential_id": "priority-credential",
+                "model_name": "priority-model",
+                "enabled": True,
+            },
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "priority-gemini-config", ProtocolKind.GEMINI
+                ),
+                "credential_id": "priority-credential",
+                "model_name": "priority-model",
+                "enabled": True,
+            },
+        ],
+    )
+    gateway_key = create_gateway_key()
+    captured: list[str] = []
+
+    import app.gateway.service.proxy_upstream as proxy_upstream
+
+    async def fake_send_upstream(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        del stream, body_bytes
+        captured.append(str(upstream.url))
+        if "gemini.example" in str(upstream.url):
+            payload = {
+                "id": "interaction-1",
+                "object": "interaction",
+                "model": "priority-model",
+                "status": "completed",
+                "steps": [
+                    {
+                        "type": "model_output",
+                        "content": [{"type": "text", "text": "ok"}],
+                    }
+                ],
+                "usage": {"total_input_tokens": 1, "total_output_tokens": 1},
+            }
+        else:
+            payload = {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "model": "priority-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        return httpx.Response(
+            200,
+            json=payload,
+            headers={"content-type": "application/json"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
+
+    chat_response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(gateway_key),
+        json={
+            "model": "priority-model",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    gemini_response = client.post(
+        "/v1beta/interactions",
+        headers=gateway_headers(gateway_key),
+        json={"model": "priority-model", "input": "hi"},
+    )
+
+    assert chat_response.status_code == 200, chat_response.text
+    assert gemini_response.status_code == 200, gemini_response.text
+    assert captured[0].startswith("https://cn.example/v1/")
+    assert captured[1].startswith("https://gemini.example/v1beta/")
+
+
 def test_anthropic_passthrough_drops_foreign_reasoning_signature(
     client: Any,
     monkeypatch: Any,

@@ -44,6 +44,7 @@ class ChannelConfig(StrictBaseModel):
     name: str
     protocol: ProtocolKind
     base_url: HttpUrl
+    endpoint_kind: Literal["default", "protocol", "china"] = "default"
     api_key: str = Field(min_length=1)
     status: ChannelStatus = ChannelStatus.ENABLED
     headers: list[HeaderRule] = Field(default_factory=list)

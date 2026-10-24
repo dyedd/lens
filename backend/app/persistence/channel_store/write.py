@@ -311,6 +311,7 @@ class SiteConfigUpsertsMixin(
                     site_id=site_id,
                     url=str(item.url),
                     sort_order=index,
+                    kind=item.kind,
                 )
             )
 
