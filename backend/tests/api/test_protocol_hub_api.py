@@ -14,6 +14,8 @@ import httpx
 from conftest import gateway_headers, valid_site_payload
 
 from app.core.runtime_channel_ids import compose_runtime_channel_id
+from app.gateway.router.targets import endpoint_supports_protocol
+from app.models.channels import ChannelConfig
 from app.models.protocols import ProtocolKind
 
 
@@ -127,13 +129,18 @@ def test_endpoint_priority_uses_china_then_matching_protocol_endpoint(
         },
         {
             "id": "priority-china-base",
-            "url": "https://cn.example/v1",
+            "url": "https://cn.example",
             "kind": "china",
         },
         {
+            "id": "priority-chat-base",
+            "url": "https://chat.example",
+            "kind": "openai_chat",
+        },
+        {
             "id": "priority-gemini-base",
-            "url": "https://gemini.example/v1",
-            "kind": "protocol",
+            "url": "https://gemini.example",
+            "kind": "gemini",
         },
     ]
     payload["protocols"] = [
@@ -162,6 +169,18 @@ def test_endpoint_priority_uses_china_then_matching_protocol_endpoint(
             ],
         },
         {
+            "id": "priority-chat-config",
+            "base_url_id": "priority-chat-base",
+            "models": [
+                {
+                    "credential_id": "priority-credential",
+                    "model_name": "priority-model",
+                    "enabled": True,
+                    "protocol": "openai_chat",
+                }
+            ],
+        },
+        {
             "id": "priority-gemini-config",
             "base_url_id": "priority-gemini-base",
             "models": [
@@ -178,6 +197,14 @@ def test_endpoint_priority_uses_china_then_matching_protocol_endpoint(
     create_model_group(
         name="priority-model",
         items=[
+            {
+                "channel_id": compose_runtime_channel_id(
+                    "priority-chat-config", ProtocolKind.OPENAI_CHAT
+                ),
+                "credential_id": "priority-credential",
+                "model_name": "priority-model",
+                "enabled": True,
+            },
             {
                 "channel_id": compose_runtime_channel_id(
                     "priority-main-config", ProtocolKind.OPENAI_CHAT
@@ -270,8 +297,22 @@ def test_endpoint_priority_uses_china_then_matching_protocol_endpoint(
 
     assert chat_response.status_code == 200, chat_response.text
     assert gemini_response.status_code == 200, gemini_response.text
-    assert captured[0].startswith("https://cn.example/v1/")
+    assert captured[0].startswith("https://chat.example/v1/")
     assert captured[1].startswith("https://gemini.example/v1beta/")
+
+
+def test_legacy_protocol_endpoint_only_matches_its_channel_protocol() -> None:
+    channel = ChannelConfig(
+        id="legacy-protocol-channel",
+        name="Legacy protocol endpoint",
+        protocol=ProtocolKind.OPENAI_CHAT,
+        base_url="https://legacy.example",
+        endpoint_kind="protocol",
+        api_key="secret",
+    )
+
+    assert endpoint_supports_protocol(channel, ProtocolKind.OPENAI_CHAT)
+    assert not endpoint_supports_protocol(channel, ProtocolKind.OPENAI_RESPONSES)
 
 
 def test_anthropic_passthrough_drops_foreign_reasoning_signature(

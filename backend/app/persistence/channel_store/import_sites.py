@@ -4,7 +4,6 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 
-from ...core.urls import canonicalize_base_url
 from ...models.protocols import ProtocolKind
 from ...models.site_import import (
     SiteBatchImportFieldError,
@@ -55,7 +54,11 @@ def prepare_site_import(
         return None, errors
     configured_urls = {protocol.base_url_id for protocol in protocols}
     for base_url in base_urls:
-        if base_url.id and base_url.id not in configured_urls:
+        if (
+            base_url.id
+            and base_url.kind != "models"
+            and base_url.id not in configured_urls
+        ):
             protocols.append(
                 SiteProtocolConfigInput(
                     id=str(uuid.uuid4()),
@@ -89,7 +92,7 @@ def _import_base_urls(
 ) -> tuple[list[SiteBaseUrlInput], dict[str, str]]:
     base_urls: list[SiteBaseUrlInput] = []
     refs: dict[str, str] = {}
-    seen_urls: set[str] = set()
+    seen_kinds: set[str] = set()
     if not item.base_urls:
         errors.append(
             SiteBatchImportFieldError(
@@ -109,16 +112,15 @@ def _import_base_urls(
                 )
             )
             continue
-        canonical_url = canonicalize_base_url(str(base_url.url))
-        if canonical_url in seen_urls:
+        if base_url.kind in seen_kinds:
             errors.append(
                 SiteBatchImportFieldError(
-                    field=f"base_urls.{base_url_index}.url",
-                    message=f"Duplicate base URL: {canonical_url}",
+                    field=f"base_urls.{base_url_index}.kind",
+                    message=f"Duplicate endpoint purpose: {base_url.kind}",
                 )
             )
             continue
-        seen_urls.add(canonical_url)
+        seen_kinds.add(base_url.kind)
         base_url_id = str(uuid.uuid4())
         refs[ref] = base_url_id
         base_urls.append(

@@ -31,7 +31,6 @@ from app.persistence.entities import (
 
 from ...core.context_windows import coerce_context_window
 from ...core.runtime_channel_ids import compose_runtime_channel_id
-from ...core.urls import canonicalize_base_url
 from ..site_loader import fetch_site_rows
 from .endpoint_credentials import credential_ids_for_url
 
@@ -182,6 +181,9 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
     def flatten_site(self, site: SiteConfig) -> list[ChannelConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}
         base_urls_by_id = {item.id: item for item in site.base_urls}
+        model_list_url = next(
+            (item.url for item in site.base_urls if item.kind == "models"), None
+        )
         items: list[ChannelConfig] = []
         for protocol_config in site.protocols:
             bound_base_url = base_urls_by_id.get(protocol_config.base_url_id)
@@ -209,6 +211,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         protocol=protocol,
                         base_url=bound_base_url.url,
                         endpoint_kind=bound_base_url.kind,
+                        model_list_url=model_list_url,
                         api_key=active_key.key,
                         status=(
                             ChannelStatus.ENABLED
@@ -331,15 +334,14 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
 
     def _build_base_urls(self, items: list[SiteBaseUrlInput]) -> list[SiteBaseUrl]:
         built_base_urls: list[SiteBaseUrl] = []
-        seen_urls: set[str] = set()
+        seen_kinds: set[str] = set()
         for index, item in enumerate(items):
             url_str = str(item.url).strip()
             if not url_str:
                 raise ValueError("Base URL is required")
-            canonical_url = canonicalize_base_url(url_str)
-            if canonical_url in seen_urls:
-                raise ValueError(f"Duplicate base URL: {canonical_url}")
-            seen_urls.add(canonical_url)
+            if item.kind in seen_kinds:
+                raise ValueError(f"Duplicate endpoint purpose: {item.kind}")
+            seen_kinds.add(item.kind)
             built_base_urls.append(
                 SiteBaseUrl(
                     id=item.id or str(uuid.uuid4()),

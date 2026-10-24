@@ -11,11 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
-import { ProtocolDropdown } from "./ProtocolDropdown";
 
 type Props = {
   form: FormState;
@@ -44,54 +42,20 @@ export function ChannelBaseUrlSection({
   const [extraOpen, setExtraOpen] = useState(extraUrls.length > 0);
   if (!primary) return null;
 
-  function endpointProtocols(baseUrlId: string) {
-    return (
-      form.protocolConfigs.find((config) => config.base_url_id === baseUrlId)
-        ?.protocols ?? []
-    );
-  }
-
-  function updateEndpointProtocols(
-    baseUrlId: string,
-    protocols: ProtocolKind[],
-  ) {
-    setForm((current) => ({
-      ...current,
-      protocolConfigs: current.protocolConfigs.map((config) =>
-        config.base_url_id === baseUrlId
-          ? {
-              ...config,
-              protocols,
-              models: config.models
-                .map((model) => ({
-                  ...model,
-                  protocols: model.protocols.filter((protocol) =>
-                    protocols.includes(protocol),
-                  ),
-                }))
-                .filter((model) => model.protocols.length > 0),
-            }
-          : config,
-      ),
-    }));
-  }
-
   function endpointLabel(kind: FormBaseUrl["kind"]) {
-    if (kind === "protocol") {
-      return locale === "zh-CN" ? "协议专用" : "Protocol";
-    }
-    if (kind === "china") return locale === "zh-CN" ? "国内地址" : "China";
-    return locale === "zh-CN" ? "默认地址" : "Default";
-  }
-
-  function protocolEditor(baseUrl: FormBaseUrl) {
-    return (
-      <ProtocolDropdown
-        value={endpointProtocols(baseUrl.id)}
-        locale={locale}
-        onChange={(protocols) => updateEndpointProtocols(baseUrl.id, protocols)}
-      />
-    );
+    const labels = {
+      openai_chat: ["OpenAI Chat 地址", "OpenAI Chat"],
+      openai_responses: ["OpenAI Responses 地址", "OpenAI Responses"],
+      openai_embedding: ["OpenAI Embeddings 地址", "OpenAI Embeddings"],
+      openai_image: ["OpenAI Images 地址", "OpenAI Images"],
+      anthropic: ["Anthropic 地址", "Anthropic"],
+      gemini: ["Gemini 地址", "Gemini"],
+      rerank: ["Rerank 地址", "Rerank"],
+      models: ["模型列表地址", "Model list"],
+      china: ["国内地址", "China"],
+    } as const;
+    if (kind === "default" || kind === "protocol") return "";
+    return labels[kind][locale === "zh-CN" ? 0 : 1];
   }
 
   return (
@@ -110,12 +74,6 @@ export function ChannelBaseUrlSection({
         value={primary.url}
         onChange={(event) => onUpdate(0, { url: event.target.value })}
       />
-      <div className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_8rem]">
-        {protocolEditor(primary)}
-        <div className="flex h-8 items-center px-2 text-xs text-muted-foreground">
-          {locale === "zh-CN" ? "主地址" : "Primary"}
-        </div>
-      </div>
       <div className="pt-1">
         <button
           type="button"
@@ -148,102 +106,108 @@ export function ChannelBaseUrlSection({
               return (
                 <div
                   key={baseUrl.id}
-                  className="space-y-2 rounded-md bg-muted/35 p-2.5"
+                  className="grid min-w-0 grid-cols-[minmax(0,8rem)_minmax(0,1fr)_1.5rem] items-center gap-2 rounded-md bg-muted/35 p-2.5"
                 >
-                  <div className="flex items-center gap-2">
-                    <Input
-                      className="min-w-0 flex-1"
-                      value={baseUrl.url}
-                      placeholder="https://api.example.com/v1"
-                      onChange={(event) =>
-                        onUpdate(index, { url: event.target.value })
-                      }
+                  <Select
+                    value={baseUrl.kind}
+                    onValueChange={(value) =>
+                      onUpdate(index, {
+                        kind: value as FormBaseUrl["kind"],
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-7 w-full min-w-0 overflow-hidden px-2 text-xs">
+                      <SelectValue className="min-w-0 flex-1 truncate text-left">
+                        {endpointLabel(baseUrl.kind)}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai_chat">OpenAI Chat</SelectItem>
+                      <SelectItem value="openai_responses">
+                        OpenAI Responses
+                      </SelectItem>
+                      <SelectItem value="openai_embedding">
+                        OpenAI Embeddings
+                      </SelectItem>
+                      <SelectItem value="openai_image">
+                        OpenAI Images
+                      </SelectItem>
+                      <SelectItem value="anthropic">Anthropic</SelectItem>
+                      <SelectItem value="gemini">Gemini</SelectItem>
+                      <SelectItem value="rerank">Rerank</SelectItem>
+                      <SelectItem value="models">
+                        {locale === "zh-CN" ? "模型列表" : "Model list"}
+                      </SelectItem>
+                      <SelectItem value="china">
+                        {locale === "zh-CN" ? "国内地址" : "China"}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="min-w-0"
+                    value={baseUrl.url}
+                    placeholder="https://api.example.com/v1"
+                    onChange={(event) =>
+                      onUpdate(index, { url: event.target.value })
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-6 justify-self-end text-muted-foreground hover:text-foreground"
+                    aria-label={
+                      locale === "zh-CN" ? "删除地址" : "Remove endpoint"
+                    }
+                    onClick={() => onRemove(index)}
+                  >
+                    <Trash2 className="size-3.5 stroke-1" />
+                  </Button>
+                  <label
+                    htmlFor={`share-keys-${baseUrl.id}`}
+                    className="col-span-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                  >
+                    <Checkbox
+                      id={`share-keys-${baseUrl.id}`}
+                      checked={shareKeys}
+                      onCheckedChange={(checked) => {
+                        const nextShare = checked === true;
+                        setForm((current) => ({
+                          ...current,
+                          base_urls: current.base_urls.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  shareKeys: nextShare,
+                                  newApiKeysLines: nextShare
+                                    ? ""
+                                    : item.newApiKeysLines,
+                                }
+                              : item,
+                          ),
+                          credentials: nextShare
+                            ? current.credentials.filter(
+                                (item) => item.baseUrlId !== baseUrl.id,
+                              )
+                            : current.credentials,
+                        }));
+                      }}
                     />
-                    <Select
-                      value={baseUrl.kind}
-                      onValueChange={(value) =>
-                        onUpdate(index, {
-                          kind: value as FormBaseUrl["kind"],
-                        })
-                      }
-                    >
-                      <SelectTrigger className="h-7 w-24 shrink-0 px-2 text-xs">
-                        <SelectValue>{endpointLabel(baseUrl.kind)}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="default">
-                          {locale === "zh-CN" ? "默认地址" : "Default"}
-                        </SelectItem>
-                        <SelectItem value="protocol">
-                          {locale === "zh-CN"
-                            ? "协议专用地址"
-                            : "Protocol endpoint"}
-                        </SelectItem>
-                        <SelectItem value="china">
-                          {locale === "zh-CN" ? "国内地址" : "China"}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <label
-                      htmlFor={`share-keys-${baseUrl.id}`}
-                      className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground"
-                    >
-                      <Checkbox
-                        id={`share-keys-${baseUrl.id}`}
-                        checked={shareKeys}
-                        onCheckedChange={(checked) => {
-                          const nextShare = checked === true;
-                          setForm((current) => ({
-                            ...current,
-                            base_urls: current.base_urls.map(
-                              (item, itemIndex) =>
-                                itemIndex === index
-                                  ? {
-                                      ...item,
-                                      shareKeys: nextShare,
-                                      newApiKeysLines: nextShare
-                                        ? ""
-                                        : item.newApiKeysLines,
-                                    }
-                                  : item,
-                            ),
-                            credentials: nextShare
-                              ? current.credentials.filter(
-                                  (item) => item.baseUrlId !== baseUrl.id,
-                                )
-                              : current.credentials,
-                          }));
-                        }}
-                      />
-                      {locale === "zh-CN"
-                        ? "共用主地址密钥"
-                        : "Use primary keys"}
-                    </label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                      aria-label={
-                        locale === "zh-CN" ? "删除地址" : "Remove endpoint"
-                      }
-                      onClick={() => onRemove(index)}
-                    >
-                      <Trash2 className="size-3.5 stroke-1" />
-                    </Button>
-                  </div>
-                  {protocolEditor(baseUrl)}
+                    {locale === "zh-CN" ? "共用主地址密钥" : "Use primary keys"}
+                  </label>
                   {shareKeys ? null : (
-                    <ChannelCredentialSection
-                      locale={locale}
-                      inputId={`channel-keys-${baseUrl.id}`}
-                      required={!siteId}
-                      baseUrlId={baseUrl.id}
-                      form={form}
-                      setForm={setForm}
-                      siteId={siteId}
-                      canSyncRates={canSyncRates}
-                    />
+                    <div className="col-span-2 min-w-0">
+                      <ChannelCredentialSection
+                        locale={locale}
+                        inputId={`channel-keys-${baseUrl.id}`}
+                        required={!siteId}
+                        baseUrlId={baseUrl.id}
+                        form={form}
+                        setForm={setForm}
+                        siteId={siteId}
+                        canSyncRates={canSyncRates}
+                      />
+                    </div>
                   )}
                 </div>
               );

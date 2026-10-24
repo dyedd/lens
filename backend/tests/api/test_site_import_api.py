@@ -116,6 +116,30 @@ def test_import_sites_skips_existing_site_names(
     ]
 
 
+def test_import_sites_rejects_duplicate_endpoint_purposes(
+    client, admin_headers
+) -> None:
+    site = valid_import_site()
+    site["base_urls"].append(
+        {
+            "ref": "base-copy",
+            "url": "https://another.example/v1",
+            "kind": "default",
+        }
+    )
+
+    response = client.post(
+        "/api/admin/sites/import",
+        headers=admin_headers,
+        json={"sites": [site]},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["status"] == "error"
+    assert "Duplicate endpoint purpose" in item["errors"][0]["message"]
+
+
 def test_import_sites_reports_not_committed_items_without_cascading_errors(
     client,
     admin_headers,

@@ -169,7 +169,7 @@ export function ChannelsTable({
                 </div>
               </TableCell>
               <TableCell>
-                {urls.length === 1 ? (
+                {urls.length > 0 ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="max-w-[14rem] truncate text-xs text-muted-foreground">
@@ -178,28 +178,6 @@ export function ChannelsTable({
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-sm break-all">
                       {urls[0]}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : urls.length > 1 ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Badge
-                        variant="secondary"
-                        className="cursor-default text-muted-foreground"
-                      >
-                        {locale === "zh-CN"
-                          ? `${urls.length} 个地址`
-                          : `${urls.length} URLs`}
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      <div className="space-y-1">
-                        {urls.map((url) => (
-                          <div key={url} className="text-xs">
-                            {url}
-                          </div>
-                        ))}
-                      </div>
                     </TooltipContent>
                   </Tooltip>
                 ) : (

@@ -216,6 +216,10 @@ def resolve_channel_model_list_url(channel: ChannelConfig, api_key: str) -> str:
         ProtocolKind.ANTHROPIC: {"limit": "1000"},
         ProtocolKind.GEMINI: {"key": api_key, "pageSize": "1000"},
     }.get(channel.protocol)
-    return append_url_path(
-        _protocol_base_url(channel), "models", query_params=query_params
-    )
+    if channel.model_list_url is not None:
+        return append_url_path(
+            canonicalize_base_url(str(channel.model_list_url)),
+            query_params=query_params,
+        )
+    root = _protocol_base_url(channel)
+    return append_url_path(root, "models", query_params=query_params)
