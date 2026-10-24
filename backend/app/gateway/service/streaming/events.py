@@ -317,6 +317,9 @@ def _stream_payload_error_message(
 _RATE_LIMIT_MARKERS = (
     "rate_limit",
     "rate_limit_exceeded",
+    "rate limit",
+    "throttl",
+    "too many requests",
     "too_many_requests",
     "quota_exceeded",
     "resource_exhausted",
