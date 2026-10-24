@@ -4,6 +4,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 
+from ...core.urls import canonicalize_base_url
 from ...models.protocols import ProtocolKind
 from ...models.site_import import (
     SiteBatchImportFieldError,
@@ -88,6 +89,7 @@ def _import_base_urls(
 ) -> tuple[list[SiteBaseUrlInput], dict[str, str]]:
     base_urls: list[SiteBaseUrlInput] = []
     refs: dict[str, str] = {}
+    seen_urls: set[str] = set()
     if not item.base_urls:
         errors.append(
             SiteBatchImportFieldError(
@@ -107,9 +109,25 @@ def _import_base_urls(
                 )
             )
             continue
+        canonical_url = canonicalize_base_url(str(base_url.url))
+        if canonical_url in seen_urls:
+            errors.append(
+                SiteBatchImportFieldError(
+                    field=f"base_urls.{base_url_index}.url",
+                    message=f"Duplicate base URL: {canonical_url}",
+                )
+            )
+            continue
+        seen_urls.add(canonical_url)
         base_url_id = str(uuid.uuid4())
         refs[ref] = base_url_id
-        base_urls.append(SiteBaseUrlInput(id=base_url_id, url=base_url.url))
+        base_urls.append(
+            SiteBaseUrlInput(
+                id=base_url_id,
+                url=base_url.url,
+                kind=base_url.kind,
+            )
+        )
     return base_urls, refs
 
 

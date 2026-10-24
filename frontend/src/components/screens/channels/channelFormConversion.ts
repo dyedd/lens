@@ -25,6 +25,7 @@ import {
   protocolConfigEffectiveProtocols,
 } from "./channelModels";
 import type {
+  FormBaseUrl,
   FormCredential,
   FormModel,
   FormProtocolConfig,
@@ -107,10 +108,11 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
 
 /** Converts a persisted site into channel editor state. */
 export function toForm(site: Site): FormState {
-  const baseUrls = site.base_urls.length
+  const baseUrls: FormBaseUrl[] = site.base_urls.length
     ? site.base_urls.map((item) => ({
         id: item.id,
         url: item.url,
+        kind: item.kind ?? (item === site.base_urls[0] ? "default" : "china"),
         shareKeys: true,
         newApiKeysLines: "",
       }))
@@ -118,6 +120,7 @@ export function toForm(site: Site): FormState {
         {
           id: createLocalId("baseurl"),
           url: "",
+          kind: "default",
           shareKeys: true,
           newApiKeysLines: "",
         },
@@ -210,6 +213,7 @@ export function formBaseUrlsForPayload(form: FormState) {
     .map((item) => ({
       id: item.id,
       url: item.url.trim(),
+      kind: item.kind,
     }))
     .filter((item) => item.url);
 }
@@ -255,9 +259,9 @@ export function toPayload(form: FormState): SitePayload {
       );
       if (!selectedCredentialIds.length) return [];
       const derivedProtocols = protocolConfigEffectiveProtocols(protocolConfig);
-      const configuredProtocols = derivedProtocols.length
-        ? derivedProtocols
-        : protocolConfig.protocols;
+      const configuredProtocols = Array.from(
+        new Set([...protocolConfig.protocols, ...derivedProtocols]),
+      );
       const protocolConfigProtocols = configuredProtocols.length
         ? configuredProtocols
         : (["openai_chat"] as ProtocolKind[]);

@@ -5,6 +5,7 @@ import type {
   Site,
   SiteCredential,
   SiteModelInput,
+  SiteBaseUrlKind,
 } from "@/lib/api/sites";
 import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { Locale } from "@/lib/I18nContext";
@@ -18,6 +19,7 @@ export type FormCredential = Omit<
 export type FormBaseUrl = {
   id: string;
   url: string;
+  kind: SiteBaseUrlKind;
   shareKeys: boolean;
   newApiKeysLines: string;
 };

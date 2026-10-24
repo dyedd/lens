@@ -30,6 +30,13 @@ class RouteTarget:
     fault_protocol: str = ""
 
 
+def endpoint_priority(channel: ChannelConfig, requested_protocol: ProtocolKind) -> int:
+    """按当前请求协议优先使用专用地址，其次国内地址和主地址。"""
+    if channel.endpoint_kind == "protocol":
+        return int(channel.protocol == requested_protocol) * 2
+    return {"default": 0, "china": 1}.get(channel.endpoint_kind, 0)
+
+
 @lru_cache(maxsize=2048)
 def _compile_model_pattern(pattern: str) -> re.Pattern[str]:
     return re.compile(pattern)

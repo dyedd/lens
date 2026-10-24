@@ -31,6 +31,7 @@ from app.persistence.entities import (
 
 from ...core.context_windows import coerce_context_window
 from ...core.runtime_channel_ids import compose_runtime_channel_id
+from ...core.urls import canonicalize_base_url
 from ..site_loader import fetch_site_rows
 from .endpoint_credentials import credential_ids_for_url
 
@@ -76,7 +77,12 @@ class ChannelRowMappingMixin:
         result: dict[str, list[SiteBaseUrl]] = defaultdict(list)
         for row in rows:
             result[row.site_id].append(
-                SiteBaseUrl(id=row.id, url=row.url, sort_order=row.sort_order)
+                SiteBaseUrl(
+                    id=row.id,
+                    url=row.url,
+                    sort_order=row.sort_order,
+                    kind=row.kind or "default",
+                )
             )
         return result
 
@@ -202,6 +208,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         name=site.name,
                         protocol=protocol,
                         base_url=bound_base_url.url,
+                        endpoint_kind=bound_base_url.kind,
                         api_key=active_key.key,
                         status=(
                             ChannelStatus.ENABLED
@@ -324,15 +331,21 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
 
     def _build_base_urls(self, items: list[SiteBaseUrlInput]) -> list[SiteBaseUrl]:
         built_base_urls: list[SiteBaseUrl] = []
+        seen_urls: set[str] = set()
         for index, item in enumerate(items):
             url_str = str(item.url).strip()
             if not url_str:
                 raise ValueError("Base URL is required")
+            canonical_url = canonicalize_base_url(url_str)
+            if canonical_url in seen_urls:
+                raise ValueError(f"Duplicate base URL: {canonical_url}")
+            seen_urls.add(canonical_url)
             built_base_urls.append(
                 SiteBaseUrl(
                     id=item.id or str(uuid.uuid4()),
                     url=item.url,
                     sort_order=index,
+                    kind=item.kind,
                 )
             )
         return built_base_urls

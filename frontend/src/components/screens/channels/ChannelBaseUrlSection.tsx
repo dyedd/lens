@@ -4,8 +4,17 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { cn } from "@/lib/classNames";
+import type { ProtocolKind } from "@/lib/api/protocols";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
+import { ProtocolDropdown } from "./ProtocolDropdown";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 type Props = {
@@ -35,6 +44,56 @@ export function ChannelBaseUrlSection({
   const [extraOpen, setExtraOpen] = useState(extraUrls.length > 0);
   if (!primary) return null;
 
+  function endpointProtocols(baseUrlId: string) {
+    return (
+      form.protocolConfigs.find((config) => config.base_url_id === baseUrlId)
+        ?.protocols ?? []
+    );
+  }
+
+  function updateEndpointProtocols(
+    baseUrlId: string,
+    protocols: ProtocolKind[],
+  ) {
+    setForm((current) => ({
+      ...current,
+      protocolConfigs: current.protocolConfigs.map((config) =>
+        config.base_url_id === baseUrlId
+          ? {
+              ...config,
+              protocols,
+              models: config.models
+                .map((model) => ({
+                  ...model,
+                  protocols: model.protocols.filter((protocol) =>
+                    protocols.includes(protocol),
+                  ),
+                }))
+                .filter((model) => model.protocols.length > 0),
+            }
+          : config,
+      ),
+    }));
+  }
+
+  function endpointLabel(kind: FormBaseUrl["kind"]) {
+    if (kind === "protocol") {
+      return locale === "zh-CN" ? "协议专用" : "Protocol";
+    }
+    if (kind === "china") return locale === "zh-CN" ? "国内地址" : "China";
+    return locale === "zh-CN" ? "默认地址" : "Default";
+  }
+
+  function protocolEditor(baseUrl: FormBaseUrl) {
+    return (
+      <ProtocolDropdown
+        value={endpointProtocols(baseUrl.id)}
+        locale={locale}
+        onChange={(protocols) => updateEndpointProtocols(baseUrl.id, protocols)}
+      />
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-1">
       <Label
@@ -51,6 +110,12 @@ export function ChannelBaseUrlSection({
         value={primary.url}
         onChange={(event) => onUpdate(0, { url: event.target.value })}
       />
+      <div className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_8rem]">
+        {protocolEditor(primary)}
+        <div className="flex h-8 items-center px-2 text-xs text-muted-foreground">
+          {locale === "zh-CN" ? "主地址" : "Primary"}
+        </div>
+      </div>
       <div className="pt-1">
         <button
           type="button"
@@ -61,7 +126,7 @@ export function ChannelBaseUrlSection({
           }}
         >
           <span>
-            {locale === "zh-CN" ? "备用地址" : "Backup URLs"}
+            {locale === "zh-CN" ? "其他地址" : "Other endpoints"}
             {extraUrls.length
               ? locale === "zh-CN"
                 ? `（${extraUrls.length}）`
@@ -94,6 +159,29 @@ export function ChannelBaseUrlSection({
                         onUpdate(index, { url: event.target.value })
                       }
                     />
+                    <Select
+                      value={baseUrl.kind}
+                      onValueChange={(value) =>
+                        onUpdate(index, {
+                          kind: value as FormBaseUrl["kind"],
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-7 w-24 shrink-0 px-2 text-xs">
+                        <SelectValue>{endpointLabel(baseUrl.kind)}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">
+                          {locale === "zh-CN" ? "默认地址" : "Default"}
+                        </SelectItem>
+                        <SelectItem value="protocol">
+                          {locale === "zh-CN" ? "协议专用地址" : "Protocol endpoint"}
+                        </SelectItem>
+                        <SelectItem value="china">
+                          {locale === "zh-CN" ? "国内地址" : "China"}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                     <label
                       htmlFor={`share-keys-${baseUrl.id}`}
                       className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground"
@@ -136,14 +224,15 @@ export function ChannelBaseUrlSection({
                       className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
                       aria-label={
                         locale === "zh-CN"
-                          ? "删除备用地址"
-                          : "Remove backup URL"
+                          ? "删除地址"
+                          : "Remove endpoint"
                       }
                       onClick={() => onRemove(index)}
                     >
                       <Trash2 className="size-3.5 stroke-1" />
                     </Button>
                   </div>
+                  {protocolEditor(baseUrl)}
                   {shareKeys ? null : (
                     <ChannelCredentialSection
                       locale={locale}
@@ -167,7 +256,7 @@ export function ChannelBaseUrlSection({
               onClick={onAdd}
             >
               <Plus className="size-3.5 stroke-1" />
-              {locale === "zh-CN" ? "添加备用地址" : "Add backup URL"}
+              {locale === "zh-CN" ? "添加地址" : "Add endpoint"}
             </Button>
           </div>
         ) : null}

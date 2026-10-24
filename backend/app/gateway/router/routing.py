@@ -9,7 +9,7 @@ from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouteState
-from .targets import RouteTarget, build_route_targets
+from .targets import RouteTarget, build_route_targets, endpoint_priority
 
 
 @dataclass(slots=True)
@@ -126,20 +126,38 @@ class RoutePlanner:
             raise RoutingError(detail)
 
         route_key = cursor_key or protocol.value
-        primary_index = (
-            0
-            if strategy == RoutingStrategy.FAILOVER
-            else self._swrr_pick_index(active, route_key, mutate=True)
+        preferred_priority = max(
+            endpoint_priority(target.channel, protocol) for target in active
         )
-        primary = active[primary_index]
-        if strategy == RoutingStrategy.FAILOVER:
-            fallbacks = active[1:]
-        else:
-            fallbacks = [
-                target for index, target in enumerate(active) if index != primary_index
+        preferred = [
+            target
+            for target in active
+            if endpoint_priority(target.channel, protocol) == preferred_priority
+        ]
+        fallback = [
+            target
+            for target in active
+            if endpoint_priority(target.channel, protocol) < preferred_priority
+        ]
+
+        def order_group(group: list[RouteTarget]) -> list[RouteTarget]:
+            if not group:
+                return []
+            primary_index = (
+                0
+                if strategy == RoutingStrategy.FAILOVER
+                else self._swrr_pick_index(group, route_key, mutate=True)
+            )
+            primary = group[primary_index]
+            remaining = [
+                target for index, target in enumerate(group) if index != primary_index
             ]
-            fallbacks.sort(key=self._health.score, reverse=True)
-        return RouteSelection(primary=primary, fallbacks=fallbacks)
+            if strategy != RoutingStrategy.FAILOVER:
+                remaining.sort(key=self._health.score, reverse=True)
+            return [primary, *remaining]
+
+        ordered = [*order_group(preferred), *order_group(fallback)]
+        return RouteSelection(primary=ordered[0], fallbacks=ordered[1:])
 
     def build_route_state(
         self, channels: list[ChannelConfig], protocol: ProtocolKind, *, now: float
@@ -303,16 +321,35 @@ class RoutePlanner:
             return cooled, None
 
         route_key = cursor_key or protocol.value
-        primary_index = (
-            0
-            if strategy == RoutingStrategy.FAILOVER
-            else self._swrr_pick_index(available, route_key, mutate=False)
+        preferred_priority = max(
+            endpoint_priority(target.channel, protocol) for target in available
         )
-        primary = available[primary_index]
-        remaining = [
-            target for index, target in enumerate(available) if index != primary_index
+        preferred = [
+            target
+            for target in available
+            if endpoint_priority(target.channel, protocol) == preferred_priority
         ]
-        if strategy != RoutingStrategy.FAILOVER:
-            remaining.sort(key=self._health.score, reverse=True)
-        ordered_available = [primary, *remaining]
+        fallback = [
+            target
+            for target in available
+            if endpoint_priority(target.channel, protocol) < preferred_priority
+        ]
+
+        def order_group(group: list[RouteTarget]) -> list[RouteTarget]:
+            if not group:
+                return []
+            primary_index = (
+                0
+                if strategy == RoutingStrategy.FAILOVER
+                else self._swrr_pick_index(group, route_key, mutate=False)
+            )
+            primary = group[primary_index]
+            remaining = [
+                target for index, target in enumerate(group) if index != primary_index
+            ]
+            if strategy != RoutingStrategy.FAILOVER:
+                remaining.sort(key=self._health.score, reverse=True)
+            return [primary, *remaining]
+
+        ordered_available = [*order_group(preferred), *order_group(fallback)]
         return ordered_available + cooled, ordered_available[0].channel.id
