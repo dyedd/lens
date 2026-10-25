@@ -94,13 +94,16 @@ export function ChannelEditorDialog({
 
   return (
     <Sheet open={isDialogOpen} onOpenChange={handleOpenChange}>
-      <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
+      <SheetContent className="flex min-w-0 max-w-full flex-col gap-0 sm:max-w-[560px]">
         <SheetHeader className="px-4 pb-4">
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <fieldset className="flex min-h-0 flex-1 flex-col border-0 p-0">
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
+        <form
+          onSubmit={submit}
+          className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col"
+        >
+          <fieldset className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col border-0 p-0">
+            <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-4 py-2">
               <ChannelBasicInfoSection
                 form={form}
                 locale={locale}

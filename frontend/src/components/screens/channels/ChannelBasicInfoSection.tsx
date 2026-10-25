@@ -72,7 +72,7 @@ export function ChannelBasicInfoSection({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="min-w-0 max-w-full space-y-4">
       <div className="min-w-0 space-y-1">
         <Label
           htmlFor="channel-name"
