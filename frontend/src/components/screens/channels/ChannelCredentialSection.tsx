@@ -67,7 +67,7 @@ function CredentialKeyCell({
   const [showKey, setShowKey] = useState(false);
 
   return (
-    <div className="relative flex min-w-0 flex-1 items-center">
+    <div className="relative flex w-full min-w-0 items-center">
       <Input
         type={showKey ? "text" : "password"}
         value={credential.api_key}
@@ -85,7 +85,7 @@ function CredentialKeyCell({
         }}
         placeholder="sk-..."
         aria-label={isZh ? "API Key" : "API key"}
-        className="h-7 min-w-0 flex-1 pl-2 pr-12 font-mono text-xs"
+        className="h-7 w-full min-w-0 pl-2 pr-12 font-mono text-xs"
         spellCheck={false}
       />
       <div className="absolute right-1 flex items-center gap-0.5">
@@ -269,7 +269,7 @@ export function ChannelCredentialSection({
   }
 
   return (
-    <div className="min-w-0 space-y-1">
+    <div className="min-w-0 max-w-full space-y-1">
       <Label
         htmlFor={inputId}
         required={required}
@@ -287,8 +287,7 @@ export function ChannelCredentialSection({
         id={inputId}
         required={required && scopedKeys.length === 0}
         spellCheck={false}
-        wrap="off"
-        className="h-24 resize-none overflow-auto whitespace-pre font-mono text-xs [field-sizing:fixed] placeholder:font-sans"
+        className="h-24 w-full min-w-0 max-w-full resize-none overflow-y-auto font-mono text-xs break-all placeholder:font-sans"
         placeholder={
           isZh
             ? "每行输入一个 API Key，按 Enter 添加；Shift+Enter 换行"
@@ -316,18 +315,12 @@ export function ChannelCredentialSection({
                   key={credential.id}
                   className="space-y-1.5 border-b border-border/40 px-2.5 py-1.5 text-xs last:border-b-0"
                 >
-                  <div className="grid min-w-0 grid-cols-[1.75rem_5rem_minmax(8rem,1fr)_5.5rem_1.5rem] items-center gap-1.5">
-                    <span
-                      className="inline-flex size-5 items-center justify-center rounded-full bg-background text-[11px] font-medium text-muted-foreground tabular-nums"
-                      aria-label={credentialLabel({ name: "" }, index, locale)}
-                    >
-                      {index + 1}
-                    </span>
+                  <div className="grid min-w-0 grid-cols-[5rem_minmax(0,1fr)_6.25rem_1.5rem] items-center gap-2">
                     <Input
-                      className="h-7 w-full min-w-0 px-2"
+                      className="h-7 w-full min-w-0 px-2 text-xs"
                       value={credential.name}
                       placeholder={isZh ? "备注" : "Remark"}
-                      aria-label={isZh ? "密钥备注" : "Key remark"}
+                      aria-label={credentialLabel(credential, index, locale)}
                       onChange={(event) =>
                         updateKey(credential.id, { name: event.target.value })
                       }
@@ -351,7 +344,7 @@ export function ChannelCredentialSection({
                       }
                     >
                       <SelectTrigger
-                        className="h-7 w-full min-w-0 px-1"
+                        className="h-7 w-full min-w-0 px-2 text-xs"
                         aria-label={isZh ? "倍率来源" : "Rate source"}
                       >
                         <SelectValue className="min-w-0 flex-1 truncate" />
@@ -369,7 +362,7 @@ export function ChannelCredentialSection({
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon-sm"
+                          size="icon-xs"
                           className="size-6 justify-self-end text-muted-foreground hover:text-foreground"
                           aria-label={isZh ? "删除 API Key" : "Delete API key"}
                           onClick={() => removeKey(credential.id)}
@@ -383,10 +376,10 @@ export function ChannelCredentialSection({
                     </Tooltip>
                   </div>
                   {credential.rate_source !== "none" ? (
-                    <div className="flex h-7 items-center gap-2 pl-14">
+                    <div className="flex h-7 items-center gap-2">
                       {credential.rate_source === "newapi" ? (
                         <Input
-                          className="h-7 w-24 shrink-0"
+                          className="h-7 w-20 shrink-0 px-2 text-xs"
                           value={credential.rate_group}
                           placeholder={isZh ? "分组" : "Group"}
                           aria-label={isZh ? "NewAPI 分组" : "NewAPI group"}
@@ -397,7 +390,9 @@ export function ChannelCredentialSection({
                             })
                           }
                         />
-                      ) : null}
+                      ) : (
+                        <div className="w-20 shrink-0" aria-hidden="true" />
+                      )}
                       <div className="flex min-w-0 flex-1 items-center gap-1.5">
                         {credential.rate_multiplier !== null ? (
                           <Tooltip>
