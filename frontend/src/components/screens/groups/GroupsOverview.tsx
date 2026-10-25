@@ -119,10 +119,7 @@ type Props = {
   onCreateGroupForModels: (name: string, modelNames: string[]) => void;
   onCreateOwnGroups: (modelNames: string[]) => Promise<boolean>;
   onAutoPlace: () => void;
-  onRemoveUnplacedModels: (
-    modelNames: string[],
-    excludeFromOnboarding: boolean,
-  ) => Promise<boolean>;
+  onRemoveUnplacedModels: (modelNames: string[]) => Promise<boolean>;
   onOpenSyncRuns: () => void;
 };
 

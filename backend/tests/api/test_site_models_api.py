@@ -451,15 +451,13 @@ def _model(
 
 def _sync_site_payload(
     *,
-    exclude_rules: list[str] | None = None,
     models: list[dict[str, Any]] | None = None,
     **site_fields: Any,
 ) -> dict[str, Any]:
-    """Build a two-credential site with exclusion rules and stored models."""
+    """Build a two-credential site with stored models."""
     return {
         "name": "Multi-key Site",
         **site_fields,
-        "model_sync_exclude_rule_ids": exclude_rules or [],
         "base_urls": [{"id": "base-1", "url": "https://upstream.example/v1"}],
         "credentials": [
             {"id": "cred-a", "name": "key-a", "api_key": "secret-a"},
@@ -607,12 +605,10 @@ def test_channel_model_sync_keeps_group_after_its_models_leave(
     assert [(group["name"], group["items"]) for group in groups] == [("gpt-4o", [])]
 
 
-@pytest.mark.parametrize("exclude", [True, False])
-def test_removing_unplaced_model_can_exclude_it_from_onboarding(
+def test_removing_unplaced_model_deletes_it_from_the_channel(
     client,
     admin_headers,
     monkeypatch,
-    exclude: bool,
 ) -> None:
     # The near name keeps the model out of automatic groups, so it stays
     # unplaced and can be removed from the待分配 panel.
@@ -630,30 +626,14 @@ def test_removing_unplaced_model_can_exclude_it_from_onboarding(
     removed = client.post(
         "/api/admin/unplaced-model-removals",
         headers=admin_headers,
-        json={"model_names": ["gpt-4o"], "exclude": exclude},
+        json={"model_names": ["gpt-4o"]},
     )
     assert removed.status_code == 200, removed.text
-    assert removed.json() == {
-        "deleted": 2,
-        "excluded": 1 if exclude else 0,
-    }
+    assert removed.json() == {"deleted": 2}
 
-    _run_model_sync(client, admin_headers)
     site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
     names = {model["model_name"] for model in site["protocols"][0]["models"]}
-    if exclude:
-        assert "gpt-4o" not in names
-        rules = {
-            rule["id"]: rule["pattern"]
-            for rule in client.get(
-                "/api/admin/regex-rules", headers=admin_headers
-            ).json()
-        }
-        assert [rules[rule_id] for rule_id in site["model_sync_exclude_rule_ids"]] == [
-            "^gpt-4o$"
-        ]
-    else:
-        assert "gpt-4o" in names
+    assert "gpt-4o" not in names
 
 
 def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
@@ -902,29 +882,3 @@ def test_site_rejects_duplicate_models(
     response = client.post("/api/admin/sites", headers=admin_headers, json=payload)
 
     assert_error(response, 400, "Duplicate model in protocol config")
-
-
-def test_channel_model_sync_skips_models_matching_exclude_rules(
-    client,
-    admin_headers,
-    create_regex_rule,
-    monkeypatch,
-) -> None:
-    exclude = create_regex_rule("Legacy", "preview$")
-    _create_sync_site(
-        client,
-        admin_headers,
-        _sync_site_payload(exclude_rules=[exclude["id"]]),
-    )
-
-    async def fake_fetch(_channel: Any) -> list[str]:
-        return ["gpt-4o", "gpt-4o-preview"]
-
-    _patch_upstream_models(monkeypatch, fake_fetch)
-    _run_model_sync(client, admin_headers)
-
-    assert _stored_models(client, admin_headers) == {
-        ("cred-a", "manual-only", True),
-        ("cred-a", "gpt-4o", False),
-        ("cred-b", "gpt-4o", False),
-    }

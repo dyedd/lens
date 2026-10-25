@@ -170,9 +170,7 @@ export function GroupsScreen() {
         onCreateGroupForModels={commands.createGroupForModels}
         onCreateOwnGroups={commands.createOwnGroups}
         onAutoPlace={commands.autoPlaceModels}
-        onRemoveUnplacedModels={(names, exclude) =>
-          commands.removeUnplacedModels(names, exclude)
-        }
+        onRemoveUnplacedModels={commands.removeUnplacedModels}
         onOpenSyncRuns={() => setIsSyncRunsOpen(true)}
       />
 

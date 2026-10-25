@@ -346,7 +346,6 @@ export const emptyForm = (): FormState => {
     protocolConfigs: [emptyProtocolConfig(baseUrlId)],
     proxy_mode: "inherit",
     channel_proxy: "",
-    model_sync_exclude_rule_ids: [],
     headersJson: "",
     paramsJson: "",
   };

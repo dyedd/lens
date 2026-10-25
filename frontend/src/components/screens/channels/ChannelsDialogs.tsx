@@ -122,7 +122,6 @@ export function ChannelsDialogs({
           onTest={modelTest.openAggregateModelTest}
           testing={modelTest.testingModel}
           onAddBinding={editor.addBinding}
-          onExcludeModels={editor.excludeModelsFromOnboarding}
           groupOptions={groupOptions}
           onOpenRemote={() => setRemoteOpen(true)}
           initialStatusFilter={modelsStatusFilter}

@@ -9,7 +9,6 @@ import {
 import { type FormEventHandler, useMemo, useState } from "react";
 import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   Dialog,
@@ -76,8 +75,6 @@ type Props = {
   onOpenRemote: () => void;
   /** Execution groups new models can join after the channel is saved. */
   groupOptions: Array<{ id: string; name: string }>;
-  /** Adds exclude rules so removed models never sync back in. */
-  onExcludeModels: (modelNames: string[]) => Promise<boolean>;
   initialStatusFilter?: ModelStatusFilter;
 };
 
@@ -109,7 +106,6 @@ function ChannelModelsBody({
   onAddBinding,
   onOpenRemote,
   groupOptions,
-  onExcludeModels,
   initialStatusFilter = "all",
 }: Omit<Props, "open">) {
   const [query, setQuery] = useState("");
@@ -121,7 +117,6 @@ function ChannelModelsBody({
     "openai_chat",
   ]);
   const [removeRequest, setRemoveRequest] = useState<string[] | null>(null);
-  const [excludeOnRemove, setExcludeOnRemove] = useState(true);
 
   const hasMultipleBaseUrls = useMemo(
     () => new Set(models.map((model) => model.baseUrl)).size > 1,
@@ -165,13 +160,6 @@ function ChannelModelsBody({
   const selectedCount = selectedKeys.length;
   const activeFilterCount = Number(statusFilter !== "all");
   const sortOptions = modelSortOptions(locale);
-  const removeNames = useMemo(
-    () =>
-      (removeRequest ?? [])
-        .map((key) => models.find((model) => model.key === key)?.modelName)
-        .filter((name): name is string => Boolean(name)),
-    [models, removeRequest],
-  );
 
   function applyBulkProtocols() {
     if (!bulkProtocols.length || selectedCount === 0) return;
@@ -180,17 +168,12 @@ function ChannelModelsBody({
 
   function requestRemoval(keys: string[]) {
     if (!keys.length) return;
-    setExcludeOnRemove(true);
     setRemoveRequest(keys);
   }
 
   async function confirmRemoval() {
     const keys = removeRequest ?? [];
     if (!keys.length) return;
-    if (excludeOnRemove && removeNames.length) {
-      const excluded = await onExcludeModels([...new Set(removeNames)]);
-      if (!excluded) return;
-    }
     for (const key of keys) onDelete(key);
     selection.clear();
     setRemoveRequest(null);
@@ -426,28 +409,7 @@ function ChannelModelsBody({
           if (!open) setRemoveRequest(null);
         }}
         onConfirm={() => void confirmRemoval()}
-      >
-        {removeNames.length ? (
-          <label
-            htmlFor="exclude-on-remove"
-            className="flex items-start gap-2 rounded-md bg-muted/35 p-2.5 text-xs text-muted-foreground"
-          >
-            <Checkbox
-              id="exclude-on-remove"
-              className="mt-0.5"
-              checked={excludeOnRemove}
-              onCheckedChange={(checked) =>
-                setExcludeOnRemove(checked === true)
-              }
-            />
-            <span>
-              {locale === "zh-CN"
-                ? "删除后下次同步会重新接入。勾选会同时加入排除正则，避免重新接入。"
-                : "Removed models sync back on the next run. Add exclusion regexes to keep them out."}
-            </span>
-          </label>
-        ) : null}
-      </ConfirmDeleteDialog>
+      />
     </>
   );
 }

@@ -170,11 +170,8 @@ export type ModelGroupReconcileReport = {
 };
 export type UnplacedModelRemovalRequest = {
   model_names: string[];
-  /** Also reference exclude rules so sync never onboards them again. */
-  exclude?: boolean;
 };
 export type UnplacedModelRemovalResponse = {
   deleted: number;
-  excluded: number;
 };
 export type ModelGroupMergeRequest = { target_group_id: string };

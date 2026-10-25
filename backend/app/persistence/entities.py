@@ -87,10 +87,6 @@ class SiteEntity(Base):
     param_override: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    # Library regex rules that keep matching upstream models out of the catalog.
-    model_sync_exclude_rule_ids_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
 
 
 class SiteBaseUrlEntity(Base):
