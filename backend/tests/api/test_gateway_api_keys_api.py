@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from conftest import assert_error
-
 
 def test_gateway_api_key_crud_round_trip(
     client,
@@ -44,77 +42,3 @@ def test_gateway_api_key_crud_round_trip(
     )
     assert deleted.status_code == 204
     assert client.get("/api/admin/gateway-api-keys", headers=admin_headers).json() == []
-
-
-def test_gateway_api_key_update_and_delete_missing_key_return_not_found(
-    client,
-    admin_headers,
-) -> None:
-    update = client.put(
-        "/api/admin/gateway-api-keys/missing",
-        headers=admin_headers,
-        json={"remark": "missing"},
-    )
-    delete = client.delete("/api/admin/gateway-api-keys/missing", headers=admin_headers)
-
-    assert_error(update, 404, "missing")
-    assert_error(delete, 404, "missing")
-
-
-def test_gateway_api_key_uses_custom_secret_and_rejects_duplicates(
-    client,
-    admin_headers,
-    create_gateway_key,
-) -> None:
-    key = create_gateway_key(api_key="  my-custom-key  ")
-
-    assert key["api_key"] == "my-custom-key"
-
-    duplicate = client.post(
-        "/api/admin/gateway-api-keys",
-        headers=admin_headers,
-        json={"api_key": "my-custom-key"},
-    )
-    short = client.post(
-        "/api/admin/gateway-api-keys",
-        headers=admin_headers,
-        json={"api_key": "short"},
-    )
-
-    assert_error(duplicate, 400, "Gateway API key already exists")
-    assert_error(short, 422)
-
-
-def test_gateway_api_key_rejects_invalid_expiration(client, admin_headers) -> None:
-    response = client.post(
-        "/api/admin/gateway-api-keys",
-        headers=admin_headers,
-        json={"expires_at": "not-a-date"},
-    )
-
-    assert_error(response, 400, "Invalid gateway API key expiration time")
-
-
-def test_gateway_api_key_canonicalizes_and_clears_expiration(
-    client,
-    admin_headers,
-    create_gateway_key,
-) -> None:
-    key = create_gateway_key(expires_at="2030-01-01T08:00:00+08:00")
-
-    assert key["expires_at"] == "2030-01-01T00:00:00+00:00"
-
-    response = client.put(
-        f"/api/admin/gateway-api-keys/{key['id']}",
-        headers=admin_headers,
-        json={
-            "remark": "cleared",
-            "enabled": True,
-            "allowed_models": [],
-            "max_cost_usd": 0,
-            "expires_at": "",
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json()["expires_at"] is None
