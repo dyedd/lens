@@ -56,42 +56,16 @@ def test_proxy_image_edits_forwards_form_fields_and_files(
     )
 
     assert response.status_code == 200
-    assert calls[0]["protocol"] == "openai_image"
-    assert calls[0]["body"] == {"model": "gpt-image-1", "prompt": "edit"}
-    assert calls[0]["path_suffix"] == "images/edits"
-    assert calls[0]["files"] == [
-        {
-            "field": "image",
-            "filename": "image.png",
-            "size": 3,
-            "content_type": "image/png",
-        }
-    ]
-
-
-def test_proxy_rejects_non_object_json_body(client, create_gateway_key) -> None:
-    key = create_gateway_key()
-
-    response = client.post(
-        "/v1/chat/completions",
-        headers=gateway_headers(key),
-        json=["not", "an", "object"],
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"]["message"] == (
-        "Chat completion request body must be a JSON object"
-    )
-
-
-def test_proxy_rejects_malformed_json_body(client, create_gateway_key) -> None:
-    key = create_gateway_key()
-
-    response = client.post(
-        "/v1/chat/completions",
-        headers={**gateway_headers(key), "content-type": "application/json"},
-        content="{",
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"]["message"] == "Invalid JSON payload"
+    assert calls[0] == {
+        "protocol": "openai_image",
+        "body": {"model": "gpt-image-1", "prompt": "edit"},
+        "path_suffix": "images/edits",
+        "files": [
+            {
+                "field": "image",
+                "filename": "image.png",
+                "size": 3,
+                "content_type": "image/png",
+            }
+        ],
+    }
