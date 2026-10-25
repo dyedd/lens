@@ -5,7 +5,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceConflictError, ResourceNotFoundError
@@ -16,7 +16,7 @@ from app.models.regex_rules import (
     RegexRuleUpdate,
     RegexRuleView,
 )
-from app.persistence.entities import ModelGroupEntity, RegexRuleEntity, SiteEntity
+from app.persistence.entities import ModelGroupEntity, RegexRuleEntity
 from app.persistence.regex_rule_references import (
     dump_rule_ids,
     load_rule_patterns,
@@ -24,10 +24,6 @@ from app.persistence.regex_rule_references import (
 )
 
 _GROUP_HAS_RULES = ModelGroupEntity.match_rule_ids_json != "[]"
-_SITE_HAS_RULES = or_(
-    SiteEntity.model_sync_include_rule_ids_json != "[]",
-    SiteEntity.model_sync_exclude_rule_ids_json != "[]",
-)
 
 
 class RegexRuleRepository:
@@ -81,7 +77,7 @@ class RegexRuleRepository:
             return (await self._build_rule_views(session, [entity]))[0]
 
     async def delete_rule(self, rule_id: str) -> None:
-        """Delete a regex rule and every group or site reference to it."""
+        """Delete a regex rule and every model group reference to it."""
         async with self._session_factory() as session:
             entity = await session.get(RegexRuleEntity, rule_id)
             if entity is None:
@@ -91,10 +87,6 @@ class RegexRuleRepository:
             )
             for group in groups.scalars():
                 _drop_rule_reference(group, "match_rule_ids_json", rule_id)
-            sites = await session.execute(select(SiteEntity).where(_SITE_HAS_RULES))
-            for site in sites.scalars():
-                _drop_rule_reference(site, "model_sync_include_rule_ids_json", rule_id)
-                _drop_rule_reference(site, "model_sync_exclude_rule_ids_json", rule_id)
             await session.delete(entity)
             await session.commit()
 
@@ -136,29 +128,6 @@ class RegexRuleRepository:
             for rule_id in parse_rule_ids(rule_ids_json):
                 groups_by_rule[rule_id].append(group)
 
-        sites_by_rule: dict[str, list[RegexRuleReferenceView]] = defaultdict(list)
-        site_rows = await session.execute(
-            select(
-                SiteEntity.id,
-                SiteEntity.name,
-                SiteEntity.model_sync_include_rule_ids_json,
-                SiteEntity.model_sync_exclude_rule_ids_json,
-            )
-            .where(_SITE_HAS_RULES)
-            .order_by(SiteEntity.name)
-        )
-        for site_id, site_name, include_json, exclude_json in site_rows.all():
-            site = RegexRuleReferenceView(id=site_id, name=site_name)
-            seen_rule_ids: set[str] = set()
-            for rule_id in (
-                *parse_rule_ids(include_json),
-                *parse_rule_ids(exclude_json),
-            ):
-                if rule_id in seen_rule_ids:
-                    continue
-                seen_rule_ids.add(rule_id)
-                sites_by_rule[rule_id].append(site)
-
         return [
             RegexRuleView(
                 id=rule.id,
@@ -166,7 +135,6 @@ class RegexRuleRepository:
                 pattern=rule.pattern,
                 description=rule.description,
                 groups=groups_by_rule.get(rule.id, []),
-                sites=sites_by_rule.get(rule.id, []),
             )
             for rule in rules
         ]

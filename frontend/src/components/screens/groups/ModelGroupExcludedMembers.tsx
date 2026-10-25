@@ -1,5 +1,4 @@
 import { RotateCcw } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
   Tooltip,
@@ -7,10 +6,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import type { FoldedMember } from "./groupTypes";
-import {
-  formatCredentialIdentity,
-  formatMemberSource,
-} from "./modelGroupFormatting";
+import { formatCredentialIdentity } from "./modelGroupFormatting";
 
 interface ModelGroupExcludedMembersProps {
   locale: "zh-CN" | "en-US";
@@ -63,11 +59,6 @@ export function ModelGroupExcludedMembers({
                   </TooltipContent>
                 </Tooltip>
               </div>
-              {member.source !== "manual" ? (
-                <Badge variant="outline">
-                  {formatMemberSource(member.source, locale)}
-                </Badge>
-              ) : null}
               <Button
                 type="button"
                 variant="ghost"

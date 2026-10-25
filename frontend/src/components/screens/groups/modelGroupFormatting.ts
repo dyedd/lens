@@ -2,7 +2,6 @@ import type {
   ModelGroup,
   ModelGroupItemReason,
   ModelGroupItemState,
-  ModelGroupMemberSource,
   RoutingStrategy,
 } from "@/lib/api/groups";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
@@ -104,18 +103,6 @@ export function formatCredentialIdentity(
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-/** Format how a member joined its group. */
-export function formatMemberSource(
-  source: ModelGroupMemberSource,
-  locale: "zh-CN" | "en-US",
-) {
-  // "rule" only appears in rows and backups written before name-based joining.
-  if (source === "rule" || source === "placement") {
-    return locale === "zh-CN" ? "自动" : "Auto";
-  }
-  return locale === "zh-CN" ? "手动" : "Manual";
 }
 
 /** Format a model price for compact display. */

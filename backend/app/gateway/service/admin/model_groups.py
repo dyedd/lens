@@ -147,9 +147,7 @@ async def remove_unplaced_models(
     payload: UnplacedModelRemovalRequest, _: Any = Depends(get_current_admin)
 ) -> UnplacedModelRemovalResponse:
     """Remove unplaced model names from every channel offering them."""
-    return await app_state.group_repo.remove_unplaced_models(
-        payload.model_names, exclude=payload.exclude
-    )
+    return await app_state.group_repo.remove_unplaced_models(payload.model_names)
 
 
 async def place_models(
