@@ -21,7 +21,6 @@ import { useChannelSave } from "./channels/useChannelSave";
 export function ChannelsScreen() {
   const { locale } = useI18n();
   const [editorMode, setEditorMode] = useState<"channel" | "models">("channel");
-  const [isModelsNested, setIsModelsNested] = useState(false);
   const [modelsStatusFilter, setModelsStatusFilter] =
     useState<ModelStatusFilter>("all");
   const [fetchOnOpen, setFetchOnOpen] = useState(false);
@@ -75,7 +74,6 @@ export function ChannelsScreen() {
     options: { statusFilter?: ModelStatusFilter; fetch?: boolean } = {},
   ) {
     setEditorMode(mode);
-    setIsModelsNested(false);
     setModelsStatusFilter(options.statusFilter ?? "all");
     setFetchOnOpen(options.fetch ?? false);
     if (site) editor.openEdit(site);
@@ -128,22 +126,11 @@ export function ChannelsScreen() {
           save={save}
           overviewModels={overviewModels}
           editorMode={editorMode}
-          isModelsNested={isModelsNested}
           modelsStatusFilter={modelsStatusFilter}
           fetchOnOpen={fetchOnOpen}
           onFetchOnOpenHandled={() => setFetchOnOpen(false)}
-          onManageModels={() => {
-            setIsModelsNested(true);
-            setModelsStatusFilter("all");
-            setEditorMode("models");
-          }}
           onCloseModels={() => {
-            if (isModelsNested) {
-              setIsModelsNested(false);
-              setEditorMode("channel");
-            } else {
-              editor.closeEditor();
-            }
+            editor.closeEditor();
           }}
         />
       </section>

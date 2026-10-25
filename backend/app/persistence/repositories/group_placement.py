@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import re
-import uuid
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ResourceNotFoundError
 from app.models.channels import ChannelConfig
@@ -19,18 +17,12 @@ from app.models.model_groups import (
     UnplacedModelRemovalResponse,
     UnplacedModelView,
 )
-from app.models.regex_rules import MAX_REGEX_RULES
 from app.persistence.entities import (
     ModelGroupEntity,
-    RegexRuleEntity,
     SiteDiscoveredModelEntity,
-    SiteEntity,
-    SiteProtocolConfigEntity,
 )
 from app.persistence.regex_rule_references import (
-    dump_rule_ids,
     load_rule_patterns,
-    parse_rule_ids,
 )
 
 from .group_read import list_ready_channel_items
@@ -224,13 +216,9 @@ class GroupPlacementMixin:
         )
 
     async def remove_unplaced_models(
-        self, model_names: list[str], *, exclude: bool = False
+        self, model_names: list[str]
     ) -> UnplacedModelRemovalResponse:
-        """Remove unplaced model names from every channel that still offers them.
-
-        ``exclude`` also references ``^name$`` exclude rules on the owning
-        sites, so the next sync does not onboard the removed names again.
-        """
+        """Remove unplaced model names from every channel that still offers them."""
         names = set(model_names)
         unplaced_names = {view.model_name for view in await self.list_unplaced_models()}
         if covered := sorted(names - unplaced_names):
@@ -241,84 +229,14 @@ class GroupPlacementMixin:
         async with self._session_factory() as session:
             rows = (
                 await session.execute(
-                    select(SiteDiscoveredModelEntity, SiteProtocolConfigEntity.site_id)
-                    .join(
-                        SiteProtocolConfigEntity,
-                        SiteProtocolConfigEntity.id
-                        == SiteDiscoveredModelEntity.protocol_config_id,
-                    )
+                    select(SiteDiscoveredModelEntity)
                     .where(SiteDiscoveredModelEntity.model_name.in_(names))
                     .where(SiteDiscoveredModelEntity.enabled == 1)
                 )
-            ).all()
+            ).scalars()
             deleted = 0
-            names_by_site: dict[str, set[str]] = defaultdict(set)
-            for entity, site_id in rows:
-                if exclude:
-                    names_by_site[site_id].add(entity.model_name)
+            for entity in rows:
                 await session.delete(entity)
                 deleted += 1
-            excluded = 0
-            for site_id, site_names in names_by_site.items():
-                excluded += await _add_site_exclude_rules(session, site_id, site_names)
             await session.commit()
-        return UnplacedModelRemovalResponse(deleted=deleted, excluded=excluded)
-
-
-_REGEX_SPECIAL_CHARS = frozenset(".^$*+?{}[]" + chr(92) + "|()")
-
-
-def _exclude_pattern(name: str) -> str:
-    """Anchored literal pattern; escapes the same characters as the frontend."""
-    escaped = "".join(
-        chr(92) + char if char in _REGEX_SPECIAL_CHARS else char for char in name
-    )
-    return "^" + escaped + "$"
-
-
-async def _add_site_exclude_rules(
-    session: AsyncSession, site_id: str, names: set[str]
-) -> int:
-    """Reference ``^name$`` exclude rules so a sync never onboards them again."""
-    site = await session.get(SiteEntity, site_id)
-    if site is None:
-        return 0
-    referenced = parse_rule_ids(site.model_sync_exclude_rule_ids_json)
-    rule_rows = (
-        await session.execute(
-            select(RegexRuleEntity.id, RegexRuleEntity.name, RegexRuleEntity.pattern)
-        )
-    ).all()
-    existing_by_pattern = {row.pattern: row.id for row in rule_rows}
-    taken_names = {row.name.casefold() for row in rule_rows}
-    added = 0
-    for name in sorted(names):
-        pattern = _exclude_pattern(name)
-        rule_id = existing_by_pattern.get(pattern)
-        if rule_id is None:
-            if len(rule_rows) + added >= MAX_REGEX_RULES:
-                raise ValueError(f"At most {MAX_REGEX_RULES} regex rules are allowed")
-            rule_id = str(uuid.uuid4())
-            base_name = f"排除：{name}"[:60]
-            rule_name = base_name
-            suffix = 2
-            while rule_name.casefold() in taken_names:
-                suffix_text = f" ({suffix})"
-                rule_name = f"{base_name[: 60 - len(suffix_text)]}{suffix_text}"
-                suffix += 1
-            taken_names.add(rule_name.casefold())
-            existing_by_pattern[pattern] = rule_id
-            session.add(
-                RegexRuleEntity(
-                    id=rule_id,
-                    name=rule_name,
-                    pattern=pattern,
-                    description="删除模型时生成，阻止同步再次自动接入",
-                )
-            )
-        if rule_id not in referenced:
-            referenced.append(rule_id)
-            added += 1
-    if added:
-        site.model_sync_exclude_rule_ids_json = dump_rule_ids(referenced)
-    return added
+        return UnplacedModelRemovalResponse(deleted=deleted)
