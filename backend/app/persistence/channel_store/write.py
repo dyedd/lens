@@ -278,12 +278,6 @@ class SiteConfigUpsertsMixin(
                     proxy_mode=payload.proxy_mode.value,
                     channel_proxy=payload.channel_proxy.strip(),
                     param_override=_dump_rules(payload.param_override),
-                    model_sync_include_rule_ids_json=json.dumps(
-                        payload.model_sync_include_rule_ids, ensure_ascii=True
-                    ),
-                    model_sync_exclude_rule_ids_json=json.dumps(
-                        payload.model_sync_exclude_rule_ids, ensure_ascii=True
-                    ),
                 )
             )
         else:
@@ -295,12 +289,6 @@ class SiteConfigUpsertsMixin(
             site.proxy_mode = payload.proxy_mode.value
             site.channel_proxy = payload.channel_proxy.strip()
             site.param_override = _dump_rules(payload.param_override)
-            site.model_sync_include_rule_ids_json = json.dumps(
-                payload.model_sync_include_rule_ids, ensure_ascii=True
-            )
-            site.model_sync_exclude_rule_ids_json = json.dumps(
-                payload.model_sync_exclude_rule_ids, ensure_ascii=True
-            )
 
         await self._upsert_base_urls(session, site_id, built_base_urls)
         current_protocol_config_ids = set(

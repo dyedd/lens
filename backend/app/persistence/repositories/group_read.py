@@ -20,7 +20,6 @@ from app.models.model_groups import (
     ModelGroupCandidateSubitem,
     ModelGroupItemInput,
     ModelGroupItemView,
-    ModelGroupOrigin,
     ModelGroupView,
 )
 from app.models.protocols import ProtocolKind
@@ -419,7 +418,9 @@ class GroupMappingMixin:
                     credential_id=item.credential_id,
                     model_name=item.model_name,
                     enabled=0 if is_excluded or not item.enabled else 1,
-                    source=item.source.value,
+                    # A group an admin saved holds its members explicitly;
+                    # reconcile only manages what it joined by name or rule.
+                    source=ModelGroupMemberSource.MANUAL.value,
                     excluded=1 if is_excluded else 0,
                     sort_order=index,
                 )
@@ -441,7 +442,6 @@ class GroupMappingMixin:
             strategy=entity.strategy,
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,
-            origin=ModelGroupOrigin(entity.origin),
             match_rule_ids=parse_rule_ids(entity.match_rule_ids_json),
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),

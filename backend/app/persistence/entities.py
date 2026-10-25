@@ -87,13 +87,6 @@ class SiteEntity(Base):
     param_override: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    # Library regex rules that auto-onboard matching upstream models.
-    model_sync_include_rule_ids_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
-    model_sync_exclude_rule_ids_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]"
-    )
 
 
 class SiteBaseUrlEntity(Base):
@@ -190,10 +183,6 @@ class ModelGroupEntity(Base):
     )
     route_group_id: Mapped[str] = mapped_column(
         String(80), nullable=False, default="", index=True
-    )
-    # How the group came to exist: manual or auto-created by placement.
-    origin: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="manual", server_default="manual"
     )
     # Library regex rules; when set they replace name matching for this group.
     match_rule_ids_json: Mapped[str] = mapped_column(

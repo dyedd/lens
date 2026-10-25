@@ -30,13 +30,11 @@ from app.models.model_groups import (
     ModelGroupItemView,
     ModelGroupMemberChangeView,
     ModelGroupMemberSource,
-    ModelGroupOrigin,
     ModelGroupReconcileReport,
     ModelGroupRefView,
 )
 from app.models.protocols import RoutingStrategy
 from app.persistence.entities import ModelGroupEntity, ModelGroupItemEntity
-from app.persistence.group_rule_codec import parse_fallback_group_ids
 from app.persistence.regex_rule_references import load_rule_patterns, parse_rule_ids
 
 from .group_placement import (
@@ -222,7 +220,6 @@ class GroupReconcileMixin:
             )
             if synced_targets:
                 self._retire_missing_members(run, synced_targets, _naive_utc_now())
-            await self._remove_empty_auto_groups(run)
             for row in run.deleted_rows:
                 await session.delete(row)
             for state in run.groups.values():
@@ -384,7 +381,9 @@ class GroupReconcileMixin:
                 if item_name_keys[id(item)] == view_name_key
             ]
             if target is not None:
-                run.add(target, items, ModelGroupMemberSource.PLACEMENT)
+                # An explicit "join this group" is a manual membership: a later
+                # reconcile must keep it even when the names differ.
+                run.add(target, items, ModelGroupMemberSource.MANUAL)
                 continue
             same_named = groups_by_name.get(view_name_key)
             # A group with rules decides membership alone, never by its name.
@@ -400,7 +399,6 @@ class GroupReconcileMixin:
                 strategy=RoutingStrategy.FAILOVER.value,
                 route_group_id="",
                 fallback_group_ids_json="[]",
-                origin=ModelGroupOrigin.AUTO.value,
             )
             run.session.add(entity)
             state = _GroupMemberState(
@@ -449,36 +447,3 @@ class GroupReconcileMixin:
                     continue
                 run.report.retired.append(run.describe(state, row))
                 run.delete(state, row)
-
-    @staticmethod
-    async def _remove_empty_auto_groups(run: _ReconcileRun) -> None:
-        """Delete auto-created groups that lost every member and exclusion."""
-        referenced_ids: set[str] = set()
-        for state in run.groups.values():
-            # Groups created in this pass are unflushed, so the column
-            # defaults have not been applied to them yet.
-            fallback_json = state.entity.fallback_group_ids_json or "[]"
-            referenced_ids.update(parse_fallback_group_ids(fallback_json))
-        candidates = [
-            state
-            for state in run.groups.values()
-            if state.entity.origin == ModelGroupOrigin.AUTO.value
-            and not state.members
-            and not state.excluded
-            and state.entity.id not in referenced_ids
-        ]
-        if not candidates:
-            return
-        candidate_ids = {state.entity.id for state in candidates}
-        route_rows = await run.session.execute(
-            select(ModelGroupEntity.route_group_id).where(
-                ModelGroupEntity.route_group_id.in_(candidate_ids)
-            )
-        )
-        route_referenced = {row[0] for row in route_rows.all()}
-        for state in candidates:
-            if state.entity.id in route_referenced:
-                continue
-            run.groups.pop(state.entity.id, None)
-            await run.session.delete(state.entity)
-            run.has_writes = True
