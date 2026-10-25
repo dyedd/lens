@@ -1,4 +1,4 @@
-import { LogOut, PanelLeft } from "lucide-react";
+import { ChevronLeft, LogOut, PanelLeft } from "lucide-react";
 import { Link } from "react-router";
 import {
   DASHBOARD_ROUTES,
@@ -46,7 +46,6 @@ interface DashboardSidebarProps {
   updateTitle: string;
   updateReleaseUrl?: string;
   locale: Locale;
-  username: string;
   onSignOut: () => void;
 }
 
@@ -74,10 +73,10 @@ function ShellNavItem({
         asChild
         isActive={active}
         tooltip={item.label}
-        className="h-9 w-full max-w-full rounded-md px-3.5 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-none group-data-[collapsible=icon]:mx-auto"
+        className="h-11 w-full max-w-full rounded-md px-3.5 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-none group-data-[collapsible=icon]:mx-auto"
       >
         <Link to={item.href} onClick={handleNavigate}>
-          <Icon className="sidebar-nav-icon" />
+          <Icon className="sidebar-nav-icon size-5!" />
           <span>{item.label}</span>
         </Link>
       </SidebarMenuButton>
@@ -96,10 +95,9 @@ export function DashboardSidebar({
   updateTitle,
   updateReleaseUrl,
   locale,
-  username,
   onSignOut,
 }: DashboardSidebarProps) {
-  const accountName = username || siteName;
+  const { state } = useSidebar();
   const signOutLabel = locale === "zh-CN" ? "退出登录" : "Sign out";
   const versionText = currentVersion
     ? `v${currentVersion.replace(/^v/i, "")}`
@@ -113,27 +111,19 @@ export function DashboardSidebar({
   return (
     <Sidebar
       collapsible="icon"
-      className="z-20 border-r border-sidebar-border/60 bg-sidebar"
+      className="relative z-20 border-r border-sidebar-border/60 bg-sidebar"
     >
-      <SidebarHeader className="px-3 py-4 group-data-[collapsible=icon]:px-2">
-        <div className="flex w-full items-center gap-2 group-data-[collapsible=icon]:justify-center">
+      <SidebarHeader className="h-[60px] shrink-0 px-6 py-0 group-data-[collapsible=icon]:px-1">
+        <div className="flex h-full w-full items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
           <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
                 tooltip={siteName}
-                className="h-10 rounded-lg px-2 hover:bg-transparent group-data-[collapsible=icon]:justify-center"
+                className="h-full rounded-lg px-0 hover:bg-transparent"
               >
                 <Link to={DASHBOARD_ROUTES.overview}>
-                  <img
-                    src={logoUrl}
-                    alt={siteName}
-                    width={24}
-                    height={24}
-                    loading="eager"
-                    className="size-7 shrink-0 rounded-md object-contain"
-                  />
-                  <span className="min-w-0 truncate text-sm font-semibold tracking-tight">
+                  <span className="min-w-0 truncate text-2xl font-semibold tracking-tight">
                     {siteName}
                   </span>
                   {versionText ? (
@@ -152,6 +142,20 @@ export function DashboardSidebar({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
+          <Link
+            to={DASHBOARD_ROUTES.overview}
+            aria-label={siteName}
+            className="hidden size-8 shrink-0 items-center justify-center rounded-lg group-data-[collapsible=icon]:flex"
+          >
+            <img
+              src={logoUrl}
+              alt=""
+              width={32}
+              height={32}
+              loading="eager"
+              className="size-8 rounded-lg object-contain"
+            />
+          </Link>
           {hasUpdate ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -179,14 +183,14 @@ export function DashboardSidebar({
             </Tooltip>
           ) : null}
           <SidebarTrigger
-            aria-label="Toggle sidebar"
-            className="size-8 shrink-0 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto"
+            aria-label={locale === "zh-CN" ? "打开导航" : "Open navigation"}
+            className="size-8 shrink-0 rounded-lg text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:hidden"
           >
             <PanelLeft />
           </SidebarTrigger>
         </div>
       </SidebarHeader>
-      <SidebarContent className="gap-0 px-3 py-2 group-data-[collapsible=icon]:px-0">
+      <SidebarContent className="gap-0 px-3 py-0 group-data-[collapsible=icon]:px-0">
         <SidebarGroup className="px-0 py-2">
           <SidebarMenu>
             {navItems.map((item) => (
@@ -201,21 +205,21 @@ export function DashboardSidebar({
       </SidebarContent>
       <SidebarFooter className="px-3 pb-3 pt-2 group-data-[collapsible=icon]:px-2">
         <SidebarSeparator className="mb-3" />
-        <div className="flex h-9 items-center gap-1 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <span className="min-w-0 flex-1 truncate px-2 text-sm font-medium text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-            {accountName}
-          </span>
+        <div className="flex h-10 items-center px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
-                size="icon-sm"
+                size="sm"
                 aria-label={signOutLabel}
                 onClick={onSignOut}
-                className="size-8 shrink-0 text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                className="h-10 w-full justify-start gap-3 px-3 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-10 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
               >
-                <LogOut />
+                <LogOut className="size-5" />
+                <span className="group-data-[collapsible=icon]:hidden">
+                  {signOutLabel}
+                </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top" align="end">
@@ -224,6 +228,26 @@ export function DashboardSidebar({
           </Tooltip>
         </div>
       </SidebarFooter>
+      <SidebarTrigger
+        aria-label={
+          state === "collapsed"
+            ? locale === "zh-CN"
+              ? "展开导航"
+              : "Expand navigation"
+            : locale === "zh-CN"
+              ? "收起导航"
+              : "Collapse navigation"
+        }
+        className="absolute top-1/2 right-[-14px] z-30 hidden h-11 w-3.5 -translate-y-1/2 rounded-r-md rounded-l-none border border-l-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground/55 shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:flex [&_svg]:size-3"
+      >
+        <ChevronLeft
+          className={
+            state === "collapsed"
+              ? "rotate-180 transition-transform"
+              : "transition-transform"
+          }
+        />
+      </SidebarTrigger>
     </Sidebar>
   );
 }

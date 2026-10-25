@@ -388,7 +388,7 @@ export function BatchImportDialog({
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs"
+                            className="h-7 px-2 text-sm"
                             onClick={foreign.toggleAllSites}
                           >
                             {foreign.selectedIndexes.size ===

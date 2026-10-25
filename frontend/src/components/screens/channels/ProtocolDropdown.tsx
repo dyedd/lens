@@ -64,7 +64,7 @@ export function ProtocolDropdown({
           size="sm"
           disabled={disabled}
           className={cn(
-            "h-8 min-w-0 w-full justify-between gap-2 border-input/40 bg-transparent px-3 py-1 text-xs font-normal text-muted-foreground shadow-none hover:bg-transparent focus-visible:border-ring/60 focus-visible:ring-[1px] focus-visible:ring-ring/40 has-[>svg]:px-3",
+            "h-8 min-w-0 w-full justify-between gap-2 border-input/40 bg-transparent px-3 py-1 text-sm font-normal text-muted-foreground shadow-none hover:bg-transparent focus-visible:border-ring/60 focus-visible:ring-[1px] focus-visible:ring-ring/40 has-[>svg]:px-3",
             className,
           )}
         >
@@ -86,7 +86,7 @@ export function ProtocolDropdown({
             key={protocol}
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             aria-pressed={selected.has(protocol)}
             onClick={() => toggle(protocol)}
             className="relative h-auto min-h-7 w-full justify-start rounded-md py-1 pr-8 pl-2 font-normal"

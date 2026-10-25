@@ -34,26 +34,30 @@ export function OverviewScreen() {
   const { locale } = useI18n();
   const isChineseLocale = locale === "zh-CN";
   const timeZone = useAppTimeZone();
-  const [modelRange, setModelRange] = useState<TimeRange>("-1");
+  const [timeRange, setTimeRange] = useState<TimeRange>("30");
   const [pieMetric, setPieMetric] = useState<PieMetric>("cost");
   const [heatmapMetric, setHeatmapMetric] = useState<HeatmapMetric>("requests");
-  const modelDays = Number(modelRange);
+  const overviewDays = Number(timeRange);
   const { label: pieMetricLabel, trendTitle: modelTrendTitle } =
     getPieMetricLabels(pieMetric, isChineseLocale);
   const modelQuery = useMemo(
     () =>
-      `/admin/overview-models?${new URLSearchParams({ days: String(modelDays), metric: pieMetric }).toString()}`,
-    [modelDays, pieMetric],
+      `/admin/overview-models?${new URLSearchParams({ days: String(overviewDays), metric: pieMetric }).toString()}`,
+    [overviewDays, pieMetric],
   );
   const summaryQuery = useQuery({
-    queryKey: ["overview-summary", 0],
+    queryKey: ["overview-summary", overviewDays],
     queryFn: () =>
-      apiRequest<OverviewSummary>("/admin/overview-summary?days=0"),
+      apiRequest<OverviewSummary>(
+        `/admin/overview-summary?days=${overviewDays}`,
+      ),
   });
   const dailyQuery = useQuery({
-    queryKey: ["overview-daily", 0],
+    queryKey: ["overview-daily", overviewDays],
     queryFn: () =>
-      apiRequest<OverviewDailyPoint[]>("/admin/overview-daily?days=0"),
+      apiRequest<OverviewDailyPoint[]>(
+        `/admin/overview-daily?days=${overviewDays}`,
+      ),
   });
   const heatmapQuery = useQuery({
     queryKey: ["overview-daily", 365],
@@ -62,7 +66,7 @@ export function OverviewScreen() {
     staleTime: 60_000,
   });
   const modelsQuery = useQuery({
-    queryKey: ["overview-models", modelDays, pieMetric],
+    queryKey: ["overview-models", overviewDays, pieMetric],
     queryFn: () => apiRequest<OverviewModelAnalytics>(modelQuery),
   });
   const pageError = summaryQuery.isError
@@ -172,7 +176,7 @@ export function OverviewScreen() {
       dateMap.set(point.date, existing);
     }
     const buckets =
-      modelDays === -1
+      overviewDays === -1
         ? Array.from(
             { length: 24 },
             (_, hour) =>
@@ -197,7 +201,7 @@ export function OverviewScreen() {
       barConfig: config,
       barModels: safeModels,
     };
-  }, [modelDays, models, timeZone]);
+  }, [overviewDays, models, timeZone]);
   const heatmapPoints = useMemo(() => {
     const pointMap = new Map(
       (heatmapQuery.data ?? []).map((item) => [
@@ -231,7 +235,7 @@ export function OverviewScreen() {
   }, [heatmapQuery.data]);
 
   return (
-    <section className="flex flex-col gap-10">
+    <section className="flex flex-col gap-7">
       <OverviewStats
         cacheReadTokens={cacheReadTokens}
         cacheWriteTokens={cacheWriteTokens}
@@ -245,6 +249,8 @@ export function OverviewScreen() {
         successRate={successRate}
         totalCost={totalCost}
         totalTokens={totalTokens}
+        timeRange={timeRange}
+        onTimeRangeChange={setTimeRange}
       />
       <RequestHeatmap
         points={heatmapPoints}
@@ -257,7 +263,6 @@ export function OverviewScreen() {
         barData={barData}
         barModels={barModels}
         isChineseLocale={isChineseLocale}
-        modelRange={modelRange}
         modelTrendTitle={modelTrendTitle}
         modelsIsError={modelsQuery.isError}
         pieChartConfig={pieChartConfig}
@@ -265,7 +270,6 @@ export function OverviewScreen() {
         pieMetric={pieMetric}
         pieMetricLabel={pieMetricLabel}
         onMetricChange={setPieMetric}
-        onRangeChange={setModelRange}
       />
     </section>
   );

@@ -77,7 +77,7 @@ export function ChannelBasicInfoSection({
         <Label
           htmlFor="channel-name"
           required
-          className="text-xs font-normal text-muted-foreground"
+          className="text-sm font-normal text-muted-foreground"
         >
           {locale === "zh-CN" ? "渠道名称" : "Channel name"}
         </Label>
@@ -96,7 +96,7 @@ export function ChannelBasicInfoSection({
       <div className="min-w-0 space-y-1">
         <Label
           htmlFor="channel-tag-input"
-          className="text-xs font-normal text-muted-foreground"
+          className="text-sm font-normal text-muted-foreground"
         >
           {locale === "zh-CN" ? "标签" : "Tags"}
         </Label>

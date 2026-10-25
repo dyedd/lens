@@ -47,7 +47,7 @@ export function SettingsSection({
           )}
         >
           <div className="min-w-0">
-            {title ? <h3 className="text-sm font-semibold">{title}</h3> : null}
+            {title ? <h3 className="page-section-title">{title}</h3> : null}
           </div>
           {actions ? (
             <div className="flex shrink-0 items-center justify-end gap-2">

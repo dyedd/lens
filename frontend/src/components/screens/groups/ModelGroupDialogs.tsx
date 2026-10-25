@@ -184,7 +184,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 className="border-y border-border/60"
               >
                 <AccordionItem value="advanced">
-                  <AccordionTrigger className="items-center py-3 text-xs font-normal text-muted-foreground hover:no-underline">
+                  <AccordionTrigger className="items-center py-3 text-sm font-normal text-muted-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
                       <SlidersHorizontal className="size-3.5" />
                       {locale === "zh-CN" ? "高级设置" : "Advanced settings"}

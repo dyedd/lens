@@ -16,7 +16,7 @@ import {
 } from "@/components/shell/dashboardRoutes";
 import { SidebarProvider } from "@/components/ui/SidebarContext";
 import { SidebarInset } from "@/components/ui/SidebarLayout";
-import type { AdminProfile, AppInfo, VersionCheckResult } from "@/lib/api/app";
+import type { AppInfo, VersionCheckResult } from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
 import { clearStoredToken } from "@/lib/auth";
 import { useI18n } from "@/lib/I18nContext";
@@ -38,11 +38,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     queryKey: ["app-info"],
     queryFn: () => apiRequest<AppInfo>("/admin/app-info"),
     staleTime: 5 * 60_000,
-  });
-  const { data: profile } = useQuery({
-    queryKey: ["auth-me"],
-    queryFn: () => apiRequest<AdminProfile>("/admin/session"),
-    staleTime: 60_000,
   });
   const { data: versionCheck } = useQuery({
     queryKey: ["version-check"],
@@ -148,7 +143,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           updateTitle={updateTitle}
           updateReleaseUrl={versionCheck?.release_url}
           locale={locale}
-          username={profile?.username ?? ""}
           onSignOut={handleSignOut}
         />
 
@@ -166,7 +160,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-4 pb-10 sm:px-6 lg:px-8">
             <div
               key={pathname}
-              className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1230px] animate-[fadeIn_.16s_ease-out]"
+              className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1256px] animate-[fadeIn_.16s_ease-out]"
             >
               {children}
             </div>
