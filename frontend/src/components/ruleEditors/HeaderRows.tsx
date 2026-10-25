@@ -38,7 +38,7 @@ export function HeaderRows({
           type="button"
           variant="ghost"
           size="default"
-          className="gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+          className="gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
           onClick={onAdd}
         >
           <Plus className="size-3.5" />

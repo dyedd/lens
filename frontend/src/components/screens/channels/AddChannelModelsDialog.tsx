@@ -87,7 +87,7 @@ export function AddChannelModelsDialog({
           <div className="min-w-0 space-y-1">
             <Label
               required
-              className="text-xs font-normal text-muted-foreground"
+              className="text-sm font-normal text-muted-foreground"
             >
               {locale === "zh-CN" ? "模型名（上游）" : "Upstream model names"}
             </Label>

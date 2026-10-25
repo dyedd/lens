@@ -53,7 +53,7 @@ export function ConfigExportCard({ locale }: { locale: Locale }) {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+          className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
           onClick={() => void handleExport()}
           disabled={isExporting}
         >

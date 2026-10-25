@@ -19,7 +19,8 @@ export function ThemeToggle() {
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon"
+          className="[&_svg]:size-5"
           aria-label={label}
           onClick={toggleTheme}
         >

@@ -273,7 +273,7 @@ export function ChannelCredentialSection({
       <Label
         htmlFor={inputId}
         required={required}
-        className="text-xs font-normal text-muted-foreground"
+        className="text-sm font-normal text-muted-foreground"
       >
         {scopedKeys.length
           ? isZh
@@ -324,7 +324,7 @@ export function ChannelCredentialSection({
                       {index + 1}
                     </span>
                     <Input
-                      className="h-7 w-full min-w-0 px-2 text-xs"
+                      className="h-7 w-full min-w-0 px-2"
                       value={credential.name}
                       placeholder={isZh ? "备注" : "Remark"}
                       aria-label={isZh ? "密钥备注" : "Key remark"}

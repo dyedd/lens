@@ -50,7 +50,7 @@ const HEADER_PRESETS: Array<{
 ];
 
 const accordionTriggerClass =
-  "h-11 items-center py-0 text-xs font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0";
+  "h-11 items-center py-0 text-sm font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0";
 
 /** Renders channel proxy, header, and parameter overrides. */
 export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
@@ -94,7 +94,7 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
         </AccordionTrigger>
         <AccordionContent className="space-y-4 pb-4 pt-0">
           <div className="min-w-0 space-y-1">
-            <Label className="text-xs font-normal text-muted-foreground">
+            <Label className="text-sm font-normal text-muted-foreground">
               {locale === "zh-CN" ? "代理方式" : "Proxy mode"}
             </Label>
             <Select
@@ -123,7 +123,7 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
             <div className="min-w-0 space-y-1">
               <Label
                 htmlFor="channel-proxy"
-                className="text-xs font-normal text-muted-foreground"
+                className="text-sm font-normal text-muted-foreground"
               >
                 {locale === "zh-CN" ? "代理地址" : "Proxy URL"}
               </Label>
@@ -163,7 +163,7 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-6 gap-1 px-2 text-xs"
+                    className="h-7 gap-1 px-2 text-sm"
                   >
                     <ListPlus className="size-3.5" />
                     {locale === "zh-CN" ? "填入常用值" : "Insert common value"}

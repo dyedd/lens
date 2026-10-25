@@ -139,9 +139,9 @@ export function ChannelsOverview({
   const sortOptions = channelSortOptions(locale);
 
   return (
-    <div className="space-y-3 pb-10">
+    <div className="space-y-5 pb-10">
       <div className="flex h-10 items-center justify-between gap-3 px-1">
-        <h3 className="text-sm font-semibold">
+        <h3 className="page-title">
           {locale === "zh-CN" ? "渠道" : "Channels"}
         </h3>
       </div>
@@ -194,7 +194,7 @@ export function ChannelsOverview({
                       resetPage();
                     }}
                   >
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -222,7 +222,7 @@ export function ChannelsOverview({
                         resetPage();
                       }}
                     >
-                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -328,7 +328,7 @@ export function ChannelsOverview({
           <Button
             type="button"
             size="sm"
-            className="gap-1 text-xs"
+            className="gap-1 text-sm"
             onClick={onCreate}
           >
             <Plus className="size-3.5 stroke-1" />

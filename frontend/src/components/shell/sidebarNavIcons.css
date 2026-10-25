@@ -1,6 +1,9 @@
 .sidebar-nav-icon {
   --sidebar-layer-duration: 300ms;
   --sidebar-stroke-duration: 800ms;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
 }
 
 .sidebar-nav-icon .sidebar-icon-layer-top,

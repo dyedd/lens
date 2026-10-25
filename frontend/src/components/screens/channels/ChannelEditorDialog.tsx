@@ -68,7 +68,7 @@ function ChannelModelSection({
     <div className="min-w-0 space-y-2.5 rounded-md bg-muted/35 p-2.5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs font-medium">
+          <div className="text-sm font-medium">
             {isZh ? "模型同步" : "Model sync"}
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
@@ -80,7 +80,7 @@ function ChannelModelSection({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-start gap-2">
-          <span className="w-14 shrink-0 pt-1 text-xs leading-6 text-muted-foreground">
+          <span className="w-14 shrink-0 pt-1 text-sm leading-6 text-muted-foreground">
             {isZh ? "自动接入" : "Auto-onboard"}
           </span>
           <RegexRulePicker
@@ -96,7 +96,7 @@ function ChannelModelSection({
           />
         </div>
         <div className="flex items-start gap-2">
-          <span className="w-14 shrink-0 pt-1 text-xs leading-6 text-muted-foreground">
+          <span className="w-14 shrink-0 pt-1 text-sm leading-6 text-muted-foreground">
             {isZh ? "排除" : "Exclude"}
           </span>
           <RegexRulePicker
@@ -129,7 +129,7 @@ function ChannelModelSection({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             onClick={onFetchModels}
           >
             <CloudDownload />
@@ -138,7 +138,7 @@ function ChannelModelSection({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             onClick={onManageModels}
           >
             <Settings2 />
@@ -205,7 +205,7 @@ export function ChannelEditorDialog({
 
   return (
     <Sheet open={isDialogOpen} onOpenChange={handleOpenChange}>
-      <SheetContent className="flex flex-col gap-0 sm:max-w-[460px]">
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
         <SheetHeader className="px-4 pb-4">
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>

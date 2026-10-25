@@ -84,7 +84,7 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+            className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
             onClick={() => fileInputRef.current?.click()}
           >
             <RotateCcw className="size-3.5" />
@@ -187,7 +187,7 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
                     type="button"
                     variant="ghost"
                     size="default"
-                    className="px-2 text-xs"
+                    className="px-2 text-sm"
                     onClick={toggleAllSites}
                   >
                     {selectedCount === preview.sites.length
@@ -284,7 +284,7 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+                className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
                 disabled={
                   selectedCount === 0 ||
                   isImporting ||

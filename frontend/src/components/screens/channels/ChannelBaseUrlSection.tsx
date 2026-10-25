@@ -63,7 +63,7 @@ export function ChannelBaseUrlSection({
       <Label
         htmlFor="channel-url"
         required
-        className="text-xs font-normal text-muted-foreground"
+        className="text-sm font-normal text-muted-foreground"
       >
         {locale === "zh-CN" ? "接口地址" : "Base URL"}
       </Label>
@@ -77,7 +77,7 @@ export function ChannelBaseUrlSection({
       <div className="pt-1">
         <button
           type="button"
-          className="flex h-8 w-full items-center justify-between rounded-md text-left text-xs font-normal text-muted-foreground hover:text-foreground"
+          className="flex h-8 w-full items-center justify-between rounded-md text-left text-sm font-normal text-muted-foreground hover:text-foreground"
           onClick={() => {
             if (!extraOpen && extraUrls.length === 0) onAdd();
             setExtraOpen((open) => !open);
@@ -116,7 +116,7 @@ export function ChannelBaseUrlSection({
                       })
                     }
                   >
-                    <SelectTrigger className="h-7 w-full min-w-0 overflow-hidden px-2 text-xs">
+                    <SelectTrigger className="h-7 w-full min-w-0 overflow-hidden px-2">
                       <SelectValue className="min-w-0 flex-1 truncate text-left">
                         {endpointLabel(baseUrl.kind)}
                       </SelectValue>
@@ -165,7 +165,7 @@ export function ChannelBaseUrlSection({
                   </Button>
                   <label
                     htmlFor={`share-keys-${baseUrl.id}`}
-                    className="col-span-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+                    className="col-span-2 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
                   >
                     <Checkbox
                       id={`share-keys-${baseUrl.id}`}
@@ -215,8 +215,8 @@ export function ChannelBaseUrlSection({
             <Button
               type="button"
               variant="ghost"
-              size="xs"
-              className="h-7 px-2 text-xs font-normal text-muted-foreground"
+              size="sm"
+              className="h-7 px-2 font-normal text-muted-foreground"
               onClick={onAdd}
             >
               <Plus className="size-3.5 stroke-1" />

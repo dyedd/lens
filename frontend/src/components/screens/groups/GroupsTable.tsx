@@ -257,7 +257,7 @@ export function GroupsTable({
               <TableCell className="py-1.5">
                 <div className="flex min-w-0 items-center gap-2">
                   <Avatar size={16} />
-                  <span className="min-w-0 truncate font-mono text-xs font-medium">
+                  <span className="min-w-0 truncate font-mono text-sm font-medium">
                     {group.name}
                   </span>
                   {group.origin === "auto" ? (

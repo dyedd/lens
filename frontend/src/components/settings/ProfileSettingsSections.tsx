@@ -175,7 +175,7 @@ export function ModelTestSettingsSection({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+                className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
                 onClick={openCreateDialog}
                 disabled={prompts.length >= 20}
               >
@@ -185,7 +185,7 @@ export function ModelTestSettingsSection({
             </div>
           }
         >
-          <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="mb-3 flex items-center justify-between gap-3 text-sm text-muted-foreground">
             <span>
               {titleForLocale(locale, "常用测试问题", "Test prompts")}
             </span>

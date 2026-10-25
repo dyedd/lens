@@ -265,7 +265,7 @@ export function ChannelRemoteModelsDialog({
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-muted-foreground">
+            <span className="shrink-0 text-sm text-muted-foreground">
               {locale === "zh-CN" ? "添加后归入" : "Join group"}
             </span>
             <Select value={targetGroupId} onValueChange={setTargetGroupId}>

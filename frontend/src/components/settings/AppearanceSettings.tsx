@@ -30,7 +30,7 @@ export function AppearanceSettings({
     <SettingsFieldList>
       <SettingsFieldRow title={titleForLocale(locale, "语言", "Language")}>
         <SegmentedControl
-          className="!w-fit"
+          className="!w-fit [&>button]:text-sm"
           value={locale}
           onValueChange={(value) => setLocale(value)}
           options={[

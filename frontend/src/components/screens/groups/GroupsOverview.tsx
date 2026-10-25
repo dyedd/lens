@@ -177,9 +177,9 @@ export function GroupsOverview({
   const sortOptions = groupSortOptions(locale);
 
   return (
-    <div className="space-y-3 pb-10">
+    <div className="space-y-5 pb-10">
       <div className="flex min-h-10 items-center justify-between gap-3 px-1">
-        <h3 className="min-w-0 text-sm font-semibold">
+        <h3 className="page-title min-w-0">
           {locale === "zh-CN" ? "模型组" : "Model Groups"}
         </h3>
         <ToolbarButton onClick={onOpenSyncRuns}>
@@ -251,7 +251,7 @@ export function GroupsOverview({
                       resetPage();
                     }}
                   >
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -279,7 +279,7 @@ export function GroupsOverview({
                         resetPage();
                       }}
                     >
-                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -389,7 +389,7 @@ export function GroupsOverview({
           <Button
             type="button"
             size="sm"
-            className="gap-1 text-xs"
+            className="gap-1 text-sm"
             onClick={onCreate}
           >
             <Plus className="size-3.5" />

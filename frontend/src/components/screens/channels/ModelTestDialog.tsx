@@ -155,7 +155,7 @@ export function ModelTestDialog({
             <div className="grid gap-3 border-b border-border/60 pb-4">
               {items.length === 1 && credentialOptions.length > 1 ? (
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-sm text-muted-foreground">
                     {isChinese ? "使用的 API Key" : "API key"}
                   </span>
                   <Select
@@ -183,7 +183,7 @@ export function ModelTestDialog({
               onProtocolChangeAll &&
               allProtocols.length ? (
                 <div className="flex items-center justify-end gap-2 px-3">
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-sm text-muted-foreground">
                     {isChinese ? "全部设为" : "Set all"}
                   </span>
                   <Select
@@ -293,7 +293,7 @@ export function ModelTestDialog({
                 </div>
               ) : protocols && protocols.length > 1 ? (
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-sm text-muted-foreground">
                     {isChinese ? "测试协议" : "Test protocol"}
                   </span>
                   <Select
@@ -322,7 +322,7 @@ export function ModelTestDialog({
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   {isChinese ? "测试内容" : "Test input"}
                 </span>
                 <Select
@@ -351,7 +351,7 @@ export function ModelTestDialog({
                 </Select>
               </div>
               <Textarea
-                className="min-h-16 resize-y text-xs"
+                className="min-h-16 resize-y"
                 value={prompt}
                 onChange={(event) => onPromptChange(event.target.value)}
                 disabled={testing}

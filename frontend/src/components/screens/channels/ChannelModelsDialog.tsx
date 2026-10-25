@@ -279,7 +279,7 @@ function ChannelModelsBody({
                       setStatusFilter(value as ModelStatusFilter)
                     }
                   >
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="z-[100]">
@@ -361,7 +361,7 @@ function ChannelModelsBody({
               <ProtocolDropdown
                 value={bulkProtocols}
                 locale={locale}
-                className="h-7 px-2 py-0 text-xs has-[>svg]:px-2"
+                className="h-7 px-2 py-0 text-sm has-[>svg]:px-2"
                 onChange={setBulkProtocols}
               />
             </div>

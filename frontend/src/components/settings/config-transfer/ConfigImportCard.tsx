@@ -170,7 +170,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+            className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
             disabled={!selectedFile || Boolean(previewError) || isImporting}
             onClick={() => setConfirmImportOpen(true)}
           >
@@ -199,7 +199,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 px-2 text-xs shadow-none"
+            className="h-8 gap-1.5 px-2 text-sm shadow-none"
             onClick={() => fileInputRef.current?.click()}
           >
             {isPreviewPending ? (

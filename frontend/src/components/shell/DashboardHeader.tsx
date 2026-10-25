@@ -47,7 +47,7 @@ export function DashboardHeader({
   const isChinese = locale === "zh-CN";
 
   return (
-    <header className="flex min-h-12 min-w-0 shrink-0 items-center justify-between gap-2 bg-background px-4 py-2 sm:px-6 lg:px-8">
+    <header className="flex min-h-8 min-w-0 shrink-0 items-center justify-between gap-2 bg-background px-4 py-1 sm:px-6 lg:px-8">
       <div className="flex min-w-0 items-center gap-2 md:hidden">
         <SidebarTrigger
           aria-label={isChinese ? "打开导航" : "Open navigation"}
@@ -71,10 +71,10 @@ export function DashboardHeader({
                 rel="noreferrer"
                 aria-label="GitHub"
                 className={cn(
-                  buttonVariants({ variant: "ghost", size: "icon-sm" }),
+                  buttonVariants({ variant: "ghost", size: "icon" }),
                 )}
               >
-                <GitHubMark className="size-4" />
+                <GitHubMark className="size-5" />
               </a>
             </TooltipTrigger>
             <TooltipContent side="bottom" align="end">
@@ -87,7 +87,8 @@ export function DashboardHeader({
               <Button
                 type="button"
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
+                className="[&_svg]:size-5"
                 aria-label={language.label}
                 onClick={language.onClick}
               >

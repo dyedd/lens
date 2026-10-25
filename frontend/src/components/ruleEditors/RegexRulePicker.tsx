@@ -140,7 +140,7 @@ export function RegexRulePicker({
       <Button
         type="button"
         variant="ghost"
-        size="xs"
+        size="sm"
         disabled={!library.isLoaded || isFull}
         className="text-muted-foreground"
       >
@@ -218,7 +218,7 @@ export function RegexRulePicker({
         <PopoverContent align="start" className="w-80 gap-0 p-0">
           <Command>
             <CommandInput
-              className="h-9 text-xs"
+              className="h-9 text-sm"
               placeholder={titleForLocale(locale, "搜索规则", "Search rules")}
             />
             <CommandList className="max-h-60">
@@ -241,7 +241,7 @@ export function RegexRulePicker({
                     attach(rule.id);
                     setIsAdding(false);
                   }}
-                  className="flex-col items-start gap-0.5 text-xs"
+                  className="flex-col items-start gap-0.5 text-sm"
                 >
                   <span className="font-medium">{rule.name}</span>
                   <span className="break-all font-mono text-xs text-muted-foreground">
