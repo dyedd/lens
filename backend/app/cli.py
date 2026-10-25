@@ -236,8 +236,10 @@ def migrate(_args: argparse.Namespace | None) -> None:
 def setup(_args: argparse.Namespace) -> None:
     """Migrate the database and build the UI for a source checkout."""
     migrate(None)
-    frontend_dir = SOURCE_BACKEND_DIR.parent / "frontend"
+    frontend_dir = _repo_dir() / "frontend"
     if frontend_dir.is_dir():
+        if not (frontend_dir / "node_modules").is_dir():
+            _run_pnpm(frontend_dir, "install")
         _run_pnpm(frontend_dir, "build")
 
 
@@ -250,6 +252,10 @@ def dev(_args: argparse.Namespace) -> None:
     frontend_dir = _repo_dir() / "frontend"
     if not frontend_dir.is_dir():
         raise RuntimeError(f"Frontend directory does not exist: {frontend_dir}")
+
+    if not (frontend_dir / "node_modules").is_dir():
+        print("Frontend dependencies not found; installing with pnpm...", flush=True)
+        _run_pnpm(frontend_dir, "install")
 
     # Vite proxies /api, /v1 and /v1beta to this process, so it holds the only
     # backend port; see frontend/vite.config.ts.
