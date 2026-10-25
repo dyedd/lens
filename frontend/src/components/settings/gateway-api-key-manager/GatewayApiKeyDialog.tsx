@@ -250,7 +250,7 @@ export function GatewayApiKeyDialog({
         }
       }}
     >
-      <SheetContent className="flex flex-col gap-0 sm:max-w-[460px]">
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[520px]">
         <SheetHeader className="px-4 pb-4">
           <SheetTitle>
             {titleForLocale(

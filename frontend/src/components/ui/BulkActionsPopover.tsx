@@ -97,7 +97,7 @@ export function BulkActionsPopover({
                 setEnabledChoice(value as "enabled" | "disabled")
               }
             >
-              <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+              <SelectTrigger className="h-7 px-2 text-muted-foreground">
                 <SelectValue
                   placeholder={titleForLocale(locale, "状态", "Status")}
                 />

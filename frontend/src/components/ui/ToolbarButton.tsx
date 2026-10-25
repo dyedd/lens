@@ -13,7 +13,7 @@ export function ToolbarButton({
       size="sm"
       variant="ghost"
       className={cn(
-        "h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
+        "h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
         className,
       )}
       {...props}

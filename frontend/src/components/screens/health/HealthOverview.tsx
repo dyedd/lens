@@ -92,9 +92,9 @@ export function HealthOverview({
     : titleForLocale(locale, "健康状态", "Health status");
 
   return (
-    <div className="space-y-3 pb-10">
+    <div className="space-y-5 pb-10">
       <div className="flex h-10 items-center justify-between gap-3 px-1">
-        <h3 className="text-sm font-semibold">
+        <h3 className="page-title">
           {titleForLocale(locale, "健康状态", "Health status")}
         </h3>
         <DropdownMenu>
@@ -103,7 +103,7 @@ export function HealthOverview({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+              className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
             >
               <Clock className="size-3.5 stroke-1" />
               {hoursLabel(hours, locale)}
@@ -174,7 +174,7 @@ export function HealthOverview({
                     value={mode}
                     onValueChange={(value) => onModeChange(value as HealthMode)}
                   >
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

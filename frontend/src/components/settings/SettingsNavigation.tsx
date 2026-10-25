@@ -87,7 +87,7 @@ export function SettingsNavigation({
           <TabsTrigger
             key={item.value}
             value={item.value}
-            className="h-9 w-40 shrink-0 justify-start rounded-md px-3.5 text-sm font-medium text-sidebar-foreground shadow-none lg:w-full data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground data-[state=active]:shadow-none"
+            className="h-9 w-40 shrink-0 justify-start rounded-md px-3.5 text-base font-medium text-sidebar-foreground shadow-none lg:w-full data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground data-[state=active]:shadow-none"
           >
             <span>{item.label}</span>
           </TabsTrigger>

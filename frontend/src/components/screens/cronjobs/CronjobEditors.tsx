@@ -89,7 +89,7 @@ export function ScheduleEditor({
       </Select>
       {draft.scheduleType === "interval" ? (
         <>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {titleForLocale(locale, "每", "Every")}
           </span>
           <Input
@@ -103,7 +103,7 @@ export function ScheduleEditor({
               onChange({ intervalHours: event.target.value })
             }
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {titleForLocale(locale, "小时", "hours")}
           </span>
         </>
@@ -117,7 +117,7 @@ export function ScheduleEditor({
                 key={weekday.value}
                 type="button"
                 className={cn(
-                  "size-7 rounded-md text-xs transition-colors",
+                  "size-7 rounded-md text-sm transition-colors",
                   selected
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -193,7 +193,7 @@ function TimeSelector({
           </SelectGroup>
         </SelectContent>
       </Select>
-      <span className="text-xs text-muted-foreground">:</span>
+      <span className="text-sm text-muted-foreground">:</span>
       <Select
         value={minute}
         onValueChange={(value) => onChange({ runAtMinute: value })}

@@ -149,7 +149,7 @@ function PriceEditor({
             <Field className="gap-1">
               <FieldLabel
                 htmlFor="price-model"
-                className="text-xs text-muted-foreground"
+                className="text-sm text-muted-foreground"
               >
                 {isChinese ? "模型" : "Model"}
               </FieldLabel>
@@ -158,7 +158,7 @@ function PriceEditor({
             <Field className="gap-1 sm:w-[calc(50%-10px)]">
               <FieldLabel
                 htmlFor="price-mode"
-                className="text-xs text-muted-foreground"
+                className="text-sm text-muted-foreground"
               >
                 {isChinese ? "计费模式" : "Billing mode"}
               </FieldLabel>
@@ -203,7 +203,7 @@ function PriceEditor({
                 <Field key={key} className="gap-1">
                   <FieldLabel
                     htmlFor={`price-${key}`}
-                    className="text-xs text-muted-foreground"
+                    className="text-sm text-muted-foreground"
                   >
                     {isChinese ? zh : en}
                     {mode === "tokens"
@@ -309,11 +309,9 @@ export function ModelPricesScreen() {
   }
 
   return (
-    <section className="space-y-3 pb-10">
+    <section className="space-y-5 pb-10">
       <div className="flex h-10 items-center px-1">
-        <h1 className="text-sm font-semibold">
-          {isChinese ? "价格" : "Pricing"}
-        </h1>
+        <h1 className="page-title">{isChinese ? "价格" : "Pricing"}</h1>
       </div>
       <div className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto px-0.5 py-1">
         <div className="flex min-w-0 flex-1 items-center">
@@ -367,7 +365,7 @@ export function ModelPricesScreen() {
               : [];
         return (
           <div key={mode} className="space-y-1.5">
-            <h2 className="px-1 text-xs font-medium text-muted-foreground">
+            <h2 className="px-1 text-sm font-medium text-muted-foreground">
               {mode === "free"
                 ? isChinese
                   ? "免费"
@@ -409,7 +407,7 @@ export function ModelPricesScreen() {
                       <TableCell className="py-1.5">
                         <div className="flex h-7 min-w-0 items-center gap-2">
                           <Avatar size={16} />
-                          <span className="truncate text-xs font-medium">
+                          <span className="truncate text-sm font-medium">
                             {group.name}
                           </span>
                           {group.manual_override ? (

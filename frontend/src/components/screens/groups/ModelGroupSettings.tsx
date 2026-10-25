@@ -49,7 +49,7 @@ function SettingsRow({
       <Label
         htmlFor={htmlFor}
         required={required}
-        className="text-xs font-normal text-muted-foreground sm:w-[72px] sm:shrink-0 sm:pt-2"
+        className="text-sm font-normal text-muted-foreground sm:w-[72px] sm:shrink-0 sm:pt-2"
       >
         {label}
       </Label>
@@ -113,6 +113,7 @@ export function ModelGroupSettings({
 
       <SettingsRow label={isZh ? "模型组类型" : "Group type"}>
         <SegmentedControl
+          className="[&>button]:text-sm"
           value={groupMode}
           onValueChange={handleModeChange}
           options={[

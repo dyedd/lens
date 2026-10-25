@@ -162,16 +162,16 @@ export function RequestsOverview({
     : titleForLocale(locale, "暂无请求日志。", "No request logs yet.");
 
   return (
-    <div className="space-y-3 pb-10">
+    <div className="space-y-5 pb-10">
       <div className="flex h-10 items-center justify-between gap-3 px-1">
-        <h3 className="text-sm font-semibold">
+        <h3 className="page-title">
           {titleForLocale(locale, "请求日志", "Request Logs")}
         </h3>
         <Button
           type="button"
           size="sm"
           variant="ghost"
-          className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none"
+          className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
           disabled={clearingLogs}
           onClick={() => setClearDialogOpen(true)}
         >
@@ -226,7 +226,7 @@ export function RequestsOverview({
                       onStatusChange(value as StatusFilter)
                     }
                   >
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -258,7 +258,7 @@ export function RequestsOverview({
                       onProtocolChange(value as "all" | ProtocolKind)
                     }
                   >
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -278,7 +278,7 @@ export function RequestsOverview({
                     {titleForLocale(locale, "渠道", "Channel")}
                   </p>
                   <Select value={channelFilter} onValueChange={onChannelChange}>
-                    <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -302,7 +302,7 @@ export function RequestsOverview({
                       value={selectedGatewayKeyId}
                       onValueChange={onGatewayKeyChange}
                     >
-                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -331,7 +331,7 @@ export function RequestsOverview({
                       value={effectiveModelPrefix}
                       onValueChange={onModelPrefixChange}
                     >
-                      <SelectTrigger className="h-7 px-2 text-xs text-muted-foreground">
+                      <SelectTrigger className="h-7 px-2 text-muted-foreground">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

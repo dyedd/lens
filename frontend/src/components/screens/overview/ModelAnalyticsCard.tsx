@@ -1,5 +1,3 @@
-import { CalendarDays, Check } from "lucide-react";
-import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,7 +9,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Button } from "@/components/ui/Button";
 import {
   type ChartConfig,
   ChartContainer,
@@ -20,26 +17,18 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/Chart";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/Popover";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
-import { cn } from "@/lib/classNames";
 import {
   CHART_COLORS,
   formatCompact,
   formatMoney,
   PIE_METRIC_OPTIONS,
   type PieMetric,
-  TIME_RANGE_OPTIONS,
-  type TimeRange,
 } from "./overviewMetrics";
 
 type PieDatum = {
@@ -53,7 +42,6 @@ type Props = {
   barData: Array<Record<string, number | string>>;
   barModels: string[];
   isChineseLocale: boolean;
-  modelRange: TimeRange;
   modelTrendTitle: string;
   modelsIsError: boolean;
   pieChartConfig: ChartConfig;
@@ -61,7 +49,6 @@ type Props = {
   pieMetric: PieMetric;
   pieMetricLabel: string;
   onMetricChange: (metric: PieMetric) => void;
-  onRangeChange: (range: TimeRange) => void;
 };
 
 function EmptyBlock({ label }: { label: string }) {
@@ -79,7 +66,6 @@ export function ModelAnalyticsCard(props: Props) {
     barData,
     barModels,
     isChineseLocale,
-    modelRange,
     modelTrendTitle,
     modelsIsError,
     pieChartConfig,
@@ -87,13 +73,7 @@ export function ModelAnalyticsCard(props: Props) {
     pieMetric,
     pieMetricLabel,
     onMetricChange,
-    onRangeChange,
   } = props;
-  const [rangeOpen, setRangeOpen] = useState(false);
-  const rangeLabel =
-    TIME_RANGE_OPTIONS.find((option) => option.value === modelRange)?.[
-      isChineseLocale ? "zhLabel" : "enLabel"
-    ] ?? (isChineseLocale ? "今天" : "Today");
   const formatMetric = (value: number) =>
     pieMetric === "cost" ? formatMoney(value) : formatCompact(value);
   const formatTooltipValue = (value: unknown) => formatMetric(Number(value));
@@ -111,60 +91,14 @@ export function ModelAnalyticsCard(props: Props) {
         <h3 className="text-sm font-semibold">
           {isChineseLocale ? "模型使用情况" : "Model usage"}
         </h3>
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          <SegmentedControl
-            value={pieMetric}
-            onValueChange={onMetricChange}
-            options={PIE_METRIC_OPTIONS.map((option) => ({
-              value: option.value,
-              label: isChineseLocale ? option.zhLabel : option.enLabel,
-            }))}
-          />
-          <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 max-w-[220px] gap-1.5 px-2 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
-                aria-label={
-                  isChineseLocale ? "选择时间范围" : "Select time range"
-                }
-              >
-                <span className="flex size-3.5 shrink-0 items-center justify-center">
-                  <CalendarDays className="size-3.5 stroke-1" />
-                </span>
-                <span className="truncate">{rangeLabel}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-44 p-2">
-              <div className="space-y-0.5">
-                {TIME_RANGE_OPTIONS.map((option) => {
-                  const selected = option.value === modelRange;
-                  return (
-                    <Button
-                      key={option.value}
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "h-8 w-full justify-start px-2 text-xs font-normal shadow-none",
-                        selected && "bg-accent",
-                      )}
-                      onClick={() => {
-                        onRangeChange(option.value);
-                        setRangeOpen(false);
-                      }}
-                    >
-                      {isChineseLocale ? option.zhLabel : option.enLabel}
-                      {selected ? <Check className="ml-auto size-3.5" /> : null}
-                    </Button>
-                  );
-                })}
-              </div>
-            </PopoverContent>
-          </Popover>
-        </div>
+        <SegmentedControl
+          value={pieMetric}
+          onValueChange={onMetricChange}
+          options={PIE_METRIC_OPTIONS.map((option) => ({
+            value: option.value,
+            label: isChineseLocale ? option.zhLabel : option.enLabel,
+          }))}
+        />
       </div>
       <div className="grid gap-5 rounded-md bg-muted/35 p-2 md:p-3 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1fr)]">
         <div className="min-w-0">
