@@ -426,9 +426,6 @@ class SiteConfigLoadersMixin:
                 channel_proxy=row.channel_proxy,
                 headers=load_header_rules(row.headers_json),
                 param_override=load_param_rules(row.param_override),
-                model_sync_include_rule_ids=json.loads(
-                    row.model_sync_include_rule_ids_json
-                ),
                 model_sync_exclude_rule_ids=json.loads(
                     row.model_sync_exclude_rule_ids_json
                 ),

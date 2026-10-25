@@ -47,8 +47,6 @@ export type FormState = {
   protocolConfigs: FormProtocolConfig[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
-  /** Library regex rules that auto-onboard matching upstream models. */
-  model_sync_include_rule_ids: string[];
   /** Library regex rules that keep matching upstream models out. */
   model_sync_exclude_rule_ids: string[];
   headersJson: string;

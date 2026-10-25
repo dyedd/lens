@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import (
     delete,
     select,
+    update,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,6 +19,7 @@ from app.models.model_groups import (
     ModelGroupItemInput,
     ModelGroupItemState,
     ModelGroupItemView,
+    ModelGroupMemberSource,
     ModelGroupUpdate,
     ModelGroupView,
 )
@@ -190,6 +192,7 @@ class ModelGroupRepository(
                 raise ResourceNotFoundError(group_id)
 
             next_name = payload.name if payload.name is not None else entity.name
+            is_renamed = next_name.strip() != entity.name
             next_route_group_id = (
                 payload.route_group_id
                 if payload.route_group_id is not None
@@ -301,6 +304,14 @@ class ModelGroupRepository(
                     group_id,
                     next_items,
                     next_excluded_items,
+                )
+            elif is_renamed:
+                # Renaming a group keeps the members it already has, even the
+                # ones a reconcile joined by the old name.
+                await session.execute(
+                    update(ModelGroupItemEntity)
+                    .where(ModelGroupItemEntity.group_id == group_id)
+                    .values(source=ModelGroupMemberSource.MANUAL.value)
                 )
 
             await session.commit()

@@ -526,8 +526,7 @@ def test_new_group_receives_same_named_model_member(
     stored = client.get(f"/api/admin/model-groups/{group['id']}", headers=admin_headers)
     unplaced = client.get("/api/admin/unplaced-models", headers=admin_headers)
 
-    assert group["origin"] == "manual"
-    assert [
+    assert stored.json()["items"] and [
         (item["model_name"], item["source"]) for item in stored.json()["items"]
     ] == [("claude-opus-4-5", "placement")]
     assert unplaced.json()["items"] == []
@@ -818,7 +817,7 @@ def test_place_models_into_existing_group_joins_conflicted_model(
     create_model_group,
 ) -> None:
     target = create_model_group(name="claude-opus-4.5")
-    create_site(valid_site_payload(model_name="claude-opus-4-5"))
+    site = create_site(valid_site_payload(model_name="claude-opus-4-5"))
 
     response = client.post(
         "/api/admin/model-group-placements",
@@ -835,9 +834,43 @@ def test_place_models_into_existing_group_joins_conflicted_model(
     stored = client.get(
         f"/api/admin/model-groups/{target['id']}", headers=admin_headers
     ).json()
-    assert stored["origin"] == "manual"
     assert [(item["model_name"], item["source"]) for item in stored["items"]] == [
-        ("claude-opus-4-5", "placement")
+        ("claude-opus-4-5", "manual")
     ]
     unplaced = client.get("/api/admin/unplaced-models", headers=admin_headers).json()
     assert unplaced["items"] == []
+
+    # A later site save re-runs the reconcile; the explicit membership stays.
+    client.put(
+        f"/api/admin/sites/{site['id']}",
+        headers=admin_headers,
+        json=valid_site_payload(model_name="claude-opus-4-5"),
+    )
+    kept = client.get(
+        f"/api/admin/model-groups/{target['id']}", headers=admin_headers
+    ).json()
+    assert [item["model_name"] for item in kept["items"]] == ["claude-opus-4-5"]
+
+
+def test_renaming_group_keeps_its_joined_members(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    create_site(valid_site_payload(model_name="gpt-4o"))
+    group = next(
+        item
+        for item in client.get("/api/admin/model-groups", headers=admin_headers).json()
+        if item["name"] == "gpt-4o"
+    )
+
+    renamed = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"name": "gpt-4o-prod", "strategy": "failover"},
+    )
+
+    assert renamed.status_code == 200, renamed.text
+    assert [
+        (item["model_name"], item["source"]) for item in renamed.json()["items"]
+    ] == [("gpt-4o", "manual")]

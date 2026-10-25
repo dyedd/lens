@@ -71,7 +71,7 @@ def test_create_regex_rule_rejects_duplicate_names_and_invalid_patterns(
     [
         pytest.param(
             "/api/admin/sites",
-            {**valid_site_payload(), "model_sync_include_rule_ids": ["missing"]},
+            {**valid_site_payload(), "model_sync_exclude_rule_ids": ["missing"]},
             id="site",
         ),
         pytest.param(
@@ -98,7 +98,7 @@ def test_deleting_rule_removes_it_from_referencing_sites(
     kept = create_regex_rule("Keep", "^gpt-")
     dropped = create_regex_rule("Drop", "-preview$")
     site_payload = valid_site_payload()
-    site_payload["model_sync_include_rule_ids"] = [dropped["id"], kept["id"]]
+    site_payload["model_sync_exclude_rule_ids"] = [dropped["id"], kept["id"]]
     create_site(site_payload)
 
     response = client.delete(
@@ -107,7 +107,7 @@ def test_deleting_rule_removes_it_from_referencing_sites(
 
     assert response.status_code == 204
     stored_site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
-    assert stored_site["model_sync_include_rule_ids"] == [kept["id"]]
+    assert stored_site["model_sync_exclude_rule_ids"] == [kept["id"]]
     rules = client.get("/api/admin/regex-rules", headers=admin_headers).json()
     assert all(rule["id"] != dropped["id"] for rule in rules)
     assert next(rule for rule in rules if rule["id"] == kept["id"]) == {

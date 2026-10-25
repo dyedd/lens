@@ -216,7 +216,6 @@ export function toForm(site: Site): FormState {
     protocolConfigs,
     proxy_mode: site.proxy_mode,
     channel_proxy: site.channel_proxy,
-    model_sync_include_rule_ids: site.model_sync_include_rule_ids,
     model_sync_exclude_rule_ids: site.model_sync_exclude_rule_ids,
     headersJson: headerDraftsToJson(headerRulesToDraft(site.headers)),
     paramsJson: paramDraftsToJson(
@@ -274,7 +273,6 @@ export function toPayload(form: FormState): SitePayload {
     param_override: paramOverrideDraftToRules(
       paramDraftsFromJson(rebuilt.paramsJson) ?? [],
     ),
-    model_sync_include_rule_ids: rebuilt.model_sync_include_rule_ids,
     model_sync_exclude_rule_ids: rebuilt.model_sync_exclude_rule_ids,
     base_urls: baseUrls,
     credentials: credentials.map((item, index) => ({

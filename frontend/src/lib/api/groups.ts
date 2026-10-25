@@ -67,8 +67,6 @@ export type ModelGroup = {
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
-  /** How the group came to exist: created by hand or by automatic placement. */
-  origin: "manual" | "auto";
   /** Library regex rules; when set they replace name matching for this group. */
   match_rule_ids: string[];
   param_override: ParamOverrideRule[];
