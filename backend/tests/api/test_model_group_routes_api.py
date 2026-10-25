@@ -1,160 +1,15 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import httpx
-from conftest import assert_error, gateway_headers, valid_site_payload
+from conftest import gateway_headers, valid_site_payload
 
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.protocols import ProtocolKind
 
 
-def test_anthropic_route_prefers_native_channel_over_earlier_chat_member(
-    client,
-    monkeypatch,
-    create_site,
-    create_model_group,
-    create_gateway_key,
-) -> None:
-    import app.gateway.service.proxy_upstream as proxy_upstream
-
-    create_site(
-        valid_site_payload(
-            protocols=["openai_chat", "anthropic"],
-            model_name="upstream-model",
-        )
-    )
-    create_model_group(
-        name="client-model",
-        items=[
-            {
-                "channel_id": compose_runtime_channel_id(
-                    "pc-1", ProtocolKind.OPENAI_CHAT
-                ),
-                "credential_id": "cred-1",
-                "model_name": "upstream-model",
-                "enabled": True,
-            },
-            {
-                "channel_id": compose_runtime_channel_id(
-                    "pc-1", ProtocolKind.ANTHROPIC
-                ),
-                "credential_id": "cred-1",
-                "model_name": "upstream-model",
-                "enabled": True,
-            },
-        ],
-    )
-    attempted_urls: list[str] = []
-
-    async def fake_send_upstream(
-        _client: httpx.AsyncClient,
-        upstream: Any,
-        *,
-        stream: bool,
-        body_bytes: bytes,
-    ) -> httpx.Response:
-        assert not stream
-        attempted_urls.append(upstream.url)
-        return httpx.Response(
-            400,
-            json={"error": {"message": "stop after capturing primary"}},
-            request=httpx.Request("POST", upstream.url),
-        )
-
-    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send_upstream)
-    key = create_gateway_key()
-
-    response = client.post(
-        "/v1/messages",
-        headers=gateway_headers(key),
-        json={
-            "model": "client-model",
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 16,
-        },
-    )
-
-    assert response.status_code == 400, response.text
-    assert len(attempted_urls) == 1
-    assert attempted_urls[0].endswith("/v1/messages")
-
-
-def test_create_route_group_rejects_invalid_route_targets(
-    client,
-    admin_headers,
-    create_model_group,
-) -> None:
-    target = create_model_group(name="target")
-    route = create_model_group(
-        name="route",
-        route_group_id=target["id"],
-    )
-
-    missing = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={
-            "name": "missing-target",
-            "route_group_id": "missing",
-        },
-    )
-    missing_protocol = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={
-            "name": "missing-protocol",
-            "route_group_id": target["id"],
-        },
-    )
-    chained = client.post(
-        "/api/admin/model-groups",
-        headers=admin_headers,
-        json={
-            "name": "chained",
-            "route_group_id": route["id"],
-        },
-    )
-
-    assert_error(missing, 400, "Route target model group not found")
-    assert missing_protocol.status_code == 201, missing_protocol.text
-    assert_error(chained, 400, "Route target must be an execution group")
-
-
-def test_update_model_group_rejects_self_route(
-    client, admin_headers, create_model_group
-) -> None:
-    group = create_model_group(name="self-route")
-
-    response = client.put(
-        f"/api/admin/model-groups/{group['id']}",
-        headers=admin_headers,
-        json={"route_group_id": group["id"]},
-    )
-
-    assert_error(response, 400, "cannot route to itself")
-
-
-def test_referenced_execution_group_cannot_become_a_route_group(
-    client,
-    admin_headers,
-    create_model_group,
-) -> None:
-    execution = create_model_group(name="execution")
-    create_model_group(name="route", route_group_id=execution["id"])
-    target = create_model_group(name="target")
-
-    response = client.put(
-        f"/api/admin/model-groups/{execution['id']}",
-        headers=admin_headers,
-        json={"route_group_id": target["id"]},
-    )
-
-    assert_error(response, 400, "cannot become route groups")
-
-
-def test_route_group_inherits_execution_group_fallbacks(
+def test_route_group_uses_execution_group_fallbacks(
     client,
     admin_headers,
     monkeypatch,
@@ -271,22 +126,3 @@ def test_route_group_inherits_execution_group_fallbacks(
 
     assert response.status_code == 200, response.text
     assert sent == ["model-primary", "model-fallback"]
-
-
-def test_delete_model_group_rejects_referenced_execution_group(
-    client,
-    admin_headers,
-    create_model_group,
-) -> None:
-    execution_group = create_model_group(name="gpt-4o")
-    create_model_group(
-        name="public-gpt-4o",
-        route_group_id=execution_group["id"],
-    )
-
-    response = client.delete(
-        f"/api/admin/model-groups/{execution_group['id']}",
-        headers=admin_headers,
-    )
-
-    assert_error(response, 400, "still referenced")

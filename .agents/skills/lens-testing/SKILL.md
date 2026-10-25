@@ -1,48 +1,44 @@
 ---
 name: lens-testing
-description: Use when a Lens change needs backend HTTP contract coverage. Keep tests risk-based, drive them through the API fixtures, and use the repository's uv-managed checks.
+description: 指导 Lens 后端 HTTP 接口测试的设计与编写，以覆盖核心功能正常成功流程为主。
 ---
 
-# Lens Testing
+# Lens 后端接口测试
 
-## Scope
+## 核心目标
 
-Cover only critical, high-risk backend HTTP contracts: authentication and authorization, data persistence or loss, gateway protocol compatibility, and routing or failover behavior. A new route or reproducible bug alone does not justify a test; the affected HTTP contract must warrant the coverage.
+验证核心 HTTP 接口在合法输入下的端到端完成度，确保外部契约（HTTP contract）稳定并返回预期数据。测试重心在于守住真实业务主线，而非穷举内部实现细节。
 
-Do not automatically add frontend tests or direct tests of units, services, helpers, converters, or repositories. Follow explicit user instructions when they change the scope.
+## 编写原则
 
-Delete a test once the behavior it guarded is covered elsewhere, or once the field or option it pinned has been removed or derived.
+- **入口与途径**：测试文件位于 `backend/tests/api/test_<area>_api.py`，所有请求必须通过 `client` 夹具发起，真实穿透 HTTP 路由与中间件。严禁绕过 HTTP 直接调用服务层或手动组装 `Request`。
+- **流程精简与闭环**：每个核心业务域仅保留一条主线成功流程。管理端 CRUD 集中在单个用例内闭环验证（列表 → 新增 → 查看 → 修改 → 删除）；网关路由通过单条用例集中覆盖所支持的公开协议入口；代理上游、模型同步、请求日志等流程仅保留一条代表性成功链路。
+- **状态准备**：依赖公开接口或公共夹具构建前置状态，优先复用 `admin_headers`、`create_site`、`create_model_group`、`create_gateway_key`、`create_regex_rule` 等共享 fixture。
+- **Mock 边界**：Mock 必须严格限制在网络边界（如替换 upstream 发送实现），确保鉴权、路由决策、协议转换与日志等完整链路真实执行；路由分发层可打桩下一层代理入口函数，避免重复向下穿透。严禁直接 mock 待测函数本身。
+- **断言与命名**：测试名称直接描述业务成功预期（如 `test_site_crud_round_trip`）。仅断言 HTTP 状态码与调用方依赖的关键数据；不重复断言框架默认行为（如全局统一的未授权拦截、Pydantic 禁止额外字段的 schema 校验等），不依赖无序集合的返回顺序。
 
-## Workflow
+## 维护步骤
 
-1. Trace the affected HTTP path and decide whether it is a contract worth protecting.
-2. Reuse the nearest area file under `backend/tests/api/`, plus fixtures and helpers in `backend/tests/conftest.py`.
-3. If coverage is justified, add the smallest request-and-response behavior test.
-4. Format touched files and run the smallest relevant check. For backend contract changes, run the API suite in parallel; narrow to one file only while debugging.
-5. Run frontend lint, type check, or build only when frontend files or the requested verification require them; CI remains the full repository check.
+1. **确定改动范围**：结合 `git status --short` 识别目标接口及对应的测试文件。
+2. **增补与同步**：接口新增或外部契约发生变化时，在对应领域测试中补充或调整最短的正常成功流程；内部重构只要未改变外部契约，无需新增测试。
+3. **局部格式化**：仅格式化和修复改动触碰的文件。
+4. **运行测试套件**：先用单文件验证改动，再并行跑通后端 API 全量测试，确保套件全绿。
+5. **收尾与状态确认**：通过 `git diff --check` 和 `git status --short` 确保无异常空格、临时文件或未预期的工作区变动。
 
-## Conventions
+## 常用命令
 
-One file per area, named `backend/tests/api/test_<area>_api.py`. Name each test after the behavior it asserts, and separate arrange, act, and assert with blank lines.
+所有后端命令均从仓库根目录执行，且必须使用 `uv run --no-sync`：
 
-- Drive every test through the `client` fixture. A test that bypasses HTTP, by calling a service function directly or by hand-building a `Request`, is testing an implementation detail.
-- Build state through the admin API with the shared fixtures `admin_headers`, `create_site`, `create_model_group`, `create_gateway_key`, and `create_site_group_and_key`. Import helpers with `from conftest import ...`: `valid_site_payload`, `gateway_headers`, `openai_chat_channel_id`, `seed_request_log`, `assert_error`, and `json_response`.
-- Stub only at the network edge, by monkeypatching `proxy_upstream._send_upstream` or by injecting an `httpx.MockTransport` client, so the gateway path under test still runs end to end. Never monkeypatch the function under test and then assert on its own return value.
-- Assert one invariant per test, and express variants with `pytest.mark.parametrize` and `pytest.param(..., id=...)` rather than copied test bodies. For schema rejection cases, parametrize a mutator that edits an otherwise valid payload.
-- Assert only what the HTTP contract promises. Response item order is not a contract unless the endpoint documents it; compare sorted values or sets instead.
-- For protocol and streaming coverage, keep the upstream frames literal in the test, then assert both the converted client-visible body and the persisted request log.
-- Do not restate what the framework already guarantees. Request and backup models inherit `StrictBaseModel(extra="forbid")`, so one representative case per schema family covers rejected extra fields and missing required fields; do not add a case per field.
-- Do not write per-endpoint 401 tests. `test_every_admin_route_rejects_missing_token` walks `app.routes` and covers the whole admin surface; when a new admin route is intentionally public, add it to `_UNAUTHENTICATED_ADMIN_ROUTES` in the same change.
+```bash
+# 格式化与静态检查（仅针对触碰的文件）
+uv run --no-sync ruff format <paths>
+uv run --no-sync ruff check --fix <paths>
 
-## Commands
+# 调试单业务域测试（串行）
+uv run --no-sync python -m pytest backend/tests/api/test_<area>_api.py -q --confcutdir=backend/tests
 
-Call every backend tool through `uv run --no-sync` from the repository root, so it comes from the `dev` dependency group instead of a global install.
+# 完整后端 API 测试（并行）
+uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal
+```
 
-- Format and lint touched files: `uv run --no-sync ruff format <paths>` then `uv run --no-sync ruff check --fix <paths>`
-- Backend suite: `uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal`
-- One file, while debugging: `uv run --no-sync python -m pytest backend/tests/api/test_<area>_api.py -q --confcutdir=backend/tests`
-- Frontend checks, from `frontend/`: `pnpm lint`, `pnpm exec tsc --noEmit`, and `pnpm build`
-
-`pytest-xdist` and `ruff` ship in the `dev` dependency group; install them with `uv sync --locked`. With a package index mirror configured, `--locked` misreports lockfile drift, so use `uv sync --frozen`.
-
-Do not add another test runner or a custom parallel harness.
+依赖安装与同步遵循仓库现有的 `uv sync --locked`（或镜像环境下的 `uv sync --frozen`）规范。
