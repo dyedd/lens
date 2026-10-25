@@ -42,13 +42,6 @@ class ModelGroupMemberSource(str, Enum):
     PLACEMENT = "placement"
 
 
-class ModelGroupOrigin(str, Enum):
-    """How a group came to exist: created by hand or by automatic placement."""
-
-    MANUAL = "manual"
-    AUTO = "auto"
-
-
 class ModelGroupItemReason(str, Enum):
     MANUAL_DISABLED = "manual_disabled"
     CHANNEL_NOT_FOUND = "channel_not_found"
@@ -66,7 +59,6 @@ class ModelGroup(StrictBaseModel):
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
-    origin: ModelGroupOrigin = ModelGroupOrigin.MANUAL
     # Library regex rules; when set they replace name matching for this group.
     match_rule_ids: RegexRuleIds = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)

@@ -41,7 +41,6 @@ import type {
 } from "./groupTypes";
 import {
   formatCredentialIdentity,
-  formatMemberSource,
   isGroupEnabled,
   STRATEGY_OPTIONS,
   strategyLabel,
@@ -132,11 +131,6 @@ function GroupMembersPopover({
                   </div>
                 ) : null}
               </div>
-              {member.source !== "manual" ? (
-                <Badge variant="outline">
-                  {formatMemberSource(member.source, locale)}
-                </Badge>
-              ) : null}
               <span
                 className={
                   member.ready_item_count > 0
@@ -260,11 +254,6 @@ export function GroupsTable({
                   <span className="min-w-0 truncate font-mono text-xs font-medium">
                     {group.name}
                   </span>
-                  {group.origin === "auto" ? (
-                    <Badge variant="secondary" className="shrink-0">
-                      {locale === "zh-CN" ? "自动" : "Auto"}
-                    </Badge>
-                  ) : null}
                   {group.similar_groups.length ? (
                     <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild>

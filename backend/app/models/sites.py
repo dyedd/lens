@@ -183,9 +183,7 @@ class SiteConfig(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    # Library regex rules; sync onboards upstream models matching include but
-    # not exclude. Empty include onboard nothing automatically.
-    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
+    # Library regex rules; sync skips upstream models matching them.
     model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
@@ -199,7 +197,6 @@ class SiteCreate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
     model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
@@ -213,7 +210,6 @@ class SiteUpdate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    model_sync_include_rule_ids: RegexRuleIds = Field(default_factory=list)
     model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)

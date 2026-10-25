@@ -451,16 +451,14 @@ def _model(
 
 def _sync_site_payload(
     *,
-    include_rules: list[str] | None = None,
     exclude_rules: list[str] | None = None,
     models: list[dict[str, Any]] | None = None,
     **site_fields: Any,
 ) -> dict[str, Any]:
-    """Build a two-credential site with onboarding rules and stored models."""
+    """Build a two-credential site with exclusion rules and stored models."""
     return {
         "name": "Multi-key Site",
         **site_fields,
-        "model_sync_include_rule_ids": include_rules or [],
         "model_sync_exclude_rule_ids": exclude_rules or [],
         "base_urls": [{"id": "base-1", "url": "https://upstream.example/v1"}],
         "credentials": [
@@ -517,18 +515,12 @@ def _stored_models(client, admin_headers) -> set[tuple[str, str, bool]]:
     }
 
 
-def test_channel_model_sync_onboards_models_matching_include_rules(
+def test_channel_model_sync_onboards_every_upstream_model(
     client,
     admin_headers,
-    create_regex_rule,
     monkeypatch,
 ) -> None:
-    rule = create_regex_rule("GPT", "^(gpt-4o|O1-mini)$")
-    _create_sync_site(
-        client,
-        admin_headers,
-        _sync_site_payload(include_rules=[rule["id"]]),
-    )
+    _create_sync_site(client, admin_headers, _sync_site_payload())
 
     async def fake_fetch(channel: Any) -> list[str]:
         assert len(channel.keys) == 1
@@ -542,30 +534,28 @@ def test_channel_model_sync_onboards_models_matching_include_rules(
         (item["credential_id"], item["status"], tuple(sorted(item["added"])))
         for item in result["items"]
     } == {
-        ("cred-a", "updated", ("O1-mini", "gpt-4o")),
-        ("cred-b", "updated", ("O1-mini", "gpt-4o")),
+        ("cred-a", "updated", ("GPT-4o-preview", "O1-mini", "claude-3-opus", "gpt-4o")),
+        ("cred-b", "updated", ("GPT-4o-preview", "O1-mini", "claude-3-opus", "gpt-4o")),
     }
     assert _stored_models(client, admin_headers) == {
         ("cred-a", "manual-only", True),
         ("cred-a", "gpt-4o", False),
+        ("cred-a", "GPT-4o-preview", False),
         ("cred-a", "O1-mini", False),
+        ("cred-a", "claude-3-opus", False),
         ("cred-b", "gpt-4o", False),
+        ("cred-b", "GPT-4o-preview", False),
         ("cred-b", "O1-mini", False),
+        ("cred-b", "claude-3-opus", False),
     }
 
 
 def test_channel_model_sync_auto_creates_group_for_new_models(
     client,
     admin_headers,
-    create_regex_rule,
     monkeypatch,
 ) -> None:
-    rule = create_regex_rule("GPT", "^gpt-4o$")
-    _create_sync_site(
-        client,
-        admin_headers,
-        _sync_site_payload(include_rules=[rule["id"]], models=[]),
-    )
+    _create_sync_site(client, admin_headers, _sync_site_payload(models=[]))
 
     async def fake_fetch(_channel: Any) -> list[str]:
         return ["gpt-4o"]
@@ -580,27 +570,24 @@ def test_channel_model_sync_auto_creates_group_for_new_models(
     assert [
         (
             group["name"],
-            group["origin"],
             group["strategy"],
             tuple(sorted(item["credential_id"] for item in group["items"])),
             {item["source"] for item in group["items"]},
         )
         for group in groups
-    ] == [("gpt-4o", "auto", "failover", ("cred-a", "cred-b"), {"placement"})]
+    ] == [("gpt-4o", "failover", ("cred-a", "cred-b"), {"placement"})]
 
     second = _run_model_sync(client, admin_headers)
     assert second["groups"]["pending"] == []
     assert len(client.get("/api/admin/model-groups", headers=admin_headers).json()) == 1
 
 
-def test_channel_model_sync_removes_empty_auto_group(
+def test_channel_model_sync_keeps_group_after_its_models_leave(
     client,
     admin_headers,
-    create_regex_rule,
     monkeypatch,
 ) -> None:
-    rule = create_regex_rule("GPT", "^gpt-4o$")
-    payload = _sync_site_payload(include_rules=[rule["id"]], models=[])
+    payload = _sync_site_payload(models=[])
     site_id = _create_sync_site(client, admin_headers, payload)
 
     async def fake_fetch(_channel: Any) -> list[str]:
@@ -610,21 +597,20 @@ def test_channel_model_sync_removes_empty_auto_group(
     _run_model_sync(client, admin_headers)
     assert len(client.get("/api/admin/model-groups", headers=admin_headers).json()) == 1
 
-    payload["model_sync_include_rule_ids"] = []
     payload["protocols"][0]["models"] = []
     saved = client.put(
         f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
     )
 
     assert saved.status_code == 200, saved.text
-    assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert [(group["name"], group["items"]) for group in groups] == [("gpt-4o", [])]
 
 
 @pytest.mark.parametrize("exclude", [True, False])
 def test_removing_unplaced_model_can_exclude_it_from_onboarding(
     client,
     admin_headers,
-    create_regex_rule,
     monkeypatch,
     exclude: bool,
 ) -> None:
@@ -633,12 +619,7 @@ def test_removing_unplaced_model_can_exclude_it_from_onboarding(
     client.post(
         "/api/admin/model-groups", headers=admin_headers, json={"name": "gpt-4.o"}
     )
-    rule = create_regex_rule("GPT", "^gpt-4o$")
-    _create_sync_site(
-        client,
-        admin_headers,
-        _sync_site_payload(include_rules=[rule["id"]]),
-    )
+    _create_sync_site(client, admin_headers, _sync_site_payload())
 
     async def fake_fetch(_channel: Any) -> list[str]:
         return ["gpt-4o"]
@@ -699,7 +680,7 @@ def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
     } == {("cred-a", ("gpt-old",)), ("cred-b", ())}
     assert ("cred-a", "gpt-old", True) in flagged_models
     assert ("cred-a", "manual-only", False) in flagged_models
-    assert all(model[1] != "gpt-new" for model in flagged_models)
+    assert ("cred-a", "gpt-new", False) in flagged_models
     assert {
         (item["credential_id"], tuple(item["restored"])) for item in restored["items"]
     } == {("cred-a", ("gpt-old",)), ("cred-b", ())}
@@ -709,17 +690,12 @@ def test_channel_model_sync_flags_vanished_models_instead_of_deleting_them(
 def test_channel_model_sync_retires_members_missing_past_the_grace_period(
     client,
     admin_headers,
-    create_regex_rule,
     monkeypatch,
 ) -> None:
     import app.persistence.channel_store.write as site_write
     import app.persistence.repositories.group_reconcile as group_reconcile
 
-    rule = create_regex_rule("GPT", "^gpt-")
-    payload = _sync_site_payload(
-        include_rules=[rule["id"]],
-        models=[_model("manual-only")],
-    )
+    payload = _sync_site_payload(models=[_model("manual-only")])
     _create_group = client.post(
         "/api/admin/model-groups",
         headers=admin_headers,
@@ -786,6 +762,7 @@ def test_channel_model_sync_retires_members_missing_past_the_grace_period(
         ("gpt-new", "cred-b", "gpt-new"),
         ("gpt-old", "cred-a", "gpt-old"),
         ("gpt-old", "cred-b", "gpt-old"),
+        ("manual-only", "cred-b", "manual-only"),
     }
     assert flagged["groups"]["created_groups"] == []
     assert changed(flagged, "retired") == []
@@ -927,51 +904,17 @@ def test_site_rejects_duplicate_models(
     assert_error(response, 400, "Duplicate model in protocol config")
 
 
-def test_channel_model_sync_onboards_only_rule_matched_models(
+def test_channel_model_sync_skips_models_matching_exclude_rules(
     client,
     admin_headers,
     create_regex_rule,
     monkeypatch,
 ) -> None:
-    rule = create_regex_rule("New", "^new-model$")
-    payload = _sync_site_payload(include_rules=[rule["id"]])
-    _create_sync_site(client, admin_headers, payload)
-
-    async def fake_fetch(_channel: Any) -> list[str]:
-        return ["auto-model", "fixed-model", "new-model"]
-
-    _patch_upstream_models(monkeypatch, fake_fetch)
-
-    _run_model_sync(client, admin_headers)
-
-    site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
-    protocols_by_model: dict[tuple[str, str], set[str]] = {}
-    for model in site["protocols"][0]["models"]:
-        protocols_by_model.setdefault(
-            (model["credential_id"], model["model_name"]), set()
-        ).add(model["protocol"])
-    assert protocols_by_model == {
-        ("cred-a", "manual-only"): {"openai_chat"},
-        ("cred-a", "new-model"): {"openai_chat"},
-        ("cred-b", "new-model"): {"openai_chat"},
-    }
-
-
-def test_channel_model_sync_exclude_rules_veto_include_matches(
-    client,
-    admin_headers,
-    create_regex_rule,
-    monkeypatch,
-) -> None:
-    include = create_regex_rule("Family", "^gpt-")
     exclude = create_regex_rule("Legacy", "preview$")
     _create_sync_site(
         client,
         admin_headers,
-        _sync_site_payload(
-            include_rules=[include["id"]],
-            exclude_rules=[exclude["id"]],
-        ),
+        _sync_site_payload(exclude_rules=[exclude["id"]]),
     )
 
     async def fake_fetch(_channel: Any) -> list[str]:

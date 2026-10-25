@@ -5,7 +5,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceConflictError, ResourceNotFoundError
@@ -24,10 +24,7 @@ from app.persistence.regex_rule_references import (
 )
 
 _GROUP_HAS_RULES = ModelGroupEntity.match_rule_ids_json != "[]"
-_SITE_HAS_RULES = or_(
-    SiteEntity.model_sync_include_rule_ids_json != "[]",
-    SiteEntity.model_sync_exclude_rule_ids_json != "[]",
-)
+_SITE_HAS_RULES = SiteEntity.model_sync_exclude_rule_ids_json != "[]"
 
 
 class RegexRuleRepository:
@@ -93,7 +90,6 @@ class RegexRuleRepository:
                 _drop_rule_reference(group, "match_rule_ids_json", rule_id)
             sites = await session.execute(select(SiteEntity).where(_SITE_HAS_RULES))
             for site in sites.scalars():
-                _drop_rule_reference(site, "model_sync_include_rule_ids_json", rule_id)
                 _drop_rule_reference(site, "model_sync_exclude_rule_ids_json", rule_id)
             await session.delete(entity)
             await session.commit()
@@ -141,19 +137,15 @@ class RegexRuleRepository:
             select(
                 SiteEntity.id,
                 SiteEntity.name,
-                SiteEntity.model_sync_include_rule_ids_json,
                 SiteEntity.model_sync_exclude_rule_ids_json,
             )
             .where(_SITE_HAS_RULES)
             .order_by(SiteEntity.name)
         )
-        for site_id, site_name, include_json, exclude_json in site_rows.all():
+        for site_id, site_name, exclude_json in site_rows.all():
             site = RegexRuleReferenceView(id=site_id, name=site_name)
             seen_rule_ids: set[str] = set()
-            for rule_id in (
-                *parse_rule_ids(include_json),
-                *parse_rule_ids(exclude_json),
-            ):
+            for rule_id in parse_rule_ids(exclude_json):
                 if rule_id in seen_rule_ids:
                     continue
                 seen_rule_ids.add(rule_id)

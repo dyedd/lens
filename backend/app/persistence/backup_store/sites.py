@@ -131,9 +131,6 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "channel_proxy": row.channel_proxy,
                 "headers": load_header_rules(row.headers_json),
                 "param_override": load_param_rules(row.param_override),
-                "model_sync_include_rule_ids": json.loads(
-                    row.model_sync_include_rule_ids_json
-                ),
                 "model_sync_exclude_rule_ids": json.loads(
                     row.model_sync_exclude_rule_ids_json
                 ),
@@ -171,7 +168,6 @@ async def replace_sites(
             raise ValueError(f"Duplicate site name in backup: {site.name}")
         site_ids.add(site.id)
         site_names.add(site.name)
-        validate_backup_rule_ids(site.model_sync_include_rule_ids, rule_ids)
         validate_backup_rule_ids(site.model_sync_exclude_rule_ids, rule_ids)
         session.add(
             SiteEntity(
@@ -190,9 +186,6 @@ async def replace_sites(
                 param_override=json.dumps(
                     [rule.model_dump(mode="json") for rule in site.param_override],
                     ensure_ascii=True,
-                ),
-                model_sync_include_rule_ids_json=json.dumps(
-                    site.model_sync_include_rule_ids, ensure_ascii=True
                 ),
                 model_sync_exclude_rule_ids_json=json.dumps(
                     site.model_sync_exclude_rule_ids, ensure_ascii=True

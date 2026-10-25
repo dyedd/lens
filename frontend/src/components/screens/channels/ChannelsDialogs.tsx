@@ -47,11 +47,9 @@ type Props = {
   save: ReturnType<typeof useChannelSave>;
   overviewModels: AggregatedModel[];
   editorMode: "channel" | "models";
-  isModelsNested: boolean;
   modelsStatusFilter: ModelStatusFilter;
   fetchOnOpen: boolean;
   onFetchOnOpenHandled: () => void;
-  onManageModels: () => void;
   onCloseModels: () => void;
 };
 
@@ -67,11 +65,9 @@ export function ChannelsDialogs({
   save,
   overviewModels,
   editorMode,
-  isModelsNested,
   modelsStatusFilter,
   fetchOnOpen,
   onFetchOnOpenHandled,
-  onManageModels,
   onCloseModels,
 }: Props) {
   const isDialogOpen = editor.isDialogOpen;
@@ -98,12 +94,6 @@ export function ChannelsDialogs({
           availableTags={availableTags}
           form={editor.form}
           savingChannel={save.isSaving}
-          modelCounts={{
-            enabled: overviewModels.filter((item) => item.enabled).length,
-            total: overviewModels.length,
-            pending: overviewModels.filter((item) => item.upstreamMissing)
-              .length,
-          }}
           setIsDialogOpen={editor.setIsDialogOpen}
           setEditingSiteId={editor.setEditingSiteId}
           setForm={editor.setForm}
@@ -111,8 +101,6 @@ export function ChannelsDialogs({
           addBaseUrl={editor.addBaseUrl}
           updateBaseUrl={editor.updateBaseUrl}
           removeBaseUrl={editor.removeBaseUrl}
-          onFetchModels={() => setRemoteOpen(true)}
-          onManageModels={onManageModels}
         />
       ) : null}
       {editor.isDialogOpen && editorMode === "models" ? (
@@ -134,12 +122,10 @@ export function ChannelsDialogs({
           onTest={modelTest.openAggregateModelTest}
           testing={modelTest.testingModel}
           onAddBinding={editor.addBinding}
-          onboardingRuleIds={editor.form.model_sync_include_rule_ids}
           onExcludeModels={editor.excludeModelsFromOnboarding}
           groupOptions={groupOptions}
           onOpenRemote={() => setRemoteOpen(true)}
           initialStatusFilter={modelsStatusFilter}
-          isNested={isModelsNested}
         />
       ) : null}
       {editor.isDialogOpen ? (

@@ -24,7 +24,6 @@ import {
 import type { FoldedMember } from "./groupTypes";
 import {
   formatCredentialIdentity,
-  formatMemberSource,
   modelGroupItemReasonLabel,
   modelGroupReasonsForState,
 } from "./modelGroupFormatting";
@@ -173,20 +172,6 @@ export function FoldedMemberRow({
           </Tooltip>
         </div>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
-          {member.source !== "manual" ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="outline" tabIndex={0}>
-                  {formatMemberSource(member.source, locale)}
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>
-                {locale === "zh-CN"
-                  ? "匹配组规则或同名的模型在保存和同步时自动加入；可以像其他成员一样拖动排序"
-                  : "Joined automatically when the names match; reorder it like any member"}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
           {member.rate_source !== "none" &&
           typeof member.rate_multiplier === "number" ? (
             <Badge variant="secondary">

@@ -120,11 +120,6 @@ async def _sync_site_models(
             protocol_config_id_from_runtime_channel_id(channel.id)
         ].append(channel)
 
-    include_patterns = tuple(
-        (
-            await state.regex_rule_repo.load_patterns(site.model_sync_include_rule_ids)
-        ).values()
-    )
     exclude_patterns = tuple(
         (
             await state.regex_rule_repo.load_patterns(site.model_sync_exclude_rule_ids)
@@ -150,7 +145,6 @@ async def _sync_site_models(
                     protocol_config,
                     channels,
                     item,
-                    include_patterns,
                     exclude_patterns,
                 )
             except (HTTPException, ResourceNotFoundError, ValueError) as exc:
@@ -170,7 +164,6 @@ async def _sync_credential_models(
     protocol_config: SiteProtocolConfig,
     channels: list[ChannelConfig],
     item: ChannelModelSyncResultItem,
-    include_patterns: tuple[re.Pattern[str], ...],
     exclude_patterns: tuple[re.Pattern[str], ...],
 ) -> None:
     # Protocols of one config share a base URL, so one catalog fetch serves all.
@@ -190,18 +183,11 @@ async def _sync_credential_models(
         raise ValueError("no usable credential for model discovery")
     upstream_models = await fetch_upstream_models(fetch_channel)
     upstream_names = {model.name for model in upstream_models}
-    # Onboarding rules decide which new upstream models join the catalog;
-    # every tracked row keeps syncing either way.
-    onboard_names = (
-        {
-            name
-            for name in upstream_names
-            if _matches_any(name, include_patterns)
-            and not _matches_any(name, exclude_patterns)
-        }
-        if include_patterns
-        else set()
-    )
+    # Every upstream model joins the catalog except the ones an exclusion rule
+    # keeps out; tracked rows keep syncing either way.
+    onboard_names = {
+        name for name in upstream_names if not _matches_any(name, exclude_patterns)
+    }
     changes = await state.channel_store.sync_upstream_models(
         protocol_config.id,
         item.credential_id,

@@ -142,12 +142,13 @@ class SiteOperationsMixin:
         onboard_names: set[str] | None = None,
         upstream_context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
-        """Refresh tracked upstream models and materialize onboarding matches.
+        """Refresh tracked upstream models and add the names not tracked yet.
 
         Every stored row keeps syncing: upstream context windows refresh,
         vanished names are flagged, and restores clear the flag. Rows are
-        never deleted here; ``onboard_names`` only adds upstream models that
-        the site's onboarding rules match and that are not tracked yet.
+        never deleted here; ``onboard_names`` holds the upstream models a sync
+        writes into the catalog, which excludes only what an exclusion rule
+        keeps out.
         """
         reported_context_windows = upstream_context_windows or {}
         rule_names = onboard_names or set()
@@ -321,10 +322,7 @@ class ChannelStore(
             enabled = bool(site.enabled)
         await validate_rule_ids(
             session,
-            [
-                *payload.model_sync_include_rule_ids,
-                *payload.model_sync_exclude_rule_ids,
-            ],
+            payload.model_sync_exclude_rule_ids,
         )
         await self._upsert_site_payload(session, site_id, payload, enabled=enabled)
 

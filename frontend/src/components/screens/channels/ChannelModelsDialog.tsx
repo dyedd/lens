@@ -39,11 +39,9 @@ import {
 } from "@/components/ui/Select";
 import { ToolbarButton } from "@/components/ui/ToolbarButton";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
-import { useRegexRules } from "@/hooks/useRegexRules";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolLabel } from "@/lib/protocols";
-import { compileRegexRulePattern } from "@/lib/regexRules";
 import { AddChannelModelsDialog } from "./AddChannelModelsDialog";
 import { ChannelModelsTable } from "./ChannelModelsTable";
 import type {
@@ -78,12 +76,9 @@ type Props = {
   onOpenRemote: () => void;
   /** Execution groups new models can join after the channel is saved. */
   groupOptions: Array<{ id: string; name: string }>;
-  /** Library rule ids that auto-onboard matching upstream models. */
-  onboardingRuleIds: string[];
   /** Adds exclude rules so removed models never sync back in. */
   onExcludeModels: (modelNames: string[]) => Promise<boolean>;
   initialStatusFilter?: ModelStatusFilter;
-  isNested?: boolean;
 };
 
 /** Renders the model binding table for one channel. */
@@ -114,10 +109,8 @@ function ChannelModelsBody({
   onAddBinding,
   onOpenRemote,
   groupOptions,
-  onboardingRuleIds,
   onExcludeModels,
   initialStatusFilter = "all",
-  isNested = false,
 }: Omit<Props, "open">) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] =
@@ -172,15 +165,6 @@ function ChannelModelsBody({
   const selectedCount = selectedKeys.length;
   const activeFilterCount = Number(statusFilter !== "all");
   const sortOptions = modelSortOptions(locale);
-  const libraryRules = useRegexRules().rules;
-  const onboardingPatterns = useMemo(
-    () =>
-      libraryRules
-        .filter((rule) => onboardingRuleIds.includes(rule.id))
-        .map((rule) => compileRegexRulePattern(rule.pattern))
-        .filter((pattern): pattern is RegExp => pattern !== null),
-    [libraryRules, onboardingRuleIds],
-  );
   const removeNames = useMemo(
     () =>
       (removeRequest ?? [])
@@ -188,14 +172,6 @@ function ChannelModelsBody({
         .filter((name): name is string => Boolean(name)),
     [models, removeRequest],
   );
-  // Names an onboarding rule would sync back after the delete.
-  const removableOnboardingNames = [
-    ...new Set(
-      removeNames.filter((name) =>
-        onboardingPatterns.some((pattern) => pattern.test(name)),
-      ),
-    ),
-  ];
 
   function applyBulkProtocols() {
     if (!bulkProtocols.length || selectedCount === 0) return;
@@ -211,8 +187,8 @@ function ChannelModelsBody({
   async function confirmRemoval() {
     const keys = removeRequest ?? [];
     if (!keys.length) return;
-    if (excludeOnRemove && removableOnboardingNames.length) {
-      const excluded = await onExcludeModels(removableOnboardingNames);
+    if (excludeOnRemove && removeNames.length) {
+      const excluded = await onExcludeModels([...new Set(removeNames)]);
       if (!excluded) return;
     }
     for (const key of keys) onDelete(key);
@@ -417,13 +393,7 @@ function ChannelModelsBody({
             onClick={() => onOpenChange(false)}
             disabled={saving}
           >
-            {isNested
-              ? locale === "zh-CN"
-                ? "返回"
-                : "Back"
-              : locale === "zh-CN"
-                ? "关闭"
-                : "Close"}
+            {locale === "zh-CN" ? "关闭" : "Close"}
           </Button>
           <Button type="submit" size="sm" disabled={saving}>
             {saving
@@ -457,7 +427,7 @@ function ChannelModelsBody({
         }}
         onConfirm={() => void confirmRemoval()}
       >
-        {removableOnboardingNames.length ? (
+        {removeNames.length ? (
           <label
             htmlFor="exclude-on-remove"
             className="flex items-start gap-2 rounded-md bg-muted/35 p-2.5 text-xs text-muted-foreground"
@@ -472,8 +442,8 @@ function ChannelModelsBody({
             />
             <span>
               {locale === "zh-CN"
-                ? "这些模型匹配自动接入规则，删除后下次同步会重新接入。同时加入排除正则可避免重新接入。"
-                : "These models match auto-onboard rules and would sync back in. Add exclusion regexes to keep them out."}
+                ? "删除后下次同步会重新接入。勾选会同时加入排除正则，避免重新接入。"
+                : "Removed models sync back on the next run. Add exclusion regexes to keep them out."}
             </span>
           </label>
         ) : null}
