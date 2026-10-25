@@ -502,7 +502,7 @@ def test_remove_unplaced_model_only_touches_unplaced_channel_models(
 
     assert_error(rejected, 400, "claude-opus-4.5")
     assert removed.status_code == 200, removed.text
-    assert removed.json() == {"deleted": 1, "excluded": 0}
+    assert removed.json() == {"deleted": 1}
     assert unplaced.json()["items"] == []
     assert site["protocols"][0]["models"] == []
 

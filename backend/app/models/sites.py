@@ -5,7 +5,6 @@ from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_vali
 
 from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
-from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel
 
@@ -183,8 +182,6 @@ class SiteConfig(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    # Library regex rules; sync skips upstream models matching them.
-    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrl] = Field(default_factory=list)
     credentials: list[SiteCredential] = Field(default_factory=list)
     protocols: list[SiteProtocolConfig] = Field(default_factory=list)
@@ -197,7 +194,6 @@ class SiteCreate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)
@@ -210,7 +206,6 @@ class SiteUpdate(StrictBaseModel):
     channel_proxy: str = ""
     headers: list[HeaderRule] = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    model_sync_exclude_rule_ids: RegexRuleIds = Field(default_factory=list)
     base_urls: list[SiteBaseUrlInput] = Field(default_factory=list)
     credentials: list[SiteCredentialInput] = Field(default_factory=list)
     protocols: list[SiteProtocolConfigInput] = Field(default_factory=list)

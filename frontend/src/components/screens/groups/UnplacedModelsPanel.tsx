@@ -39,10 +39,7 @@ interface UnplacedModelsPanelProps {
   onCreateGroupForModels: (name: string, modelNames: string[]) => void;
   onCreateOwnGroups: (modelNames: string[]) => Promise<boolean>;
   onAutoPlace: () => void;
-  onRemoveModels: (
-    modelNames: string[],
-    excludeFromOnboarding: boolean,
-  ) => Promise<boolean>;
+  onRemoveModels: (modelNames: string[]) => Promise<boolean>;
 }
 
 type RemoveRequest = {
@@ -145,7 +142,6 @@ export function UnplacedModelsPanel({
   const [isOpen, setIsOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [removeTarget, setRemoveTarget] = useState<RemoveRequest | null>(null);
-  const [excludeOnRemove, setExcludeOnRemove] = useState(true);
   const visibleNames = useMemo(
     () => new Set(unplacedModels.map((model) => model.model_name)),
     [unplacedModels],
@@ -192,7 +188,6 @@ export function UnplacedModelsPanel({
 
   function requestRemoval(models: UnplacedModel[]) {
     if (!models.length) return;
-    setExcludeOnRemove(true);
     setRemoveTarget({
       modelNames: models.map((model) => model.model_name),
       providerCount: models.reduce(
@@ -205,7 +200,7 @@ export function UnplacedModelsPanel({
   async function confirmRemove() {
     if (!removeTarget) return;
     const names = removeTarget.modelNames;
-    if (await onRemoveModels(names, excludeOnRemove)) {
+    if (await onRemoveModels(names)) {
       setRemoveTarget(null);
       dropSelected(names);
     }
@@ -518,24 +513,7 @@ export function UnplacedModelsPanel({
           if (!open) setRemoveTarget(null);
         }}
         onConfirm={() => void confirmRemove()}
-      >
-        <label
-          htmlFor="unplaced-exclude-on-remove"
-          className="flex items-start gap-2 rounded-md bg-muted/35 p-2.5 text-xs text-muted-foreground"
-        >
-          <Checkbox
-            id="unplaced-exclude-on-remove"
-            className="mt-0.5"
-            checked={excludeOnRemove}
-            onCheckedChange={(checked) => setExcludeOnRemove(checked === true)}
-          />
-          <span>
-            {isZh
-              ? "同时加入排除正则，避免下次同步重新接入这些模型。"
-              : "Add exclusion regexes so the next sync does not onboard these models again."}
-          </span>
-        </label>
-      </ConfirmDeleteDialog>
+      />
     </section>
   );
 }

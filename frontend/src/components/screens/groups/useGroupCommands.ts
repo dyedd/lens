@@ -400,37 +400,24 @@ export function useGroupCommands({
   }
 
   /** Remove unplaced model names from every channel offering them. */
-  async function removeUnplacedModels(
-    modelNames: string[],
-    excludeFromOnboarding: boolean,
-  ) {
-    const payload: UnplacedModelRemovalRequest = {
-      model_names: modelNames,
-      exclude: excludeFromOnboarding,
-    };
+  async function removeUnplacedModels(modelNames: string[]) {
+    const payload: UnplacedModelRemovalRequest = { model_names: modelNames };
     return runCommand(
       "unplaced-removal",
       locale === "zh-CN" ? "删除渠道模型失败" : "Failed to remove models",
       async () => {
-        const { deleted, excluded } =
-          await apiRequest<UnplacedModelRemovalResponse>(
-            "/admin/unplaced-model-removals",
-            { method: "POST", body: JSON.stringify(payload) },
-          );
+        const { deleted } = await apiRequest<UnplacedModelRemovalResponse>(
+          "/admin/unplaced-model-removals",
+          { method: "POST", body: JSON.stringify(payload) },
+        );
         await Promise.all([
           invalidateGroupData(),
           queryClient.invalidateQueries({ queryKey: ["sites"] }),
-          queryClient.invalidateQueries({ queryKey: ["regex-rules"] }),
         ]);
-        const suffix = excluded
-          ? locale === "zh-CN"
-            ? `，并加入 ${excluded} 条排除规则`
-            : ` and excluded ${excluded} from onboarding`
-          : "";
         toast.success(
           locale === "zh-CN"
-            ? `已删除 ${deleted} 个渠道模型${suffix}`
-            : `Removed ${deleted} channel models${suffix}`,
+            ? `已删除 ${deleted} 个渠道模型`
+            : `Removed ${deleted} channel models`,
         );
       },
     );

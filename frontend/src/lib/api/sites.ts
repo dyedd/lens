@@ -99,8 +99,6 @@ export type Site = {
   channel_proxy: string;
   headers: HeaderRule[];
   param_override: ParamOverrideRule[];
-  /** Library regex rules; sync never onboards matching upstream models. */
-  model_sync_exclude_rule_ids: string[];
   base_urls: SiteBaseUrl[];
   credentials: SiteCredential[];
   protocols: SiteProtocolConfig[];
@@ -139,7 +137,6 @@ export type SitePayload = {
   channel_proxy: string;
   headers: HeaderRule[];
   param_override: ParamOverrideRule[];
-  model_sync_exclude_rule_ids: string[];
   base_urls: SiteBaseUrlInput[];
   credentials: SiteCredentialInput[];
   protocols: SiteProtocolConfigInput[];

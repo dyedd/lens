@@ -301,13 +301,10 @@ class ModelGroupPlacementResponse(StrictBaseModel):
 
 class UnplacedModelRemovalRequest(StrictBaseModel):
     model_names: list[str] = Field(min_length=1)
-    # Also reference exclude rules so a sync never onboards them again.
-    exclude: bool = False
 
 
 class UnplacedModelRemovalResponse(StrictBaseModel):
     deleted: int = 0
-    excluded: int = 0
 
 
 class ModelGroupMergeRequest(StrictBaseModel):

@@ -191,8 +191,10 @@ class ModelGroupRepository(
             if entity is None:
                 raise ResourceNotFoundError(group_id)
 
-            next_name = payload.name if payload.name is not None else entity.name
-            is_renamed = next_name.strip() != entity.name
+            next_name = (
+                payload.name.strip() if payload.name is not None else entity.name
+            )
+            is_renamed = next_name != entity.name
             next_route_group_id = (
                 payload.route_group_id
                 if payload.route_group_id is not None
@@ -272,6 +274,8 @@ class ModelGroupRepository(
                     entity.route_group_id = (
                         route_group.id if route_group is not None else ""
                     )
+                elif key == "name" and value is not None:
+                    entity.name = value.strip()
                 else:
                     setattr(entity, key, value)
 

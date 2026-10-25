@@ -265,13 +265,9 @@ export function FoldedMemberRow({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {member.source !== "manual"
-            ? locale === "zh-CN"
-              ? "移除后不再自动加入，可在“已排除”中恢复"
-              : "It will no longer join automatically; restore it from Excluded"
-            : locale === "zh-CN"
-              ? "移除成员"
-              : "Remove member"}
+          {locale === "zh-CN"
+            ? "移除后可在“已排除”中恢复"
+            : "Remove it; restore it later from Excluded"}
         </TooltipContent>
       </Tooltip>
     </li>

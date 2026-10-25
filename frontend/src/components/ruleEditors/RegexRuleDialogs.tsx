@@ -101,11 +101,11 @@ export function RegexRuleEditorDialog({
             : titleForLocale(locale, "新建规则", "New rule")
         }
         description={
-          rule && rule.groups.length + rule.sites.length > 0
+          rule && rule.groups.length > 0
             ? titleForLocale(
                 locale,
-                `会影响 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道`,
-                `Affects ${rule.groups.length} groups and ${rule.sites.length} channels`,
+                `会影响 ${rule.groups.length} 个模型组`,
+                `Affects ${rule.groups.length} groups`,
               )
             : undefined
         }
@@ -247,8 +247,8 @@ export function DeleteRegexRuleDialog({
         usageLines.length
           ? titleForLocale(
               locale,
-              `删除规则「${rule.name}」？将从 ${rule.groups.length} 个模型组、${rule.sites.length} 个渠道移除。`,
-              `Delete rule "${rule.name}"? Removes it from ${rule.groups.length} groups and ${rule.sites.length} channels.`,
+              `删除规则「${rule.name}」？将从 ${rule.groups.length} 个模型组移除。`,
+              `Delete rule "${rule.name}"? Removes it from ${rule.groups.length} groups.`,
             )
           : titleForLocale(
               locale,

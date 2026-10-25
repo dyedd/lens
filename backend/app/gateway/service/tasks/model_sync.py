@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -120,12 +119,6 @@ async def _sync_site_models(
             protocol_config_id_from_runtime_channel_id(channel.id)
         ].append(channel)
 
-    exclude_patterns = tuple(
-        (
-            await state.regex_rule_repo.load_patterns(site.model_sync_exclude_rule_ids)
-        ).values()
-    )
-
     items: list[ChannelModelSyncResultItem] = []
     for protocol_config in site.protocols:
         channels = channels_by_config.get(protocol_config.id, [])
@@ -145,7 +138,6 @@ async def _sync_site_models(
                     protocol_config,
                     channels,
                     item,
-                    exclude_patterns,
                 )
             except (HTTPException, ResourceNotFoundError, ValueError) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
@@ -155,16 +147,11 @@ async def _sync_site_models(
     return items
 
 
-def _matches_any(name: str, patterns: tuple[re.Pattern[str], ...]) -> bool:
-    return any(pattern.search(name) for pattern in patterns)
-
-
 async def _sync_credential_models(
     state: AppState,
     protocol_config: SiteProtocolConfig,
     channels: list[ChannelConfig],
     item: ChannelModelSyncResultItem,
-    exclude_patterns: tuple[re.Pattern[str], ...],
 ) -> None:
     # Protocols of one config share a base URL, so one catalog fetch serves all.
     fetch_channel = next(
@@ -183,16 +170,10 @@ async def _sync_credential_models(
         raise ValueError("no usable credential for model discovery")
     upstream_models = await fetch_upstream_models(fetch_channel)
     upstream_names = {model.name for model in upstream_models}
-    # Every upstream model joins the catalog except the ones an exclusion rule
-    # keeps out; tracked rows keep syncing either way.
-    onboard_names = {
-        name for name in upstream_names if not _matches_any(name, exclude_patterns)
-    }
     changes = await state.channel_store.sync_upstream_models(
         protocol_config.id,
         item.credential_id,
         upstream_names=upstream_names,
-        onboard_names=onboard_names,
         upstream_context_windows={
             model.name: model.context_window
             for model in upstream_models

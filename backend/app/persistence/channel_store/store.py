@@ -40,7 +40,6 @@ from app.persistence.entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
-from app.persistence.regex_rule_references import validate_rule_ids
 
 from .import_sites import build_site_batch_import_result, prepare_site_batch
 from .mapping import SiteChannelProjectionMixin, SiteConfigLoadersMixin
@@ -139,19 +138,15 @@ class SiteOperationsMixin:
         credential_id: str,
         *,
         upstream_names: set[str],
-        onboard_names: set[str] | None = None,
         upstream_context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
-        """Refresh tracked upstream models and add the names not tracked yet.
+        """Refresh tracked rows and add every upstream model not tracked yet.
 
         Every stored row keeps syncing: upstream context windows refresh,
         vanished names are flagged, and restores clear the flag. Rows are
-        never deleted here; ``onboard_names`` holds the upstream models a sync
-        writes into the catalog, which excludes only what an exclusion rule
-        keeps out.
+        never deleted here, and nothing filters what a sync writes.
         """
         reported_context_windows = upstream_context_windows or {}
-        rule_names = onboard_names or set()
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
@@ -200,8 +195,8 @@ class SiteOperationsMixin:
             existing_names = {row.model_name for row in credential_models}
             onboard_protocol = _onboard_protocol(entity.protocols_json)
             added: set[str] = set()
-            for model_name in sorted(rule_names):
-                if model_name in existing_names or model_name not in upstream_names:
+            for model_name in sorted(upstream_names):
+                if model_name in existing_names:
                     continue
                 session.add(
                     SiteDiscoveredModelEntity(
@@ -320,10 +315,6 @@ class ChannelStore(
                 session, payload.name, exclude_site_id=site_id
             )
             enabled = bool(site.enabled)
-        await validate_rule_ids(
-            session,
-            payload.model_sync_exclude_rule_ids,
-        )
         await self._upsert_site_payload(session, site_id, payload, enabled=enabled)
 
     async def import_sites(

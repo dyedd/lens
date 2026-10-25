@@ -140,7 +140,7 @@ class BackupExportImportMixin:
             rows_affected["regex_rules"] = len(dump.regex_rules)
 
             protocol_config_ids, model_keys = await self.replace_sites(
-                session, dump.sites, rule_ids=rule_ids
+                session, dump.sites
             )
             rows_affected["sites"] = len(dump.sites)
             rows_affected["site_base_urls"] = sum(
