@@ -21,7 +21,6 @@ from ...persistence.repositories import (
     ModelGroupRepository,
     ModelPriceRepository,
     ModelSyncRunRepository,
-    RegexRuleRepository,
     RequestLogRepository,
     SettingsRepository,
     SiteCredentialRateRepository,
@@ -69,7 +68,7 @@ CRONJOB_SPECS = (
     CronjobSpec(
         id=TASK_CHANNEL_MODEL_SYNC,
         name="渠道模型同步",
-        description="为启用的渠道拉取上游模型，新增模型直接可用，下线模型待确认",
+        description="为启用的渠道拉取上游模型，按凭证规则保存匹配项",
         default_interval_hours=24,
     ),
     CronjobSpec(
@@ -102,7 +101,6 @@ class AppState:
         self.group_repo = ModelGroupRepository(self.session_factory)
         self.model_price_repo = ModelPriceRepository(self.session_factory)
         self.model_sync_run_repo = ModelSyncRunRepository(self.session_factory)
-        self.regex_rule_repo = RegexRuleRepository(self.session_factory)
         self.site_credential_rate_repo = SiteCredentialRateRepository(
             self.session_factory
         )

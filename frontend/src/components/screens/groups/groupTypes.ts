@@ -1,4 +1,5 @@
 import type {
+  MatchRegexOperator,
   ModelGroup,
   ModelGroupCandidateItem,
   ModelGroupItemReason,
@@ -42,8 +43,9 @@ export type FormState = {
   name: string;
   strategy: RoutingStrategy;
   route_group_id: string;
-  /** Library regex rules; when set they replace name matching for this group. */
-  match_rule_ids: string[];
+  /** The group name matches as a case-insensitive substring. */
+  match_regex: string;
+  match_regex_operator: MatchRegexOperator;
   param_override: ParamOverrideRuleDraft[];
   headers: HeaderRuleDraft[];
   fallback_group_ids: string[];
@@ -139,7 +141,8 @@ export const EMPTY_FORM: FormState = {
   name: "",
   strategy: "failover",
   route_group_id: "",
-  match_rule_ids: [],
+  match_regex: "",
+  match_regex_operator: "or",
   param_override: [{ path: "", action: "set", value: "" }],
   headers: [{ key: "", value: "", action: "override" }],
   fallback_group_ids: [],

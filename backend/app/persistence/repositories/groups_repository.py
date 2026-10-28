@@ -10,6 +10,10 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceConflictError, ResourceNotFoundError
+from app.core.model_group_matching import (
+    compile_model_group_pattern,
+    matches_model_group,
+)
 from app.core.model_group_status import model_group_item_key
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
@@ -36,7 +40,6 @@ from app.persistence.regex_rule_references import (
     dump_rule_ids,
     load_rule_patterns,
     parse_rule_ids,
-    validate_rule_ids,
 )
 
 from ..channel_store import ChannelStore
@@ -157,13 +160,14 @@ class ModelGroupRepository(
                 channels=channels,
                 excluded_items=payload.excluded_items,
             )
-            await validate_rule_ids(session, payload.match_rule_ids)
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
                 strategy=payload.strategy.value,
                 route_group_id=route_group.id if route_group is not None else "",
-                match_rule_ids_json=dump_rule_ids(payload.match_rule_ids),
+                match_regex=payload.match_regex,
+                match_regex_operator=payload.match_regex_operator,
+                match_rule_ids_json=dump_rule_ids([]),
                 param_override=dump_rules(payload.param_override),
                 headers_json=dump_rules(payload.headers),
                 fallback_group_ids_json=dump_fallback_group_ids(
@@ -252,16 +256,17 @@ class ModelGroupRepository(
                 existing_items=current_item_views,
                 excluded_items=next_excluded_items,
             )
-            if payload.match_rule_ids is not None:
-                await validate_rule_ids(session, payload.match_rule_ids)
-
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
                 if key == "strategy" and value is not None:
                     entity.strategy = value.value
-                elif key == "match_rule_ids":
+                elif key == "match_regex":
                     if value is not None:
-                        entity.match_rule_ids_json = dump_rule_ids(value)
+                        entity.match_regex = value
+                        entity.match_rule_ids_json = dump_rule_ids([])
+                elif key == "match_regex_operator":
+                    if value is not None:
+                        entity.match_regex_operator = value
                 elif key in {"items", "excluded_items"}:
                     continue
                 elif key == "fallback_group_ids":
@@ -280,6 +285,8 @@ class ModelGroupRepository(
                     setattr(entity, key, value)
 
             if entity.route_group_id:
+                entity.match_regex = ""
+                entity.match_regex_operator = "or"
                 entity.match_rule_ids_json = dump_rule_ids([])
 
             if replaces_items:
@@ -335,19 +342,28 @@ class ModelGroupRepository(
         kept_keys = {
             model_group_item_key(item) for item in (*next_items, *next_excluded_items)
         }
-        patterns = tuple(
-            (
-                await load_rule_patterns(
-                    session, parse_rule_ids(entity.match_rule_ids_json)
-                )
-            ).values()
+        direct_pattern = compile_model_group_pattern(entity.match_regex)
+        patterns = (
+            (direct_pattern,)
+            if direct_pattern is not None
+            else tuple(
+                (
+                    await load_rule_patterns(
+                        session, parse_rule_ids(entity.match_rule_ids_json)
+                    )
+                ).values()
+            )
         )
-        name_key = entity.name.casefold()
+        operator = (
+            entity.match_regex_operator
+            if entity.match_regex_operator in {"and", "or"}
+            else "or"
+        )
 
         def rejoins(item: ModelGroupItemView) -> bool:
-            if patterns:
+            if parse_rule_ids(entity.match_rule_ids_json):
                 return any(pattern.search(item.model_name) for pattern in patterns)
-            return item.model_name.casefold() == name_key
+            return matches_model_group(entity.name, item.model_name, patterns, operator)
 
         # A member whose target is gone cannot rejoin, so it needs no exclusion.
         return [
@@ -472,6 +488,31 @@ class ModelGroupRepository(
 
             if target.context_window is None:
                 target.context_window = source.context_window
+            target_pattern = target.match_regex.strip()
+            source_pattern = source.match_regex.strip()
+            if target_pattern and source_pattern:
+                target.match_regex = f"(?:{target_pattern})|(?:{source_pattern})"
+                target.match_regex_operator = "or"
+                target.match_rule_ids_json = dump_rule_ids([])
+            elif source_pattern:
+                target.match_regex = source_pattern
+                target.match_regex_operator = (
+                    source.match_regex_operator
+                    if source.match_regex_operator in {"and", "or"}
+                    else "or"
+                )
+                target.match_rule_ids_json = dump_rule_ids([])
+            elif not target_pattern:
+                target.match_rule_ids_json = dump_rule_ids(
+                    list(
+                        dict.fromkeys(
+                            [
+                                *parse_rule_ids(target.match_rule_ids_json),
+                                *parse_rule_ids(source.match_rule_ids_json),
+                            ]
+                        )
+                    )
+                )
             await session.delete(source)
             await session.commit()
             hydrated = await self._hydrate_groups(session, [target], channels)

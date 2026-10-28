@@ -2,9 +2,9 @@
 
 One pass runs the group stages of the model pipeline in order: models join the
 group named after them, unplaced models join a same-named group or get a new
-one, and members whose model stayed missing upstream past a grace period
-retire. Every member it adds is saved, so reads and routing never infer
-membership from names themselves.
+one, and members whose target is no longer available are removed when they
+were joined automatically. Every member it adds is saved, so reads and
+routing never infer membership from names themselves.
 """
 
 from __future__ import annotations
@@ -12,11 +12,15 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.model_group_matching import (
+    MatchRegexOperator,
+    compile_model_group_pattern,
+    matches_model_group,
+)
 from app.core.model_group_status import (
     ModelGroupChannelLookup,
     build_model_group_channel_lookups,
@@ -44,10 +48,6 @@ from .group_placement import (
 )
 from .group_read import list_ready_channel_items
 
-# How long a synced model may stay missing upstream before its members leave
-# their groups. Until then they stay listed and routing skips them.
-UPSTREAM_MISSING_RETIRE_AFTER = timedelta(days=7)
-
 _AUTO_SOURCES = frozenset(
     {ModelGroupMemberSource.RULE, ModelGroupMemberSource.PLACEMENT}
 )
@@ -58,15 +58,13 @@ type MemberKey = tuple[str, str, str]
 type ExclusionKey = tuple[str, str, str]
 
 
-def _naive_utc_now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
 def _matches_group(state: _GroupMemberState, model_name: str) -> bool:
     """Whether the group's rules, or its name, accept a model name."""
-    if state.patterns:
+    if state.legacy_rule_override:
         return any(pattern.search(model_name) for pattern in state.patterns)
-    return model_name.casefold() == state.entity.name.casefold()
+    return matches_model_group(
+        state.entity.name, model_name, state.patterns, state.match_regex_operator
+    )
 
 
 def _row_key(row: ModelGroupItemEntity) -> MemberKey:
@@ -86,11 +84,13 @@ def _exclusion_key(
 @dataclass(slots=True)
 class _GroupMemberState:
     entity: ModelGroupEntity
-    # Library rules; when set they replace name matching for this group.
+    # The group's own regex combines with its name according to this operator.
     patterns: tuple[re.Pattern[str], ...]
     # Members in route order; exclusions are kept apart and never reordered.
     members: list[ModelGroupItemEntity]
     excluded: list[ModelGroupItemEntity]
+    match_regex_operator: MatchRegexOperator = "or"
+    legacy_rule_override: bool = False
     is_reordered: bool = False
 
     def keys(self) -> set[MemberKey]:
@@ -199,14 +199,11 @@ class GroupReconcileMixin:
     async def reconcile_group_members(
         self,
         *,
-        synced_targets: set[tuple[str, str]] | None = None,
         placement_names: set[str] | None = None,
         into_group_id: str | None = None,
     ) -> ModelGroupReconcileReport:
-        """Save name-matched members, place uncovered models, retire missing ones.
+        """Save name-matched members and place uncovered models.
 
-        ``synced_targets`` holds the ``(protocol_config_id, credential_id)``
-        pairs a model sync just fetched; only their members can retire.
         ``placement_names`` limits which unplaced models may join or create a
         group; every other stage still runs. ``into_group_id`` sends those
         names into one existing execution group instead of same-named ones.
@@ -218,8 +215,6 @@ class GroupReconcileMixin:
             await self._place_uncovered_models(
                 run, channels, placement_names, into_group_id
             )
-            if synced_targets:
-                self._retire_missing_members(run, synced_targets, _naive_utc_now())
             for row in run.deleted_rows:
                 await session.delete(row)
             for state in run.groups.values():
@@ -273,13 +268,27 @@ class GroupReconcileMixin:
         groups = {
             entity.id: _GroupMemberState(
                 entity=entity,
-                patterns=tuple(
-                    rule_patterns[rule_id]
-                    for rule_id in parse_rule_ids(entity.match_rule_ids_json)
-                    if rule_id in rule_patterns
+                patterns=(
+                    (direct_pattern,)
+                    if (
+                        direct_pattern := compile_model_group_pattern(
+                            entity.match_regex
+                        )
+                    )
+                    else tuple(
+                        rule_patterns[rule_id]
+                        for rule_id in parse_rule_ids(entity.match_rule_ids_json)
+                        if rule_id in rule_patterns
+                    )
+                ),
+                match_regex_operator=(
+                    entity.match_regex_operator
+                    if entity.match_regex_operator in {"and", "or"}
+                    else "or"
                 ),
                 members=[],
                 excluded=[],
+                legacy_rule_override=bool(parse_rule_ids(entity.match_rule_ids_json)),
             )
             for entity in entities
         }
@@ -349,7 +358,9 @@ class GroupReconcileMixin:
                 name=state.entity.name,
                 is_route_group=False,
                 patterns=state.patterns,
+                match_regex_operator=state.match_regex_operator,
                 model_names=state.model_names(),
+                legacy_rule_override=state.legacy_rule_override,
             )
             for state in run.groups.values()
         ] + [
@@ -358,6 +369,7 @@ class GroupReconcileMixin:
                 name=entity.name,
                 is_route_group=True,
                 patterns=(),
+                match_regex_operator="or",
                 model_names=frozenset(),
             )
             for entity in route_groups
@@ -386,8 +398,9 @@ class GroupReconcileMixin:
                 run.add(target, items, ModelGroupMemberSource.MANUAL)
                 continue
             same_named = groups_by_name.get(view_name_key)
-            # A group with rules decides membership alone, never by its name.
-            if same_named is not None and not same_named.patterns:
+            if same_named is not None and any(
+                _matches_group(same_named, item.model_name) for item in items
+            ):
                 run.add(same_named, items, ModelGroupMemberSource.PLACEMENT)
                 continue
             if not is_placeable_as_new_group(view):
@@ -402,7 +415,11 @@ class GroupReconcileMixin:
             )
             run.session.add(entity)
             state = _GroupMemberState(
-                entity=entity, patterns=(), members=[], excluded=[]
+                entity=entity,
+                patterns=(),
+                match_regex_operator="or",
+                members=[],
+                excluded=[],
             )
             run.groups[entity.id] = state
             groups_by_name[entity.name.casefold()] = state
@@ -412,38 +429,3 @@ class GroupReconcileMixin:
             )
             # The group is named after the model, so the new group takes it.
             run.add(state, items, ModelGroupMemberSource.PLACEMENT)
-
-    @staticmethod
-    def _retire_missing_members(
-        run: _ReconcileRun,
-        synced_targets: set[tuple[str, str]],
-        now: datetime,
-    ) -> None:
-        """Remove members whose model stayed missing past the grace period.
-
-        Before that the member stays saved and routing skips it as
-        unavailable; a sync that finds the model again clears the miss.
-        """
-        retire_before = now - UPSTREAM_MISSING_RETIRE_AFTER
-        for state in run.groups.values():
-            for row in list(state.members):
-                if (
-                    protocol_config_id_from_runtime_channel_id(row.channel_id),
-                    row.credential_id,
-                ) not in synced_targets:
-                    continue
-                lookup = run.lookups.get(row.channel_id)
-                model = (
-                    lookup.models_by_key.get((row.credential_id, row.model_name))
-                    if lookup
-                    else None
-                )
-                if (
-                    model is None
-                    or not model.upstream_missing
-                    or model.upstream_missing_since is None
-                    or model.upstream_missing_since > retire_before
-                ):
-                    continue
-                run.report.retired.append(run.describe(state, row))
-                run.delete(state, row)

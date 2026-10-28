@@ -21,7 +21,7 @@ function Label({
       {...props}
     >
       {required ? (
-        <span>
+        <span className="whitespace-nowrap">
           {children}
           {" *"}
         </span>

@@ -1,7 +1,6 @@
 import { Activity, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
@@ -157,24 +156,6 @@ export function ChannelModelsTable({
                       {model.modelName}
                     </TooltipContent>
                   </Tooltip>
-                  {model.upstreamMissing ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge
-                          variant="destructive"
-                          className="shrink-0 font-sans"
-                          tabIndex={0}
-                        >
-                          {locale === "zh-CN" ? "待处理" : "Needs review"}
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {locale === "zh-CN"
-                          ? "上游已移除，已暂停调用"
-                          : "Removed upstream; calls are paused"}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
                 </div>
                 {hasMultipleBaseUrls ? (
                   <Tooltip>

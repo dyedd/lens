@@ -1,9 +1,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { RegexRulePicker } from "@/components/ruleEditors/RegexRulePicker";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Select,
   SelectContent,
@@ -12,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { useRegexRules } from "@/hooks/useRegexRules";
 import type { ModelGroup } from "@/lib/api/groups";
 import { parseContextWindowInput } from "@/lib/contextWindow";
 import { compileRegexRulePattern } from "@/lib/regexRules";
@@ -28,11 +25,7 @@ interface ModelGroupSettingsProps {
   changeRouteTarget: (routeGroupId: string) => void;
 }
 
-/**
- * One editor row: a quiet label column beside its control.
- *
- * The label stacks above the control below `sm`, where the sheet is narrow.
- */
+/** 标签始终位于控件上方，保持设置表单的纵向层级。 */
 function SettingsRow({
   children,
   htmlFor,
@@ -45,11 +38,11 @@ function SettingsRow({
   required?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3">
+    <div className="flex flex-col gap-1.5">
       <Label
         htmlFor={htmlFor}
         required={required}
-        className="text-sm font-normal text-muted-foreground sm:w-[72px] sm:shrink-0 sm:pt-2"
+        className="text-xs leading-5 font-normal text-muted-foreground"
       >
         {label}
       </Label>
@@ -70,16 +63,9 @@ export function ModelGroupSettings({
   const groupMode = form.route_group_id ? "alias" : "direct";
   const isContextWindowInvalid =
     parseContextWindowInput(form.context_window) === undefined;
-  const joinRules = useRegexRules();
-  const joinPatterns = form.match_rule_ids.flatMap((ruleId) => {
-    const rule = joinRules.rules.find((item) => item.id === ruleId);
-    const pattern = rule ? compileRegexRulePattern(rule.pattern) : null;
-    return pattern ? [pattern] : [];
-  });
-  const isJoinNameMismatched =
-    joinPatterns.length > 0 &&
-    form.name.trim() !== "" &&
-    !joinPatterns.some((pattern) => pattern.test(form.name));
+  const matchRegex = form.match_regex.trim();
+  const isMatchRegexInvalid =
+    Boolean(matchRegex) && !compileRegexRulePattern(matchRegex);
 
   function handleModeChange(mode: "direct" | "alias") {
     if (mode === "direct") {
@@ -111,22 +97,33 @@ export function ModelGroupSettings({
         />
       </SettingsRow>
 
-      <SettingsRow label={isZh ? "模型组类型" : "Group type"}>
-        <SegmentedControl
-          className="[&>button]:text-sm"
+      <SettingsRow
+        htmlFor="group-type"
+        label={isZh ? "模型组类型" : "Group type"}
+      >
+        <Select
           value={groupMode}
-          onValueChange={handleModeChange}
-          options={[
-            {
-              value: "direct",
-              label: isZh ? "直接调度" : "Direct execution",
-            },
-            { value: "alias", label: isZh ? "别名" : "Alias" },
-          ]}
-        />
+          onValueChange={(value) => {
+            if (value === "direct" || value === "alias") {
+              handleModeChange(value);
+            }
+          }}
+        >
+          <SelectTrigger id="group-type" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="direct">
+                {isZh ? "直接调度" : "Direct execution"}
+              </SelectItem>
+              <SelectItem value="alias">{isZh ? "别名" : "Alias"}</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </SettingsRow>
 
-      <div className="flex flex-col gap-3 border-t border-border/60 pt-3">
+      <div className="flex flex-col gap-3">
         {groupMode === "alias" ? (
           <SettingsRow
             htmlFor="group-route-target"
@@ -204,39 +201,68 @@ export function ModelGroupSettings({
               </p>
             </SettingsRow>
 
-            <SettingsRow label={isZh ? "匹配规则" : "Match rules"}>
-              <div className="flex min-h-8 flex-wrap items-center gap-2">
-                {form.match_rule_ids.length ? null : (
-                  <span className="text-xs text-muted-foreground">
-                    {isZh ? "按名称匹配" : "Matches by name"}
-                  </span>
-                )}
-                <RegexRulePicker
-                  label={isZh ? "匹配规则" : "Match rules"}
-                  locale={locale}
-                  value={form.match_rule_ids}
-                  onChange={(ruleIds) =>
+            <SettingsRow
+              htmlFor="group-match-regex"
+              label={isZh ? "匹配规则" : "Match rules"}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {isZh ? "名称包含" : "Name contains"}
+                </span>
+                <Select
+                  value={form.match_regex_operator}
+                  onValueChange={(value) => {
+                    if (value === "and" || value === "or") {
+                      setForm((current) => ({
+                        ...current,
+                        match_regex_operator: value,
+                      }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-20 shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="or">{isZh ? "或" : "OR"}</SelectItem>
+                      <SelectItem value="and">{isZh ? "与" : "AND"}</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Input
+                  id="group-match-regex"
+                  className="min-w-0 flex-1 font-mono placeholder:font-sans"
+                  aria-invalid={isMatchRegexInvalid || undefined}
+                  placeholder={
+                    isZh
+                      ? "可选正则，如 ^claude-"
+                      : "Optional regex, e.g. ^claude-"
+                  }
+                  value={form.match_regex}
+                  onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      match_rule_ids: ruleIds,
+                      match_regex: event.target.value,
                     }))
                   }
                 />
-                {form.match_rule_ids.length ? (
-                  <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-                    {isZh
-                      ? "覆盖同名匹配，仅加入匹配模型。"
-                      : "Replaces name matching; only matching models join."}
-                  </span>
-                ) : null}
               </div>
-              {isJoinNameMismatched ? (
-                <p className="text-xs text-muted-foreground">
-                  {isZh
-                    ? `名称「${form.name}」不匹配所选规则，不会自动加入同名模型。`
-                    : `"${form.name}" matches no selected rule; same-named models won't join.`}
-                </p>
-              ) : null}
+              <p
+                className={
+                  isMatchRegexInvalid
+                    ? "text-xs text-destructive"
+                    : "text-xs text-muted-foreground"
+                }
+              >
+                {isMatchRegexInvalid
+                  ? isZh
+                    ? "正则表达式无效"
+                    : "Invalid regex"
+                  : isZh
+                    ? "名称按不区分大小写的包含匹配；填写正则后按上面的与/或组合。"
+                    : "The name matches case-insensitively by containment; combine an optional regex with AND/OR."}
+              </p>
             </SettingsRow>
           </>
         )}

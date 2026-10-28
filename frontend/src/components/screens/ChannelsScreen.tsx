@@ -23,7 +23,6 @@ export function ChannelsScreen() {
   const [editorMode, setEditorMode] = useState<"channel" | "models">("channel");
   const [modelsStatusFilter, setModelsStatusFilter] =
     useState<ModelStatusFilter>("all");
-  const [fetchOnOpen, setFetchOnOpen] = useState(false);
   const queries = useChannelQueries(locale);
   const editor = useChannelForm(locale);
   const save = useChannelSave({
@@ -47,7 +46,6 @@ export function ChannelsScreen() {
     form: editor.form,
     setForm: editor.setForm,
     locale,
-    onGroupPlacement: editor.setPendingGroupPlacement,
   });
   const modelTest = useChannelModelTest(editor.form, locale);
   const overviewModels = useAggregatedModels(editor.form, locale);
@@ -71,11 +69,10 @@ export function ChannelsScreen() {
   function openEditor(
     site: Site | null,
     mode: "channel" | "models",
-    options: { statusFilter?: ModelStatusFilter; fetch?: boolean } = {},
+    options: { statusFilter?: ModelStatusFilter } = {},
   ) {
     setEditorMode(mode);
     setModelsStatusFilter(options.statusFilter ?? "all");
-    setFetchOnOpen(options.fetch ?? false);
     if (site) editor.openEdit(site);
     else editor.openCreate();
   }
@@ -106,10 +103,6 @@ export function ChannelsScreen() {
           onImport={transfer.openBatchImport}
           onOpenEdit={(site) => openEditor(site, "channel")}
           onManageModels={(site) => openEditor(site, "models")}
-          onReviewPendingModels={(site) =>
-            openEditor(site, "models", { statusFilter: "missing" })
-          }
-          onFetchModels={(site) => openEditor(site, "models", { fetch: true })}
           onToggleSiteEnabled={persistence.toggleSiteEnabled}
           onDelete={persistence.setDeleteTarget}
           onBulkEnabled={persistence.applyEnabled}
@@ -127,8 +120,6 @@ export function ChannelsScreen() {
           overviewModels={overviewModels}
           editorMode={editorMode}
           modelsStatusFilter={modelsStatusFilter}
-          fetchOnOpen={fetchOnOpen}
-          onFetchOnOpenHandled={() => setFetchOnOpen(false)}
           onCloseModels={() => {
             editor.closeEditor();
           }}

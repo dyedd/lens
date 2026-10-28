@@ -193,10 +193,14 @@ async def probe_endpoint_latency(
 async def sync_channel_models(
     payload: ChannelModelSyncRequest, _: Any = Depends(get_current_admin)
 ) -> ChannelModelSyncResponse:
-    """Sync upstream models for enabled sites and flag vanished ones."""
+    """Sync filtered upstream models for enabled sites."""
     from ..tasks.model_sync import sync_channel_models as run_channel_model_sync
 
-    return await run_channel_model_sync(app_state, site_ids=payload.site_ids)
+    return await run_channel_model_sync(
+        app_state,
+        site_ids=payload.site_ids,
+        credential_ids=payload.credential_ids,
+    )
 
 
 async def list_model_sync_runs(

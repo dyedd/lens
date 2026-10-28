@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
+import { useState } from "react";
 import { lazyComponent } from "@/lib/lazyComponent";
+import { formatCredentialTitle } from "./channelModels";
 import type {
   AggregatedModel,
   Locale,
@@ -48,8 +48,6 @@ type Props = {
   overviewModels: AggregatedModel[];
   editorMode: "channel" | "models";
   modelsStatusFilter: ModelStatusFilter;
-  fetchOnOpen: boolean;
-  onFetchOnOpenHandled: () => void;
   onCloseModels: () => void;
 };
 
@@ -66,22 +64,9 @@ export function ChannelsDialogs({
   overviewModels,
   editorMode,
   modelsStatusFilter,
-  fetchOnOpen,
-  onFetchOnOpenHandled,
   onCloseModels,
 }: Props) {
-  const isDialogOpen = editor.isDialogOpen;
   const [remoteOpen, setRemoteOpen] = useState(false);
-  const groupsQuery = useModelGroupsQuery();
-  const groupOptions = (groupsQuery.data ?? [])
-    .filter((group) => !group.route_group_id)
-    .map((group) => ({ id: group.id, name: group.name }));
-
-  useEffect(() => {
-    if (!isDialogOpen || !fetchOnOpen) return;
-    setRemoteOpen(true);
-    onFetchOnOpenHandled();
-  }, [fetchOnOpen, isDialogOpen, onFetchOnOpenHandled]);
 
   return (
     <>
@@ -121,8 +106,19 @@ export function ChannelsDialogs({
           onDelete={editor.removeAggregateModel}
           onTest={modelTest.openAggregateModelTest}
           testing={modelTest.testingModel}
-          onAddBinding={editor.addBinding}
-          groupOptions={groupOptions}
+          onUpdateCredentialPattern={editor.setCredentialPattern}
+          credentialOptions={editor.form.credentials.flatMap(
+            (credential, index) =>
+              credential.api_key.trim()
+                ? [
+                    {
+                      id: credential.id,
+                      label: formatCredentialTitle(credential, index, locale),
+                      pattern: credential.model_pattern,
+                    },
+                  ]
+                : [],
+          )}
           onOpenRemote={() => setRemoteOpen(true)}
           initialStatusFilter={modelsStatusFilter}
         />
@@ -135,10 +131,7 @@ export function ChannelsDialogs({
           loading={picker.fetching}
           onOpenChange={setRemoteOpen}
           onLoad={picker.discoverRemoteCatalog}
-          onImport={(items, groupId) =>
-            picker.importRemoteModels(items, groupId)
-          }
-          groupOptions={groupOptions}
+          onImport={picker.importRemoteModels}
         />
       ) : null}
       {transfer.batchImportOpen ? (

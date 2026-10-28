@@ -2,7 +2,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type { ModelGroupPlacementResponse } from "@/lib/api/groups";
 import type { ChannelModelSyncResponse, Site } from "@/lib/api/sites";
 import { toPayload } from "./channelFormConversion";
 import type { FormState, Locale } from "./channelTypes";
@@ -14,15 +13,11 @@ type ChannelEditor = {
   setIsDialogOpen: (value: boolean) => void;
   applyPreparedForm: (form: FormState) => void;
   validateSiteForm: () => boolean;
-  pendingGroupPlacement: { group_id: string; model_names: string[] } | null;
-  setPendingGroupPlacement: (
-    value: { group_id: string; model_names: string[] } | null,
-  ) => void;
 };
 
 function countSyncedNames(
   result: ChannelModelSyncResponse,
-  field: "added" | "missing" | "restored",
+  field: "added" | "missing",
 ) {
   return new Set(result.items.flatMap((item) => item[field])).size;
 }
@@ -32,8 +27,7 @@ function formatSyncSummary(
   locale: Locale,
 ): string {
   const added = countSyncedNames(result, "added");
-  const missing = countSyncedNames(result, "missing");
-  const restored = countSyncedNames(result, "restored");
+  const removed = countSyncedNames(result, "missing");
   const createdGroups = result.groups.created_groups.length;
   const pending = result.groups.pending.length;
   if (locale !== "zh-CN") {
@@ -41,8 +35,7 @@ function formatSyncSummary(
       added && `${added} new models`,
       createdGroups && `${createdGroups} groups created`,
       pending && `${pending} awaiting placement`,
-      missing && `${missing} removed upstream`,
-      restored && `${restored} back upstream`,
+      removed && `${removed} removed`,
     ].filter(Boolean);
     return parts.length
       ? `Synced: ${parts.join(", ")}`
@@ -52,8 +45,7 @@ function formatSyncSummary(
     added && `新增 ${added} 个模型`,
     createdGroups && `新建 ${createdGroups} 个模型组`,
     pending && `${pending} 个待放置`,
-    missing && `${missing} 个已从上游移除`,
-    restored && `${restored} 个已恢复`,
+    removed && `移除 ${removed} 个模型`,
   ].filter(Boolean);
   return parts.length ? `已同步：${parts.join("，")}` : "模型已是最新";
 }
@@ -86,11 +78,46 @@ export function useChannelSave({
     return site;
   }
 
-  async function syncSiteModels(siteId: string) {
+  function changedCredentialIds() {
+    const nextCredentials = toPayload(editor.form).credentials;
+    if (!editor.editingSiteId) {
+      return nextCredentials
+        .filter((credential) => (credential.model_pattern ?? "").trim())
+        .map((credential) => credential.id)
+        .filter((id): id is string => Boolean(id));
+    }
+    const previousSite = queryClient
+      .getQueryData<Site[]>(["sites"])
+      ?.find((item) => item.id === editor.editingSiteId);
+    if (!previousSite) return [];
+    const previousPatterns = new Map(
+      previousSite.credentials.map((credential) => [
+        credential.id,
+        (credential.model_pattern ?? "").trim(),
+      ]),
+    );
+    return nextCredentials
+      .filter(
+        (credential) =>
+          credential.id != null &&
+          (credential.model_pattern ?? "").trim() !==
+            previousPatterns.get(credential.id),
+      )
+      .map((credential) => credential.id)
+      .filter((id): id is string => Boolean(id));
+  }
+
+  async function syncSiteModels(siteId: string, credentialIds?: string[]) {
     try {
       const result = await apiRequest<ChannelModelSyncResponse>(
         "/admin/channel-model-sync",
-        { method: "POST", body: JSON.stringify({ site_ids: [siteId] }) },
+        {
+          method: "POST",
+          body: JSON.stringify({
+            site_ids: [siteId],
+            ...(credentialIds ? { credential_ids: credentialIds } : {}),
+          }),
+        },
       );
       await invalidateChannelData();
       const failures = result.items.filter((item) => item.status === "failed");
@@ -127,47 +154,11 @@ export function useChannelSave({
     }
   }
 
-  /** Joins imported models into the group chosen in the add dialog. */
-  async function placePendingModels() {
-    const placement = editor.pendingGroupPlacement;
-    if (!placement) return;
-    editor.setPendingGroupPlacement(null);
-    try {
-      const result = await apiRequest<ModelGroupPlacementResponse>(
-        "/admin/model-group-placements",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            model_names: placement.model_names,
-            group_id: placement.group_id,
-          }),
-        },
-      );
-      const joinedNames = new Set(
-        result.joined.map((change) => change.model_name),
-      );
-      if (joinedNames.size) {
-        toast.success(
-          locale === "zh-CN"
-            ? `已归入模型组：${[...joinedNames].join("、")}`
-            : `Joined model group: ${[...joinedNames].join(", ")}`,
-        );
-      }
-      await invalidateChannelData();
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN" ? "归入模型组失败" : "Failed to join the group",
-        ),
-      );
-    }
-  }
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editor.validateSiteForm()) return;
     const editing = Boolean(editor.editingSiteId);
+    const credentialIds = changedCredentialIds();
     setIsSaving(true);
     try {
       const site = await persistSite();
@@ -182,9 +173,11 @@ export function useChannelSave({
             ? "渠道已创建"
             : "Channel created",
       );
-      await placePendingModels();
-      if (site.enabled) void syncSiteModels(site.id);
-      else void invalidateChannelData();
+      if (site.enabled && (credentialIds?.length ?? 0) > 0) {
+        void syncSiteModels(site.id, credentialIds);
+      } else {
+        void invalidateChannelData();
+      }
     } catch (error) {
       toast.error(
         getApiErrorMessage(
