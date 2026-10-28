@@ -35,6 +35,7 @@ export type SiteCredential = {
   api_key: string;
   sort_order: number;
   base_url_id: string;
+  model_pattern: string;
   rate_source: "none" | "sub2api" | "newapi";
   rate_protocol_config_id: string;
   rate_group: string;
@@ -48,6 +49,8 @@ export type SiteCredentialInput = {
   name: string;
   api_key: string;
   base_url_id?: string;
+  /** Whole-name filter deciding which upstream models this key keeps. */
+  model_pattern?: string;
   rate_source: "none" | "sub2api" | "newapi";
   rate_protocol_config_id: string;
   rate_group: string;
@@ -60,7 +63,6 @@ export type SiteModel = {
   model_name: string;
   enabled: boolean;
   sort_order: number;
-  upstream_missing: boolean;
   /** Admin override; null falls back to the upstream-reported value. */
   context_window: number | null;
   /** Context window the upstream model list reports. */
@@ -72,7 +74,6 @@ export type SiteModelInput = {
   credential_id: string;
   model_name: string;
   enabled: boolean;
-  upstream_missing: boolean;
   context_window: number | null;
   upstream_context_window: number | null;
 };

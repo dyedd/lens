@@ -16,10 +16,11 @@ import {
 import {
   acceptApiKeyDrafts,
   activeSelectedCredentialIds,
-  buildModels,
   credentialLabel,
+  escapeModelName,
   fallbackCredentialName,
   formatCredentialTitle,
+  mergeModelPatterns,
 } from "./channelModels";
 import type { FormState, Locale, PickerModelItem } from "./channelTypes";
 
@@ -61,15 +62,10 @@ export function useChannelModelPicker({
   form,
   setForm,
   locale,
-  onGroupPlacement,
 }: {
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
   locale: Locale;
-  /** Remembers the group a batch of imported models should join after save. */
-  onGroupPlacement?: (
-    placement: { group_id: string; model_names: string[] } | null,
-  ) => void;
 }) {
   const [fetching, setFetching] = useState(false);
 
@@ -187,67 +183,66 @@ export function useChannelModelPicker({
     }
   }
 
-  /** Adds picked upstream models to the channel form. */
-  function importRemoteModels(items: PickerModelItem[], groupId = "") {
-    let imported = 0;
-    const protocolConfigs = rebuildProtocolConfigs(form).map((config) => {
-      const picked = items.filter(
-        (item) => item.protocol_config_id === config.id,
-      );
-      if (!picked.length) return config;
-      const models = config.models.slice();
-      for (const item of picked) {
-        const existingIndex = models.findIndex(
-          (model) =>
-            model.credential_id === item.credential_id &&
-            model.model_name === item.model_name,
-        );
-        if (existingIndex >= 0) {
-          // Re-importing a bound model refreshes its upstream metadata without
-          // discarding the protocol and key bindings configured on that row.
-          models[existingIndex] = {
-            ...models[existingIndex],
-            upstream_missing: false,
-            upstream_context_window: item.context_window,
-          };
-          imported += 1;
-          continue;
-        }
-        const defaultProtocols: ProtocolKind[] =
-          config.protocols.length > 0
-            ? (config.protocols as ProtocolKind[])
-            : [
-                protocolForEndpointKind(
-                  form.base_urls.find((item) => item.id === config.base_url_id)
-                    ?.kind,
-                ),
-              ];
-        const [newModel] = buildModels(
-          config,
-          [item.credential_id],
-          item.model_name,
-          defaultProtocols,
-          item.context_window,
-          item.manualContextWindow ?? null,
-        );
-        if (newModel) {
-          models.push(newModel);
-          imported += 1;
-        }
-      }
-      return { ...config, models };
-    });
+  /** 将选中的上游模型写入表格，并为对应 Key 追加精确规则。 */
+  function importRemoteModels(items: PickerModelItem[]) {
+    const additionsByCredential = new Map<string, string[]>();
+    for (const item of items) {
+      const list = additionsByCredential.get(item.credential_id) ?? [];
+      list.push(escapeModelName(item.model_name));
+      additionsByCredential.set(item.credential_id, list);
+    }
     setForm((current) => ({
       ...current,
-      protocolConfigs,
+      credentials: current.credentials.map((credential) => {
+        const additions = additionsByCredential.get(credential.id);
+        if (!additions) return credential;
+        return {
+          ...credential,
+          model_pattern: mergeModelPatterns(
+            credential.model_pattern,
+            additions,
+          ),
+        };
+      }),
+      protocolConfigs: current.protocolConfigs.map((config) => {
+        const configItems = items.filter(
+          (item) => item.protocol_config_id === config.id,
+        );
+        if (!configItems.length) return config;
+        const endpointKind = current.base_urls.find(
+          (item) => item.id === config.base_url_id,
+        )?.kind;
+        const protocols = config.protocols.length
+          ? config.protocols
+          : [protocolForEndpointKind(endpointKind)];
+        const existing = new Set(
+          config.models.map((model) =>
+            JSON.stringify([model.credential_id, model.model_name]),
+          ),
+        );
+        const models = configItems.flatMap((item) => {
+          const key = JSON.stringify([item.credential_id, item.model_name]);
+          if (existing.has(key)) return [];
+          existing.add(key);
+          return [
+            {
+              credential_id: item.credential_id,
+              model_name: item.model_name,
+              enabled: true,
+              protocols,
+              protocolIds: {},
+              context_window: null,
+              upstream_context_window: item.context_window,
+            },
+          ];
+        });
+        return {
+          ...config,
+          protocols,
+          models: [...config.models, ...models],
+        };
+      }),
     }));
-    if (groupId && imported) {
-      onGroupPlacement?.({
-        group_id: groupId,
-        model_names: [...new Set(items.map((item) => item.model_name))],
-      });
-    }
-    return imported;
   }
 
   return {

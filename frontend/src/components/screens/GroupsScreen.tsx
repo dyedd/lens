@@ -92,14 +92,12 @@ export function GroupsScreen() {
     locale,
   });
   const filters = useGroupFilters(queries.groupRows, locale);
-  const joinRuleIds = editor.form.route_group_id
-    ? []
-    : editor.form.match_rule_ids;
   const candidates = useGroupCandidates({
     candidateResponse: queries.candidateQuery.data,
     candidateSearch: editor.candidateSearch,
     expandedChannels: editor.expandedChannels,
-    joinRuleIds,
+    matchRegex: editor.form.route_group_id ? "" : editor.form.match_regex,
+    matchRegexOperator: editor.form.match_regex_operator,
     locale,
     setExpandedChannels: editor.setExpandedChannels,
     setForm: editor.setForm,

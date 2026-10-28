@@ -20,25 +20,6 @@ def parse_rule_ids(raw: str) -> list[str]:
     return json.loads(raw)
 
 
-async def validate_rule_ids(session: AsyncSession, rule_ids: Iterable[str]) -> None:
-    """Reject references to regex rules that do not exist."""
-    requested_ids = list(dict.fromkeys(rule_ids))
-    if not requested_ids:
-        return
-    found_ids = set(
-        (
-            await session.execute(
-                select(RegexRuleEntity.id).where(RegexRuleEntity.id.in_(requested_ids))
-            )
-        ).scalars()
-    )
-    missing_id = next(
-        (rule_id for rule_id in requested_ids if rule_id not in found_ids), None
-    )
-    if missing_id is not None:
-        raise ValueError(f"Regex rule not found: {missing_id}")
-
-
 async def load_rule_patterns(
     session: AsyncSession, rule_ids: Iterable[str]
 ) -> dict[str, re.Pattern[str]]:

@@ -57,8 +57,6 @@ export type PickerModelItem = {
   model_name: string;
   /** Context window the upstream model list reports. */
   context_window: number | null;
-  /** Context window the admin sets while picking; null leaves it unset. */
-  manualContextWindow?: number | null;
 };
 
 export type ModelTestTarget = {
@@ -95,7 +93,6 @@ export type AggregatedModel = {
   credentialCount: number;
   protocols: ProtocolKind[];
   enabled: boolean;
-  upstreamMissing: boolean;
   /** Admin override shared by every key's copy of this model. */
   contextWindow: number | null;
   /** Upstream-reported value used without an override. */
@@ -107,4 +104,4 @@ export type AggregatedModel = {
   testKey: string | null;
 };
 
-export type ModelStatusFilter = "all" | "enabled" | "disabled" | "missing";
+export type ModelStatusFilter = "all" | "enabled" | "disabled";

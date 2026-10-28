@@ -101,6 +101,7 @@ class ChannelRowMappingMixin:
                 api_key=row.api_key,
                 sort_order=row.sort_order,
                 base_url_id=row.base_url_id,
+                model_pattern=row.model_pattern,
                 rate_source=rate.source if rate is not None else "none",
                 rate_protocol_config_id=(
                     rate.protocol_config_id if rate is not None else ""
@@ -137,8 +138,6 @@ class ChannelRowMappingMixin:
                         if row.protocol in valid_protocol_values
                         else None
                     ),
-                    upstream_missing=bool(row.upstream_missing),
-                    upstream_missing_since=row.upstream_missing_since,
                     context_window=coerce_context_window(row.context_window),
                     upstream_context_window=coerce_context_window(
                         row.upstream_context_window
@@ -220,9 +219,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                         ),
                         headers=site.headers,
                         model_patterns=[
-                            m.model_name
-                            for m in protocol_models
-                            if m.enabled and not m.upstream_missing
+                            m.model_name for m in protocol_models if m.enabled
                         ],
                         keys=keys,
                         models=self._build_channel_models(
@@ -291,8 +288,6 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     ),
                     model_name=model.model_name,
                     enabled=model.enabled,
-                    upstream_missing=model.upstream_missing,
-                    upstream_missing_since=model.upstream_missing_since,
                     sort_order=model.sort_order,
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,
@@ -323,6 +318,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     api_key=item.api_key,
                     sort_order=index,
                     base_url_id=base_url_id,
+                    model_pattern=item.model_pattern,
                     rate_source=item.rate_source,
                     rate_protocol_config_id=item.rate_protocol_config_id,
                     rate_group=item.rate_group,

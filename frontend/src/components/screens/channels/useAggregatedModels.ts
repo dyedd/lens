@@ -21,7 +21,6 @@ type ModelGroupSeed = {
   modelName: string;
   protocols: Set<ProtocolKind>;
   enabled: boolean;
-  upstreamMissing: boolean;
   contextWindow: number | null;
   upstreamContextWindow: number | null;
   members: Map<string, AggregatedModelMember>;
@@ -67,7 +66,6 @@ export function useAggregatedModels(
           modelName,
           protocols: new Set(),
           enabled: false,
-          upstreamMissing: false,
           contextWindow: null,
           upstreamContextWindow: null,
           members: new Map(),
@@ -83,7 +81,6 @@ export function useAggregatedModels(
           group.protocols.add(protocol);
         }
         group.enabled = group.enabled || model.enabled;
-        group.upstreamMissing = group.upstreamMissing || model.upstream_missing;
         group.contextWindow ??= model.context_window;
         group.upstreamContextWindow ??= model.upstream_context_window;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
@@ -105,7 +102,6 @@ export function useAggregatedModels(
         credentialCount,
         protocols: Array.from(group.protocols),
         enabled: group.enabled,
-        upstreamMissing: group.upstreamMissing,
         contextWindow: group.contextWindow,
         autoContextWindow: group.upstreamContextWindow,
         autoContextWindowSource:

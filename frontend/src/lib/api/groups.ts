@@ -18,6 +18,7 @@ export type ParamOverrideRule = {
 };
 
 export type RoutingStrategy = "round_robin" | "failover";
+export type MatchRegexOperator = "and" | "or";
 export type ModelGroupItemState =
   | "ready"
   | "disabled"
@@ -67,8 +68,9 @@ export type ModelGroup = {
   strategy: RoutingStrategy;
   route_group_id?: string;
   route_group_name?: string;
-  /** Library regex rules; when set they replace name matching for this group. */
-  match_rule_ids: string[];
+  /** The group name matches as a case-insensitive substring. */
+  match_regex: string;
+  match_regex_operator: MatchRegexOperator;
   param_override: ParamOverrideRule[];
   headers: HeaderRule[];
   fallback_group_ids?: string[];
@@ -165,7 +167,7 @@ export type ModelGroupReconcileReport = {
   removed: ModelGroupMemberChange[];
   created_groups: Array<{ id: string; name: string }>;
   pending: UnplacedModel[];
-  /** Members whose model stayed missing upstream past the grace period. */
+  /** Legacy field kept for response compatibility; current syncs report removals. */
   retired: ModelGroupMemberChange[];
 };
 export type UnplacedModelRemovalRequest = {

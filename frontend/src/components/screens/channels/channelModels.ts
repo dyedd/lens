@@ -23,31 +23,6 @@ export function activeSelectedCredentialIds(
   });
 }
 
-export function buildModels(
-  config: FormProtocolConfig,
-  credentialIds: string[],
-  modelName: string,
-  protocols: ProtocolKind[],
-  upstreamContextWindow: number | null = null,
-  contextWindow: number | null = null,
-): FormModel[] {
-  const existing = new Set(
-    config.models.map((model) => `${model.credential_id}:${model.model_name}`),
-  );
-  return credentialIds
-    .filter((id) => !existing.has(`${id}:${modelName}`))
-    .map((credential_id) => ({
-      protocols,
-      protocolIds: {},
-      credential_id,
-      model_name: modelName,
-      enabled: true,
-      upstream_missing: false,
-      context_window: contextWindow,
-      upstream_context_window: upstreamContextWindow,
-    }));
-}
-
 /** Builds a stable model key scoped to a protocol configuration. */
 export function protocolConfigModelKey(
   protocolConfig: Pick<FormProtocolConfig, "id">,
@@ -104,8 +79,6 @@ export function coalesceFormModels(models: FormModel[]) {
       ...model.protocolIds,
     };
     existing.enabled = existing.enabled || model.enabled;
-    existing.upstream_missing =
-      existing.upstream_missing || model.upstream_missing;
     existing.context_window ??= model.context_window;
     existing.upstream_context_window ??= model.upstream_context_window;
   }
@@ -150,21 +123,43 @@ export function siteEndpointSummary(site: Site, locale: string = "zh-CN") {
   return urls[0] + suffix;
 }
 
-/** Counts enabled and total model entries, plus models missing upstream. */
+/** Counts enabled and total model entries for one site. */
 export function siteModelCounts(site: Site) {
   let enabled = 0;
   let total = 0;
-  const pendingNames = new Set<string>();
   for (const protocolConfig of site.protocols) {
     for (const model of protocolConfig.models) {
       total += 1;
       if (model.enabled) enabled += 1;
-      if (model.upstream_missing) {
-        pendingNames.add(`${protocolConfig.id}:${model.model_name}`);
-      }
     }
   }
-  return { enabled, total, pending: pendingNames.size };
+  return { enabled, total };
+}
+
+/** Builds the whole-name filter that selects exactly this model. */
+export function escapeModelName(modelName: string) {
+  return `^${modelName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
+}
+
+/** Appends exact-name filters to a key's pattern, skipping ones it has. */
+export function mergeModelPatterns(
+  current: string,
+  additions: string[],
+): string {
+  // 后端始终忽略大小写；把标记包进分支会让 Python 拒绝合并后的表达式。
+  const existing = current
+    .trim()
+    .replace(/^\(\?[aiLmsux]+\)/, "")
+    .trim();
+  if (existing === "*") return existing;
+  const fresh = additions
+    .map((addition) => addition.trim())
+    .filter((addition) => addition && !existing.includes(addition));
+  if (!fresh.length) return existing;
+  // 当前规则包成一个分支，避免已有的 `|` 吞掉追加的模型名。
+  return [existing ? `(?:${existing})` : "", ...fresh]
+    .filter(Boolean)
+    .join("|");
 }
 
 /** Builds the fallback persisted name for a credential. */
@@ -206,6 +201,7 @@ function emptyCredential(baseUrlId = ""): FormCredential {
     id: createLocalId("credential"),
     name: "",
     api_key: "",
+    model_pattern: "",
     rate_source: "none",
     rate_protocol_config_id: "",
     rate_group: "",

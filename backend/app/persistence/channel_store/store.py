@@ -16,6 +16,11 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.errors import ResourceNotFoundError
+from app.core.model_names import (
+    ModelPatternKind,
+    classify_model_pattern,
+    filter_model_names,
+)
 from app.models.channels import ChannelConfig
 from app.models.protocols import ProtocolKind
 from app.models.site_import import (
@@ -54,7 +59,7 @@ class UpstreamModelChanges:
 
 
 def _onboard_protocol(raw: str) -> ProtocolKind:
-    """Pick a concrete protocol for automatically onboarded models."""
+    """Pick a protocol for a model the sync onboards from the catalog."""
     try:
         protocols = {ProtocolKind(value) for value in json.loads(raw)}
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -138,15 +143,22 @@ class SiteOperationsMixin:
         credential_id: str,
         *,
         upstream_names: set[str],
+        upstream_pattern: str = "",
         upstream_context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
-        """Refresh tracked rows and add every upstream model not tracked yet.
+        """Make one credential's rows equal the models its filter keeps.
 
-        Every stored row keeps syncing: upstream context windows refresh,
-        vanished names are flagged, and restores clear the flag. Rows are
-        never deleted here, and nothing filters what a sync writes.
+        The credential's pattern selects whole names from the upstream catalog,
+        so a sync adds what is newly matched and deletes what the filter or the
+        catalog no longer offers. Rows keep any admin settings they already
+        carry; only the upstream-reported context window is refreshed.
         """
+        if not upstream_pattern.strip() or (
+            classify_model_pattern(upstream_pattern) is ModelPatternKind.INVALID
+        ):
+            return UpstreamModelChanges(added=[], missing=[], restored=[])
         reported_context_windows = upstream_context_windows or {}
+        kept_names = filter_model_names(upstream_names, upstream_pattern)
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
@@ -189,59 +201,45 @@ class SiteOperationsMixin:
             credential_models = [
                 row for row in config_rows if row.credential_id == credential_id
             ]
+            added: set[str] = set()
+            removed: set[str] = set()
+            has_context_changes = False
+            existing_names = {row.model_name for row in credential_models}
             next_sort_order = (
                 max((row.sort_order for row in config_rows), default=-1) + 1
             )
-            existing_names = {row.model_name for row in credential_models}
             onboard_protocol = _onboard_protocol(entity.protocols_json)
-            added: set[str] = set()
-            for model_name in sorted(upstream_names):
-                if model_name in existing_names:
+
+            for row in credential_models:
+                if row.model_name not in kept_names:
+                    await session.delete(row)
+                    removed.add(row.model_name)
                     continue
+                reported = reported_context_windows.get(row.model_name)
+                if row.upstream_context_window != reported:
+                    row.upstream_context_window = reported
+                    has_context_changes = True
+
+            for name in sorted(kept_names - existing_names):
                 session.add(
                     SiteDiscoveredModelEntity(
                         id=str(uuid.uuid4()),
                         protocol_config_id=protocol_config_id,
                         credential_id=credential_id,
-                        model_name=model_name,
+                        model_name=name,
                         enabled=1,
                         sort_order=next_sort_order,
                         protocol=onboard_protocol.value,
-                        upstream_missing=0,
-                        upstream_missing_since=None,
-                        upstream_context_window=reported_context_windows.get(
-                            model_name
-                        ),
+                        upstream_context_window=reported_context_windows.get(name),
                     )
                 )
                 next_sort_order += 1
-                added.add(model_name)
+                added.add(name)
 
-            missing: set[str] = set()
-            restored: set[str] = set()
-            checked_at = datetime.now(UTC).replace(tzinfo=None)
-            has_backfill = False
-            has_context_changes = False
-            for row in credential_models:
-                if row.model_name in upstream_names:
-                    reported = reported_context_windows.get(row.model_name)
-                    if row.upstream_context_window != reported:
-                        row.upstream_context_window = reported
-                        has_context_changes = True
-                is_missing = row.model_name not in upstream_names
-                if is_missing == bool(row.upstream_missing):
-                    if is_missing and row.upstream_missing_since is None:
-                        row.upstream_missing_since = checked_at
-                        has_backfill = True
-                    continue
-                row.upstream_missing = int(is_missing)
-                row.upstream_missing_since = checked_at if is_missing else None
-                (missing if is_missing else restored).add(row.model_name)
-
-            if added or missing or restored or has_backfill or has_context_changes:
+            if added or removed or has_context_changes:
                 await session.commit()
             return UpstreamModelChanges(
-                added=sorted(added), missing=sorted(missing), restored=sorted(restored)
+                added=sorted(added), missing=sorted(removed), restored=[]
             )
 
 
