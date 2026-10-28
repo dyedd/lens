@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
-from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 import httpx
-from packaging import version
 
 from ...core.config import settings
 from ...core.db import create_engine, create_session_factory
 from ...core.time_zone import load_time_zone
-from ...models.settings import SettingItem
+from ...models.plugins import PluginView
 from ...persistence.backup_store import BackupStore
 from ...persistence.channel_store import ChannelStore
-from ...persistence.cronjob_store import CronjobSpec, CronjobStore
+from ...persistence.cronjob_store import CronjobStore
 from ...persistence.repositories import (
     AdminRepository,
     GatewayApiKeyRepository,
@@ -25,68 +22,12 @@ from ...persistence.repositories import (
     SettingsRepository,
     SiteCredentialRateRepository,
 )
-from ...persistence.settings_keys import (
-    SETTING_LATEST_VERSION,
-    SETTING_LATEST_VERSION_URL,
-    SETTING_VERSION_CHECK_AT,
-)
+from ...plugins import PluginRegistry
+from ...plugins.builtin import BUILTIN_PLUGINS
 from ..cronjob_runner import CronjobRunner
 from ..router import GatewayRouter
 
-TASK_REQUEST_LOG_PRUNE = "request_log_prune"
-TASK_MODEL_PRICE_SYNC = "model_price_sync"
-TASK_REQUEST_LOG_STATS_PERSIST = "request_log_stats_persist"
-TASK_VERSION_CHECK = "version_check"
-TASK_CHANNEL_MODEL_SYNC = "channel_model_sync"
-TASK_CREDENTIAL_RATE_SYNC = "credential_rate_sync"
-
-CRONJOB_SPECS = (
-    CronjobSpec(
-        id=TASK_REQUEST_LOG_PRUNE,
-        name="请求日志清理",
-        description="按日志保留天数清理过期请求日志",
-        default_interval_hours=1,
-    ),
-    CronjobSpec(
-        id=TASK_MODEL_PRICE_SYNC,
-        name="模型价格同步",
-        description="从 LiteLLM 同步模型价格",
-        default_interval_hours=24,
-    ),
-    CronjobSpec(
-        id=TASK_REQUEST_LOG_STATS_PERSIST,
-        name="请求日志统计落库",
-        description="归档请求日志统计数据",
-        default_interval_hours=1,
-    ),
-    CronjobSpec(
-        id=TASK_VERSION_CHECK,
-        name="版本检测",
-        description="检测 GitHub releases 是否有新版本",
-        default_interval_hours=24,
-    ),
-    CronjobSpec(
-        id=TASK_CHANNEL_MODEL_SYNC,
-        name="渠道模型同步",
-        description="为启用的渠道拉取上游模型，按凭证规则保存匹配项",
-        default_interval_hours=24,
-    ),
-    CronjobSpec(
-        id=TASK_CREDENTIAL_RATE_SYNC,
-        name="凭据倍率同步",
-        description="同步 Sub2API 有效倍率与 NewAPI 分组参考倍率",
-        default_interval_hours=24,
-    ),
-)
-
 logger = logging.getLogger(__name__)
-
-
-@lru_cache(maxsize=1)
-def read_system_version() -> str:
-    from app import __version__
-
-    return __version__
 
 
 class AppState:
@@ -114,17 +55,15 @@ class AppState:
         self.channel_store = ChannelStore(self.session_factory)
         self.backup_store = BackupStore(self.session_factory)
         self.router = GatewayRouter()
+        self.plugin_registry = PluginRegistry(
+            BUILTIN_PLUGINS,
+            state=self,
+            logger=logger,
+        )
         self.cronjob_runner = CronjobRunner(
             store=self.cronjob_store,
-            specs=CRONJOB_SPECS,
-            handlers={
-                TASK_REQUEST_LOG_PRUNE: self.request_log_store.maintenance.prune_request_logs,
-                TASK_MODEL_PRICE_SYNC: self._sync_model_prices,
-                TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.statistics.persist_request_log_stats,
-                TASK_VERSION_CHECK: self._check_version_update,
-                TASK_CHANNEL_MODEL_SYNC: self._sync_channel_models,
-                TASK_CREDENTIAL_RATE_SYNC: self._sync_credential_rates,
-            },
+            specs=self.plugin_registry.cronjob_specs(),
+            handlers=self.plugin_registry.cronjob_handlers(),
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
         )
@@ -162,63 +101,27 @@ class AppState:
             if not client.is_closed:
                 await client.aclose()
 
+    async def load_plugins(self) -> None:
+        """读取插件启停状态，并让计划任务跟随生效插件。"""
+        await self.plugin_registry.load()
+        self._apply_plugin_contributions()
+
+    async def set_plugin_enabled(self, plugin_id: str, *, enabled: bool) -> PluginView:
+        """启用或停用插件，并立即刷新它贡献的计划任务。"""
+        view = await self.plugin_registry.set_enabled(plugin_id, enabled=enabled)
+        self._apply_plugin_contributions()
+        await self.cronjob_runner.ensure_cronjobs()
+        return view
+
+    def _apply_plugin_contributions(self) -> None:
+        self.cronjob_runner.reconfigure(
+            specs=self.plugin_registry.cronjob_specs(),
+            handlers=self.plugin_registry.cronjob_handlers(),
+        )
+
     async def _runtime_time_zone(self) -> ZoneInfo:
         runtime = await self.settings_repo.get_runtime_settings()
         return load_time_zone(str(runtime["time_zone"]))
-
-    async def _sync_model_prices(self) -> None:
-        from .tasks.model_price_tasks import sync_group_prices
-
-        await sync_group_prices(self)
-
-    async def _sync_channel_models(self) -> None:
-        from .tasks.model_sync import sync_channel_models
-
-        await sync_channel_models(self)
-
-    async def _sync_credential_rates(self) -> None:
-        from .tasks.credential_rate_tasks import sync_all_site_credential_rates
-
-        await sync_all_site_credential_rates(self)
-
-    async def _check_version_update(self) -> None:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                "https://api.github.com/repos/dyedd/lens/releases/latest",
-                headers={"Accept": "application/vnd.github.v3+json"},
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            latest_version = data.get("tag_name", "").lstrip("v")
-            release_url = data.get("html_url", "")
-
-            current_version = read_system_version()
-
-            if latest_version and version.parse(latest_version) > version.parse(
-                current_version
-            ):
-                await self.settings_repo.upsert_settings(
-                    [
-                        SettingItem(key=SETTING_LATEST_VERSION, value=latest_version),
-                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=release_url),
-                        SettingItem(
-                            key=SETTING_VERSION_CHECK_AT,
-                            value=datetime.now(UTC).isoformat(),
-                        ),
-                    ]
-                )
-            else:
-                await self.settings_repo.upsert_settings(
-                    [
-                        SettingItem(
-                            key=SETTING_VERSION_CHECK_AT,
-                            value=datetime.now(UTC).isoformat(),
-                        ),
-                        SettingItem(key=SETTING_LATEST_VERSION, value=""),
-                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=""),
-                    ]
-                )
 
 
 app_state = AppState()

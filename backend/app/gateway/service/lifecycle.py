@@ -20,6 +20,7 @@ async def _startup_app_state(state: AppState) -> None:
     if state.http.is_closed:
         state.http = state._create_http_client()
     await state.request_log_store.maintenance.fail_running_request_logs()
+    await state.load_plugins()
     await run_model_group_reconcile(state, should_raise=True)
 
 

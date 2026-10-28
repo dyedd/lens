@@ -45,6 +45,21 @@ class CronjobRunner:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._loop())
 
+    async def ensure_cronjobs(self) -> None:
+        """Create or refresh the records of the contributed cron jobs."""
+        await self._store.ensure_cronjobs(self._specs)
+
+    def reconfigure(
+        self,
+        *,
+        specs: Sequence[CronjobSpec],
+        handlers: dict[str, TaskHandler],
+    ) -> None:
+        """Replace contributed cron jobs, e.g. after a plugin is toggled."""
+        self._specs = list(specs)
+        self._specs_by_id = {spec.id: spec for spec in self._specs}
+        self._handlers = dict(handlers)
+
     async def stop(self) -> None:
         """Stop the polling loop if it is running."""
         if self._task is None:

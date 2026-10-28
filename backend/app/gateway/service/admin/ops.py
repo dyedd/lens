@@ -7,6 +7,7 @@ from fastapi import Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from ....core.time_zone import load_time_zone
+from ....core.version import read_system_version
 from ....models.backups import ConfigImportResult
 from ....models.cronjobs import CronjobItem, CronjobRunResult, CronjobUpdate
 from ....models.gateway_keys import (
@@ -34,7 +35,7 @@ from ....models.settings import SettingItem, SettingsUpdate
 from ....persistence.backup_store import BackupStore
 from ....persistence.editable_settings import canonicalize_editable_settings
 from ....persistence.settings_keys import SETTING_TIME_ZONE
-from ..app_state import app_state, read_system_version
+from ..app_state import app_state
 from ..auth import get_current_admin
 from ..tasks.model_group_reconcile import run_model_group_reconcile
 from ..tasks.model_price_tasks import ModelPriceSyncError, sync_group_prices
@@ -91,6 +92,7 @@ async def import_settings_bundle(
 
     app_state.settings_repo.invalidate_settings_cache()
     await run_model_group_reconcile(app_state)
+    await app_state.load_plugins()
     return result
 
 

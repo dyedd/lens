@@ -186,6 +186,7 @@ async def _create_schema(state: Any) -> None:
 def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     import app.gateway.service.admin.model_groups as model_groups_mod
     import app.gateway.service.admin.ops as ops_mod
+    import app.gateway.service.admin.plugins as admin_plugins_mod
     import app.gateway.service.admin.sites as sites_mod
     import app.gateway.service.app_state as state_mod
     import app.gateway.service.auth as auth_mod
@@ -203,6 +204,7 @@ def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
     for module in (
         model_groups_mod,
         ops_mod,
+        admin_plugins_mod,
         sites_mod,
         auth_mod,
         handlers_mod,
@@ -241,7 +243,7 @@ def app_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Iterator[Any]:
     monkeypatch.setattr(api_app, "lifespan", _noop_lifespan)
 
     run_async(_create_schema(state))
-    run_async(state.cronjob_store.ensure_cronjobs(state_mod.CRONJOB_SPECS))
+    run_async(state.cronjob_runner.ensure_cronjobs())
     run_async(state.admin_repo.ensure_default_admin("admin", "password"))
 
     try:

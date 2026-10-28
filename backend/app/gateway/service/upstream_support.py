@@ -8,7 +8,8 @@ from typing import Any
 
 import httpx
 
-from .app_state import app_state, read_system_version
+from ...core.version import read_system_version
+from .app_state import app_state
 
 GENERIC_USER_AGENT_TOKENS = (
     "python-httpx",

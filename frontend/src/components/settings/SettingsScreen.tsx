@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { ApiKeysScreen } from "@/components/screens/ApiKeysScreen";
 import { BackupsScreen } from "@/components/screens/BackupsScreen";
 import { CronjobsScreen } from "@/components/screens/CronjobsScreen";
+import { PluginsScreen } from "@/components/screens/PluginsScreen";
 import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
 import { Button } from "@/components/ui/Button";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
@@ -96,6 +97,9 @@ export function SettingsScreen() {
             </TabsContent>
             <TabsContent value="cronjobs" className="mt-0">
               <CronjobsScreen />
+            </TabsContent>
+            <TabsContent value="plugins" className="mt-0">
+              <PluginsScreen />
             </TabsContent>
             <TabsContent value="backups" className="mt-0">
               <BackupsScreen />
