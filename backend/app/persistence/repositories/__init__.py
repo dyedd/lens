@@ -4,7 +4,6 @@ from .gateway_api_key_repository import GatewayApiKeyRepository
 from .groups_repository import ModelGroupRepository
 from .model_price_repository import ModelPriceRepository
 from .model_sync_run_repository import ModelSyncRunRepository
-from .regex_rule_repository import RegexRuleRepository
 from .request_log.repository import RequestLogRepository
 from .settings_repository import SettingsRepository
 
@@ -14,7 +13,6 @@ __all__ = [
     "ModelGroupRepository",
     "ModelPriceRepository",
     "ModelSyncRunRepository",
-    "RegexRuleRepository",
     "RequestLogRepository",
     "SettingsRepository",
     "SiteCredentialRateRepository",

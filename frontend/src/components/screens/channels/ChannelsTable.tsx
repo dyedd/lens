@@ -1,11 +1,4 @@
-import {
-  CloudDownload,
-  MoreHorizontal,
-  Pencil,
-  Settings2,
-  Trash2,
-} from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
+import { MoreHorizontal, Pencil, Settings2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import {
@@ -60,8 +53,6 @@ type Props = {
   onSelectOne: (id: string, checked: boolean) => void;
   onEdit: (site: Site) => void;
   onManageModels: (site: Site) => void;
-  onReviewPendingModels: (site: Site) => void;
-  onFetchModels: (site: Site) => void;
   onToggleEnabled: (site: Site, enabled: boolean) => void;
   onDelete: (site: Site) => void;
 };
@@ -77,8 +68,6 @@ export function ChannelsTable({
   onSelectOne,
   onEdit,
   onManageModels,
-  onReviewPendingModels,
-  onFetchModels,
   onToggleEnabled,
   onDelete,
 }: Props) {
@@ -204,35 +193,11 @@ export function ChannelsTable({
                 </div>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="tabular-nums">
-                    {locale === "zh-CN"
-                      ? `${models.enabled} / ${models.total} 已启用`
-                      : `${models.enabled} / ${models.total} active`}
-                  </span>
-                  {models.pending ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge variant="destructive" asChild>
-                          <button
-                            type="button"
-                            className="cursor-pointer"
-                            onClick={() => onReviewPendingModels(site)}
-                          >
-                            {locale === "zh-CN"
-                              ? `${models.pending} 待处理`
-                              : `${models.pending} to review`}
-                          </button>
-                        </Badge>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        {locale === "zh-CN"
-                          ? "上游已移除这些模型，点击查看并选择保留或删除"
-                          : "These models were removed upstream. Review them to keep or delete."}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                </div>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {locale === "zh-CN"
+                    ? `${models.enabled} / ${models.total} 已启用`
+                    : `${models.enabled} / ${models.total} active`}
+                </span>
               </TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">
                 {formatUpdatedAt(site.updated_at, updatedAtFormatter)}
@@ -261,12 +226,6 @@ export function ChannelsTable({
                       <DropdownMenuItem onSelect={() => onManageModels(site)}>
                         <Settings2 className="size-3.5 stroke-1" />
                         {locale === "zh-CN" ? "管理模型" : "Manage models"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => onFetchModels(site)}>
-                        <CloudDownload className="size-3.5 stroke-1" />
-                        {locale === "zh-CN"
-                          ? "获取模型列表"
-                          : "Fetch model list"}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => onDelete(site)}>

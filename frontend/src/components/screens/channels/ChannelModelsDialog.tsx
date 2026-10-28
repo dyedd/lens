@@ -41,7 +41,7 @@ import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { protocolLabel } from "@/lib/protocols";
-import { AddChannelModelsDialog } from "./AddChannelModelsDialog";
+import { ChannelModelPatternDialog } from "./ChannelModelPatternDialog";
 import { ChannelModelsTable } from "./ChannelModelsTable";
 import type {
   AggregatedModel,
@@ -67,14 +67,10 @@ type Props = {
   onDelete: (key: string) => void;
   onTest: (key: string) => void;
   testing: boolean;
-  onAddBinding: (
-    names: string,
-    protocols: ProtocolKind[],
-    groupId?: string,
-  ) => boolean;
   onOpenRemote: () => void;
-  /** Execution groups new models can join after the channel is saved. */
-  groupOptions: Array<{ id: string; name: string }>;
+  /** Keys whose model rule can be edited, with their current filters. */
+  credentialOptions: Array<{ id: string; label: string; pattern: string }>;
+  onUpdateCredentialPattern: (credentialId: string, pattern: string) => void;
   initialStatusFilter?: ModelStatusFilter;
 };
 
@@ -103,9 +99,9 @@ function ChannelModelsBody({
   onDelete,
   onTest,
   testing,
-  onAddBinding,
   onOpenRemote,
-  groupOptions,
+  credentialOptions,
+  onUpdateCredentialPattern,
   initialStatusFilter = "all",
 }: Omit<Props, "open">) {
   const [query, setQuery] = useState("");
@@ -128,7 +124,6 @@ function ChannelModelsBody({
     const filtered = models.filter((model) => {
       if (statusFilter === "enabled" && !model.enabled) return false;
       if (statusFilter === "disabled" && model.enabled) return false;
-      if (statusFilter === "missing" && !model.upstreamMissing) return false;
       if (!keyword) return true;
       return (
         model.modelName.toLowerCase().includes(keyword) ||
@@ -190,8 +185,8 @@ function ChannelModelsBody({
           </DialogTitle>
           <DialogDescription>
             {locale === "zh-CN"
-              ? "按上游协议路由；模型持续同步，删除后不回流，上游移除后暂停。"
-              : "Route by upstream protocol. Models stay synced, deleted models stay out, and removed upstream models pause."}
+              ? "按上游协议路由；同步时保留匹配模型规则的模型，不匹配或上游已下线的会自动移除。"
+              : "Route by upstream protocol. Each sync keeps models matching the key's rule and drops the rest."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -250,9 +245,6 @@ function ChannelModelsBody({
                       </SelectItem>
                       <SelectItem value="disabled">
                         {locale === "zh-CN" ? "停用" : "Disabled"}
-                      </SelectItem>
-                      <SelectItem value="missing">
-                        {locale === "zh-CN" ? "待处理" : "Needs review"}
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -320,7 +312,7 @@ function ChannelModelsBody({
               <ProtocolDropdown
                 value={bulkProtocols}
                 locale={locale}
-                className="h-7 px-2 py-0 text-sm has-[>svg]:px-2"
+                className="h-7 min-w-0 flex-1 px-2 py-0 text-sm has-[>svg]:px-2"
                 onChange={setBulkProtocols}
               />
             </div>
@@ -345,7 +337,7 @@ function ChannelModelsBody({
               onClick={() => setNewOpen(true)}
             >
               <Plus className="size-3.5" />
-              {locale === "zh-CN" ? "添加模型" : "Add models"}
+              {locale === "zh-CN" ? "模型规则" : "Model rule"}
             </Button>
           </div>
         </div>
@@ -389,12 +381,12 @@ function ChannelModelsBody({
           </Button>
         </DialogFooter>
       </form>
-      <AddChannelModelsDialog
+      <ChannelModelPatternDialog
         open={newOpen}
         locale={locale}
         onOpenChange={setNewOpen}
-        onAddBinding={onAddBinding}
-        groupOptions={groupOptions}
+        onSubmit={onUpdateCredentialPattern}
+        credentialOptions={credentialOptions}
       />
       <ConfirmDeleteDialog
         open={removeRequest !== null}

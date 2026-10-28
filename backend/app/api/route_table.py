@@ -39,12 +39,6 @@ from ..gateway.service.admin.ops import (
     update_model_price,
     update_settings,
 )
-from ..gateway.service.admin.regex_rules import (
-    create_regex_rule,
-    delete_regex_rule,
-    list_regex_rules,
-    update_regex_rule,
-)
 from ..gateway.service.admin.sites import (
     create_site,
     delete_site,
@@ -107,7 +101,6 @@ from ..models.overview import (
     OverviewModelAnalytics,
     OverviewSummary,
 )
-from ..models.regex_rules import RegexRuleView
 from ..models.request_logs import RequestLogDetail, RequestLogPage
 from ..models.settings import SettingItem
 from ..models.site_import import SiteBatchImportResult
@@ -357,34 +350,6 @@ def register_model_groups(app: FastAPI) -> None:
     )
 
 
-def register_regex_rules(app: FastAPI) -> None:
-    app.add_api_route(
-        "/api/admin/regex-rules",
-        list_regex_rules,
-        methods=["GET"],
-        response_model=list[RegexRuleView],
-    )
-    app.add_api_route(
-        "/api/admin/regex-rules",
-        create_regex_rule,
-        methods=["POST"],
-        response_model=RegexRuleView,
-        status_code=201,
-    )
-    app.add_api_route(
-        "/api/admin/regex-rules/{rule_id}",
-        update_regex_rule,
-        methods=["PUT"],
-        response_model=RegexRuleView,
-    )
-    app.add_api_route(
-        "/api/admin/regex-rules/{rule_id}",
-        delete_regex_rule,
-        methods=["DELETE"],
-        status_code=204,
-    )
-
-
 def register_model_prices(app: FastAPI) -> None:
     app.add_api_route(
         "/api/admin/model-prices/{model_key}",
@@ -515,7 +480,6 @@ def include_routes(app: FastAPI, *, ui_static_dir: str = "") -> None:
         register_overview,
         register_request_logs,
         register_model_groups,
-        register_regex_rules,
         register_model_prices,
         register_cronjobs,
         register_gateway_api_keys,

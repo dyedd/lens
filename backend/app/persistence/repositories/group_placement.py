@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from app.core.errors import ResourceNotFoundError
+from app.core.model_group_matching import (
+    MatchRegexOperator,
+    compile_model_group_pattern,
+    matches_model_group,
+)
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupMemberSource,
@@ -43,23 +48,30 @@ class GroupCoverage:
     id: str
     name: str
     is_route_group: bool
-    # Library rules; when set they replace the name for membership.
+    # The group's own regex combines with its name according to this operator.
     patterns: tuple[re.Pattern[str], ...]
+    match_regex_operator: MatchRegexOperator
     # Members and exclusions both count: an exclusion is a placement decision.
     model_names: frozenset[str]
+    legacy_rule_override: bool = False
 
 
 def build_group_coverage(
-    group: ModelGroupView, patterns: tuple[re.Pattern[str], ...]
+    group: ModelGroupView,
+    patterns: tuple[re.Pattern[str], ...],
+    match_regex_operator: MatchRegexOperator = "or",
+    legacy_rule_override: bool = False,
 ) -> GroupCoverage:
     return GroupCoverage(
         id=group.id,
         name=group.name,
         is_route_group=bool(group.route_group_id),
         patterns=patterns,
+        match_regex_operator=match_regex_operator,
         model_names=frozenset(
             item.model_name for item in (*group.items, *group.excluded_items)
         ),
+        legacy_rule_override=legacy_rule_override,
     )
 
 
@@ -73,16 +85,21 @@ def build_unplaced_models(
         if not group.is_route_group
         for name in group.model_names
     }
-    cover_patterns = [
-        pattern
-        for group in groups
-        if not group.is_route_group
-        for pattern in group.patterns
-    ]
 
     def is_covered(model_name: str) -> bool:
         return model_name.casefold() in covered_keys or any(
-            pattern.search(model_name) for pattern in cover_patterns
+            not group.is_route_group
+            and (
+                any(pattern.search(model_name) for pattern in group.patterns)
+                if group.legacy_rule_override
+                else matches_model_group(
+                    group.name,
+                    model_name,
+                    group.patterns,
+                    group.match_regex_operator,
+                )
+            )
+            for group in groups
         )
 
     groups_by_key: dict[str, list[GroupCoverage]] = defaultdict(list)
@@ -158,11 +175,23 @@ class GroupPlacementMixin:
             [
                 build_group_coverage(
                     group,
-                    tuple(
-                        patterns[rule_id]
-                        for rule_id in group.match_rule_ids
-                        if rule_id in patterns
+                    (
+                        (direct_pattern,)
+                        if (
+                            direct_pattern := compile_model_group_pattern(
+                                group.match_regex
+                            )
+                        )
+                        else tuple(
+                            patterns[rule_id]
+                            for rule_id in group.match_rule_ids
+                            if rule_id in patterns
+                        )
                     ),
+                    group.match_regex_operator
+                    if group.match_regex_operator in {"and", "or"}
+                    else "or",
+                    legacy_rule_override=bool(group.match_rule_ids),
                 )
                 for group in groups
             ],

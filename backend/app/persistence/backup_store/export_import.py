@@ -24,13 +24,26 @@ _LEGACY_SITE_KEYS = (
     "model_name_prefixes",
     "model_sync_include_rule_ids",
 )
-_LEGACY_SITE_MODEL_KEYS = ("source",)
+_LEGACY_SITE_MODEL_KEYS = (
+    "source",
+    "upstream_missing",
+    "upstream_missing_since",
+)
 
 
 def _drop_legacy_group_fields(data: object) -> object:
     """Strip retired per-group rule fields so older backups still import."""
     if not isinstance(data, dict):
         return data
+    legacy_rules = data.get("regex_rules", [])
+    if not isinstance(legacy_rules, list):
+        legacy_rules = []
+    rules_by_id = {
+        str(rule.get("id")): str(rule.get("pattern") or "")
+        for rule in legacy_rules
+        if isinstance(rule, dict) and rule.get("id")
+    }
+    data.pop("regex_rules", None)
     groups = data.get("groups")
     if not isinstance(groups, list):
         return data
@@ -38,6 +51,22 @@ def _drop_legacy_group_fields(data: object) -> object:
         if isinstance(group, dict):
             for key in _LEGACY_GROUP_KEYS:
                 group.pop(key, None)
+            rule_ids = group.pop("match_rule_ids", [])
+            if not group.get("match_regex") and isinstance(rule_ids, list):
+                patterns = [
+                    rules_by_id[rule_id]
+                    for rule_id in rule_ids
+                    if rule_id in rules_by_id and rules_by_id[rule_id]
+                ]
+                if patterns:
+                    group["match_regex"] = (
+                        patterns[0]
+                        if len(patterns) == 1
+                        else "(?:" + ")|(?:".join(patterns) + ")"
+                    )
+                    group["match_regex_operator"] = "or"
+                elif rule_ids:
+                    raise ValueError("Backup references missing regex rules")
     return data
 
 
@@ -98,7 +127,6 @@ class BackupExportImportMixin:
                 .scalars()
                 .all()
             )
-            regex_rules = await self.load_regex_rules(session)
             sites = await self.load_sites(session)
             groups = await self.load_groups(session)
             model_prices = await self.load_model_prices(session)
@@ -121,7 +149,6 @@ class BackupExportImportMixin:
             settings=effective_editable_setting_items(
                 [SettingItem(key=item.key, value=item.value) for item in settings_rows]
             ),
-            regex_rules=regex_rules,
             sites=sites,
             groups=groups,
             model_prices=model_prices,
@@ -135,9 +162,6 @@ class BackupExportImportMixin:
         """Replace persisted configuration with a validated backup."""
         async with self._session_factory() as session:
             rows_affected: dict[str, int] = {}
-
-            rule_ids = await self.replace_regex_rules(session, dump.regex_rules)
-            rows_affected["regex_rules"] = len(dump.regex_rules)
 
             protocol_config_ids, model_keys = await self.replace_sites(
                 session, dump.sites
@@ -163,7 +187,6 @@ class BackupExportImportMixin:
                 dump.groups,
                 available_protocol_config_ids=protocol_config_ids,
                 model_keys=model_keys,
-                rule_ids=rule_ids,
             )
             rows_affected["model_groups"] = len(dump.groups)
             rows_affected["model_group_items"] = sum(

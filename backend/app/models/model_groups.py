@@ -4,10 +4,14 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from ..core.context_windows import ContextWindowSource
+from ..core.model_group_matching import MatchRegexOperator
 from .protocols import ProtocolKind, RoutingStrategy
 from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import ContextWindow, StrictBaseModel
+from .validation import ContextWindow, StrictBaseModel, validate_regex_pattern
+
+# 兼容最多 20 条旧规则各 500 字符的合并结果。
+MAX_MATCH_REGEX_LENGTH = 10_240
 
 
 def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | None:
@@ -24,6 +28,18 @@ def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | Non
         seen.add(group_id)
         result.append(group_id)
     return result
+
+
+def _canonicalize_match_regex(value: str | None) -> str | None:
+    if value is None:
+        return None
+    pattern = value.strip().removeprefix("(?i)").strip()
+    if len(pattern) > MAX_MATCH_REGEX_LENGTH:
+        raise ValueError(
+            "Model group match regex must be at most "
+            f"{MAX_MATCH_REGEX_LENGTH} characters"
+        )
+    return validate_regex_pattern(pattern, error_label="model group match regex")
 
 
 class ModelGroupItemState(str, Enum):
@@ -59,7 +75,10 @@ class ModelGroup(StrictBaseModel):
     strategy: RoutingStrategy
     route_group_id: str = ""
     route_group_name: str = ""
-    # Library regex rules; when set they replace name matching for this group.
+    # The group name always matches as a case-insensitive substring.
+    match_regex: str = Field(default="", max_length=MAX_MATCH_REGEX_LENGTH)
+    match_regex_operator: MatchRegexOperator = "or"
+    # Legacy shared-rule references; kept for old backups and upgrades.
     match_rule_ids: RegexRuleIds = Field(default_factory=list)
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
@@ -85,10 +104,15 @@ class ModelGroup(StrictBaseModel):
     _validate_fallback_group_ids = field_validator("fallback_group_ids")(
         lambda value: _canonicalize_fallback_group_ids(value)
     )
+    _canonicalize_match_regex = field_validator("match_regex")(
+        _canonicalize_match_regex
+    )
 
     @model_validator(mode="after")
     def clear_route_group_match_rules(self) -> "ModelGroup":
         if self.route_group_id.strip():
+            self.match_regex = ""
+            self.match_regex_operator = "or"
             self.match_rule_ids = []
         return self
 
@@ -138,7 +162,8 @@ class ModelGroupCreate(StrictBaseModel):
     name: str
     strategy: RoutingStrategy = RoutingStrategy.FAILOVER
     route_group_id: str = ""
-    match_rule_ids: RegexRuleIds = Field(default_factory=list)
+    match_regex: str = Field(default="", max_length=500)
+    match_regex_operator: MatchRegexOperator = "or"
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
     fallback_group_ids: list[str] = Field(default_factory=list, max_length=20)
@@ -155,11 +180,15 @@ class ModelGroupCreate(StrictBaseModel):
     _validate_fallback_group_ids = field_validator("fallback_group_ids")(
         lambda value: _canonicalize_fallback_group_ids(value)
     )
+    _canonicalize_match_regex = field_validator("match_regex")(
+        _canonicalize_match_regex
+    )
 
     @model_validator(mode="after")
     def clear_route_group_match_rules(self) -> "ModelGroupCreate":
         if self.route_group_id.strip():
-            self.match_rule_ids = []
+            self.match_regex = ""
+            self.match_regex_operator = "or"
         return self
 
 
@@ -167,7 +196,8 @@ class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
     strategy: RoutingStrategy | None = None
     route_group_id: str | None = None
-    match_rule_ids: RegexRuleIds | None = None
+    match_regex: str | None = Field(default=None, max_length=500)
+    match_regex_operator: MatchRegexOperator | None = None
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None
     fallback_group_ids: list[str] | None = Field(default=None, max_length=20)
@@ -177,6 +207,9 @@ class ModelGroupUpdate(StrictBaseModel):
 
     _validate_fallback_group_ids = field_validator("fallback_group_ids")(
         lambda value: _canonicalize_fallback_group_ids(value)
+    )
+    _canonicalize_match_regex = field_validator("match_regex")(
+        _canonicalize_match_regex
     )
     _validate_param_override = field_validator("param_override")(
         lambda value: (

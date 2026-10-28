@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
@@ -6,7 +5,7 @@ from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_vali
 from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import ContextWindow, StrictBaseModel
+from .validation import ContextWindow, StrictBaseModel, validate_model_pattern
 
 
 def require_non_empty_text(value: str) -> str:
@@ -95,6 +94,9 @@ class SiteCredential(StrictBaseModel):
     api_key: str = Field(min_length=1)
     sort_order: int = Field(default=0, ge=0)
     base_url_id: str = ""
+    # Whole-name filter deciding which upstream models this key keeps. Stored
+    # values are validated on input only, so a bad row never breaks a read.
+    model_pattern: str = ""
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
     rate_group: str = ""
@@ -109,9 +111,14 @@ class SiteCredentialInput(StrictBaseModel):
     name: str
     api_key: str = Field(min_length=1)
     base_url_id: str = ""
+    model_pattern: str = Field(default="", max_length=500)
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
     rate_group: str = ""
+
+    _validate_model_pattern = field_validator("model_pattern")(
+        lambda value: validate_model_pattern(value)
+    )
 
     @model_validator(mode="after")
     def validate_rate_config(self) -> "SiteCredentialInput":
@@ -139,9 +146,6 @@ class SiteModel(StrictBaseModel):
     enabled: bool = True
     sort_order: int = Field(default=0, ge=0)
     protocol: ProtocolKind | None = None
-    upstream_missing: bool = False
-    # Internal: carried to runtime channels for retirement, never serialized.
-    upstream_missing_since: datetime | None = Field(default=None, exclude=True)
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
 
@@ -152,7 +156,6 @@ class SiteModelInput(StrictBaseModel):
     model_name: str = Field(min_length=1)
     enabled: bool = True
     protocol: ProtocolKind = ProtocolKind.OPENAI_CHAT
-    upstream_missing: bool = False
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
 

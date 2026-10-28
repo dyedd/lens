@@ -4,15 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { Input } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/Select";
 import {
   Table,
   TableBody,
@@ -22,10 +14,6 @@ import {
   TableRow,
 } from "@/components/ui/Table";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
-import {
-  formatContextWindow,
-  parseContextWindowInput,
-} from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelModels";
 import type { Locale, PickerModelItem } from "./channelTypes";
@@ -34,7 +22,7 @@ import type {
   RemoteModelItem,
 } from "./useChannelModelPicker";
 
-type CatalogFilter = "new" | "bound" | "absent" | "all";
+type CatalogFilter = "new" | "bound" | "all";
 type CatalogRow = {
   name: string;
   status: Exclude<CatalogFilter, "all">;
@@ -48,15 +36,11 @@ type Props = {
   loading: boolean;
   onOpenChange: (open: boolean) => void;
   onLoad: () => Promise<RemoteModelCatalog | null>;
-  onImport: (items: PickerModelItem[], groupId?: string) => number;
-  /** Execution groups an imported batch can join after the channel is saved. */
-  groupOptions: Array<{ id: string; name: string }>;
+  onImport: (items: PickerModelItem[]) => void;
 };
 
 function statusLabel(status: CatalogRow["status"], locale: Locale) {
   if (status === "bound") return locale === "zh-CN" ? "已添加" : "Added";
-  if (status === "absent")
-    return locale === "zh-CN" ? "上游已移除" : "Removed upstream";
   return locale === "zh-CN" ? "未添加" : "Not added";
 }
 
@@ -69,16 +53,11 @@ export function ChannelRemoteModelsDialog({
   onOpenChange,
   onLoad,
   onImport,
-  groupOptions,
 }: Props) {
   const [catalog, setCatalog] = useState<RemoteModelCatalog | null>(null);
   const [query, setQuery] = useState("");
-  const [targetGroupId, setTargetGroupId] = useState("__auto__");
   const [filter, setFilter] = useState<CatalogFilter>("new");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [contextDrafts, setContextDrafts] = useState<Record<string, string>>(
-    {},
-  );
   const onLoadRef = useRef(onLoad);
   onLoadRef.current = onLoad;
 
@@ -86,10 +65,8 @@ export function ChannelRemoteModelsDialog({
     if (!open) {
       setCatalog(null);
       setQuery("");
-      setTargetGroupId("__auto__");
       setFilter("new");
       setSelected(new Set());
-      setContextDrafts({});
       return;
     }
     void onLoadRef.current().then((result) => {
@@ -106,13 +83,10 @@ export function ChannelRemoteModelsDialog({
         status: catalog.boundNames.has(name) ? "bound" : "new",
         sources,
       })),
-      ...Array.from(catalog.boundNames)
-        .filter((name) => !sourcesByName.has(name))
-        .map((name) => ({ name, status: "absent", sources: [] })),
     ] as CatalogRow[];
   }, [catalog]);
   const counts = useMemo(() => {
-    const result = { new: 0, bound: 0, absent: 0, all: rows.length };
+    const result = { new: 0, bound: 0, all: rows.length };
     for (const row of rows) result[row.status] += 1;
     return result;
   }, [rows]);
@@ -126,9 +100,7 @@ export function ChannelRemoteModelsDialog({
       )
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [filter, query, rows]);
-  const selectableNames = visibleRows
-    .filter((row) => row.status !== "absent")
-    .map((row) => row.name);
+  const selectableNames = visibleRows.map((row) => row.name);
   const allSelected =
     selectableNames.length > 0 &&
     selectableNames.every((name) => selected.has(name));
@@ -143,28 +115,15 @@ export function ChannelRemoteModelsDialog({
     });
   }
 
-  const invalidContextNames = new Set(
-    Object.entries(contextDrafts)
-      .filter(
-        ([name, text]) =>
-          selected.has(name) && parseContextWindowInput(text) === undefined,
-      )
-      .map(([name]) => name),
-  );
-
   function importSelected() {
-    const items = (catalog?.items ?? [])
-      .filter((item) => selected.has(item.model_name))
-      .map((item) => ({
-        ...item,
-        manualContextWindow:
-          parseContextWindowInput(contextDrafts[item.model_name] ?? "") ?? null,
-      }));
-    onImport(items, targetGroupId === "__auto__" ? undefined : targetGroupId);
+    const items = (catalog?.items ?? []).filter((item) =>
+      selected.has(item.model_name),
+    );
+    onImport(items);
     toast.success(
       locale === "zh-CN"
-        ? `已添加 ${selected.size} 个模型，保存后会按上游列表更新。`
-        : `Added ${selected.size} models; they will follow the upstream list after the channel is saved.`,
+        ? `已加入 ${selected.size} 个模型，保存后同步生效。`
+        : `Added ${selected.size} models; they apply after the channel is saved.`,
     );
     onOpenChange(false);
   }
@@ -199,14 +158,12 @@ export function ChannelRemoteModelsDialog({
             <Button
               type="button"
               size="sm"
-              disabled={
-                loading || selected.size === 0 || invalidContextNames.size > 0
-              }
+              disabled={loading || selected.size === 0}
               onClick={importSelected}
             >
               <CloudDownload className="size-3.5" />
               {locale === "zh-CN"
-                ? `添加所选 ${selected.size}`
+                ? `加入所选 ${selected.size}`
                 : `Add selected ${selected.size}`}
             </Button>
           </>
@@ -225,14 +182,6 @@ export function ChannelRemoteModelsDialog({
                 {
                   value: "bound",
                   label: filterLabel("已添加", "Added", counts.bound),
-                },
-                {
-                  value: "absent",
-                  label: filterLabel(
-                    "上游已移除",
-                    "Removed upstream",
-                    counts.absent,
-                  ),
                 },
                 { value: "all", label: filterLabel("全部", "All", counts.all) },
               ]}
@@ -263,33 +212,6 @@ export function ChannelRemoteModelsDialog({
               />
               {locale === "zh-CN" ? "重新获取" : "Reload"}
             </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="shrink-0 text-sm text-muted-foreground">
-              {locale === "zh-CN" ? "添加后归入" : "Join group"}
-            </span>
-            <Select value={targetGroupId} onValueChange={setTargetGroupId}>
-              <SelectTrigger
-                className="h-8 w-64"
-                aria-label={
-                  locale === "zh-CN" ? "添加后归入模型组" : "Group to join"
-                }
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__auto__">
-                  {locale === "zh-CN"
-                    ? "不指定（按同名自动归组）"
-                    : "Automatic"}
-                </SelectItem>
-                {groupOptions.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
           <div className="max-h-[min(52vh,480px)] overflow-y-auto">
             <Table>
@@ -325,9 +247,6 @@ export function ChannelRemoteModelsDialog({
                   <TableHead>
                     {locale === "zh-CN" ? "模型名（上游）" : "Upstream model"}
                   </TableHead>
-                  <TableHead className="w-[92px]">
-                    {locale === "zh-CN" ? "上下文" : "Context"}
-                  </TableHead>
                   <TableHead className="w-[150px]">
                     {locale === "zh-CN" ? "API Key" : "Keys"}
                   </TableHead>
@@ -340,7 +259,7 @@ export function ChannelRemoteModelsDialog({
                 {visibleRows.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
                     <TableCell
-                      colSpan={5}
+                      colSpan={4}
                       className="h-24 text-center text-muted-foreground"
                     >
                       {loading
@@ -358,7 +277,6 @@ export function ChannelRemoteModelsDialog({
                       <TableCell>
                         <Checkbox
                           checked={selected.has(row.name)}
-                          disabled={row.status === "absent"}
                           onCheckedChange={(checked) =>
                             toggleName(row.name, checked === true)
                           }
@@ -367,40 +285,6 @@ export function ChannelRemoteModelsDialog({
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {row.name}
-                      </TableCell>
-                      <TableCell className="w-[92px] py-1.5">
-                        {row.status === "new" ? (
-                          <Input
-                            value={contextDrafts[row.name] ?? ""}
-                            placeholder={
-                              row.sources[0]?.context_window
-                                ? formatContextWindow(
-                                    row.sources[0].context_window,
-                                  )
-                                : locale === "zh-CN"
-                                  ? "未配置"
-                                  : "Unset"
-                            }
-                            inputMode="numeric"
-                            aria-label={`${row.name} ${
-                              locale === "zh-CN" ? "上下文" : "context window"
-                            }`}
-                            aria-invalid={
-                              invalidContextNames.has(row.name) || undefined
-                            }
-                            className="h-7 px-2 font-mono text-[11px] md:text-[11px]"
-                            onChange={(event) =>
-                              setContextDrafts((current) => ({
-                                ...current,
-                                [row.name]: event.target.value,
-                              }))
-                            }
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            —
-                          </span>
-                        )}
                       </TableCell>
                       <TableCell className="w-[150px] py-1.5">
                         <CredentialBadges
@@ -424,13 +308,7 @@ export function ChannelRemoteModelsDialog({
                           locale={locale}
                         />
                       </TableCell>
-                      <TableCell
-                        className={
-                          row.status === "absent"
-                            ? "text-xs text-destructive"
-                            : "text-xs text-muted-foreground"
-                        }
-                      >
+                      <TableCell className="text-xs text-muted-foreground">
                         {statusLabel(row.status, locale)}
                       </TableCell>
                     </TableRow>

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
-from functools import lru_cache
 
 from ...core.model_group_status import (
     build_model_group_channel_lookups,
     evaluate_model_group_item,
 )
+from ...core.model_names import matches_model_pattern
 from ...models.channels import ChannelConfig, ChannelKeyItem
 from ...models.model_groups import ModelGroupItemInput, ModelGroupItemState
 from ...models.protocols import ChannelStatus, ProtocolKind
@@ -81,16 +80,9 @@ def target_key(target: RouteTarget) -> TargetKey:
     )
 
 
-@lru_cache(maxsize=2048)
-def _compile_model_pattern(pattern: str) -> re.Pattern[str]:
-    return re.compile(pattern)
-
-
 def _matches_pattern(pattern: str, value: str) -> bool:
-    try:
-        return bool(_compile_model_pattern(pattern).search(value))
-    except re.error:
-        return False
+    """Match one stored model name against a requested model."""
+    return matches_model_pattern(pattern, value)
 
 
 def _matches_model(channel: ChannelConfig, requested_model: str | None) -> bool:
