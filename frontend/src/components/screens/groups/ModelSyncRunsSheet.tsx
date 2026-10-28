@@ -99,15 +99,8 @@ function buildRunSections(
     },
     {
       key: "missing",
-      title: isZh ? "上游缺失" : "Missing upstream",
+      title: isZh ? "已移除的模型" : "Removed models",
       lines: catalogLines("missing"),
-    },
-    {
-      key: "retired",
-      title: isZh
-        ? "上游缺失超过 7 天，已移出模型组"
-        : "Removed after 7 days missing upstream",
-      lines: run.groups.retired.map((change) => formatChange(change, locale)),
     },
     {
       key: "restored",
@@ -135,11 +128,7 @@ function formatRunSummary(run: ChannelModelSyncResponse, locale: Locale) {
         ? `待确认 ${run.groups.pending.length}`
         : `${run.groups.pending.length} pending`),
     count("missing") &&
-      (isZh ? `缺失 ${count("missing")}` : `${count("missing")} missing`),
-    run.groups.retired.length &&
-      (isZh
-        ? `退场 ${run.groups.retired.length}`
-        : `${run.groups.retired.length} retired`),
+      (isZh ? `移除 ${count("missing")}` : `${count("missing")} removed`),
     failed && (isZh ? `失败 ${failed}` : `${failed} failed`),
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : isZh ? "无变化" : "No changes";

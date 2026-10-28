@@ -442,6 +442,12 @@ class GroupMappingMixin:
             strategy=entity.strategy,
             route_group_id=entity.route_group_id,
             route_group_name=route_group_name,
+            match_regex=entity.match_regex,
+            match_regex_operator=(
+                entity.match_regex_operator
+                if entity.match_regex_operator in {"and", "or"}
+                else "or"
+            ),
             match_rule_ids=parse_rule_ids(entity.match_rule_ids_json),
             param_override=parse_param_override(entity.param_override),
             headers=parse_headers(entity.headers_json),

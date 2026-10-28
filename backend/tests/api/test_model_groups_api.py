@@ -13,6 +13,7 @@ from conftest import (
 
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.protocols import ProtocolKind
+from app.persistence.backup_store.export_import import BackupExportImportMixin
 
 
 def _member(
@@ -532,59 +533,191 @@ def test_new_group_receives_same_named_model_member(
     assert unplaced.json()["items"] == []
 
 
-def test_group_match_rules_override_same_named_joining(
+def test_group_name_matches_case_insensitive_substrings(
     client,
     admin_headers,
     create_site,
-    create_regex_rule,
 ) -> None:
-    rule = create_regex_rule("Claude", "^claude-")
-    group = _create_group(
-        client, admin_headers, name="family", match_rule_ids=[rule["id"]]
-    )
+    group = _create_group(client, admin_headers, name="GPT-4o")
 
-    create_site(
-        valid_site_payload(
-            name="Claude Site",
-            base_id="base-2",
-            credential_id="cred-2",
-            protocol_config_id="pc-2",
-            model_name="claude-sonnet-4",
-        )
-    )
-    create_site(valid_site_payload(model_name="gpt-4o"))
-    create_site(
-        valid_site_payload(
-            name="Family Site",
-            base_id="base-3",
-            credential_id="cred-3",
-            protocol_config_id="pc-3",
-            model_name="family",
-        )
-    )
+    create_site(valid_site_payload(model_name="vendor/GPT-4O-2024"))
 
     stored = client.get(
         f"/api/admin/model-groups/{group['id']}", headers=admin_headers
     ).json()
-    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
-    unplaced = client.get("/api/admin/unplaced-models", headers=admin_headers).json()
+    assert [item["model_name"] for item in stored["items"]] == ["vendor/GPT-4O-2024"]
 
-    assert [(item["model_name"], item["source"]) for item in stored["items"]] == [
-        ("claude-sonnet-4", "placement")
+
+def test_group_name_and_local_regex_can_use_or_or_and(
+    client,
+    admin_headers,
+    create_site,
+) -> None:
+    or_group = _create_group(
+        client,
+        admin_headers,
+        name="family",
+        match_regex="claude-",
+        match_regex_operator="or",
+    )
+    and_group = _create_group(
+        client,
+        admin_headers,
+        name="strict",
+        match_regex="claude-",
+        match_regex_operator="and",
+    )
+
+    create_site(valid_site_payload(model_name="claude-sonnet-4"))
+    create_site(
+        valid_site_payload(
+            name="Family Site",
+            base_id="base-2",
+            credential_id="cred-2",
+            protocol_config_id="pc-2",
+            model_name="family-v2",
+        )
+    )
+    create_site(
+        valid_site_payload(
+            name="Strict Site",
+            base_id="base-3",
+            credential_id="cred-3",
+            protocol_config_id="pc-3",
+            model_name="strict-claude-4",
+        )
+    )
+
+    or_items = client.get(
+        f"/api/admin/model-groups/{or_group['id']}", headers=admin_headers
+    ).json()["items"]
+    and_items = client.get(
+        f"/api/admin/model-groups/{and_group['id']}", headers=admin_headers
+    ).json()["items"]
+    assert [item["model_name"] for item in or_items] == [
+        "claude-sonnet-4",
+        "family-v2",
+        "strict-claude-4",
     ]
-    assert sorted(entry["name"] for entry in groups) == ["family", "gpt-4o"]
-    assert [item["model_name"] for item in unplaced["items"]] == ["family"]
+    assert [item["model_name"] for item in and_items] == ["strict-claude-4"]
+
+
+def test_group_rejects_invalid_local_regex(client, admin_headers) -> None:
+    response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "broken", "match_regex": "("},
+    )
+
+    assert_error(response, 422)
+
+
+def test_old_backup_rules_become_local_group_regex() -> None:
+    dump = BackupExportImportMixin.parse_dump(
+        json.dumps(
+            {
+                "exported_at": "now",
+                "lens_version": "test",
+                "regex_rules": [
+                    {"id": "legacy", "name": "Legacy", "pattern": "^claude-"}
+                ],
+                "groups": [
+                    {
+                        "id": "group",
+                        "name": "family",
+                        "strategy": "failover",
+                        "match_rule_ids": ["legacy"],
+                        "items": [],
+                        "excluded_items": [],
+                    }
+                ],
+            }
+        ).encode()
+    )
+
+    assert dump.groups[0].match_regex == "^claude-"
+    assert dump.groups[0].match_rule_ids == []
+
+
+def test_old_backup_rules_keep_long_combined_patterns() -> None:
+    rules = [
+        {"id": str(index), "name": f"Rule {index}", "pattern": "a" * 500}
+        for index in range(20)
+    ]
+    dump = BackupExportImportMixin.parse_dump(
+        json.dumps(
+            {
+                "exported_at": "now",
+                "lens_version": "test",
+                "regex_rules": rules,
+                "groups": [
+                    {
+                        "id": "group",
+                        "name": "family",
+                        "strategy": "failover",
+                        "match_rule_ids": [rule["id"] for rule in rules],
+                        "items": [],
+                        "excluded_items": [],
+                    }
+                ],
+            }
+        ).encode()
+    )
+
+    assert len(dump.groups[0].match_regex) > 10_000
+
+
+def test_old_backup_model_status_fields_are_ignored() -> None:
+    dump = BackupExportImportMixin.parse_dump(
+        json.dumps(
+            {
+                "exported_at": "now",
+                "lens_version": "test",
+                "sites": [
+                    {
+                        "id": "site",
+                        "name": "site",
+                        "enabled": True,
+                        "tags": [],
+                        "base_urls": [],
+                        "credentials": [],
+                        "protocols": [
+                            {
+                                "id": "pc",
+                                "base_url_id": "base",
+                                "protocols": ["openai_chat"],
+                                "models": [
+                                    {
+                                        "id": "model",
+                                        "credential_id": "credential",
+                                        "model_name": "gpt-4o",
+                                        "enabled": True,
+                                        "protocol": "openai_chat",
+                                        "upstream_missing": True,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ).encode()
+    )
+
+    assert dump.sites[0].protocols[0].models[0].model_name == "gpt-4o"
 
 
 def test_group_rule_edits_rejoin_members_on_next_reconcile(
     client,
     admin_headers,
     create_site,
-    create_regex_rule,
 ) -> None:
-    rule = create_regex_rule("GPT", "^gpt-")
     group = _create_group(
-        client, admin_headers, name="family", match_rule_ids=[rule["id"]]
+        client,
+        admin_headers,
+        name="family",
+        match_regex="^gpt-",
+        match_regex_operator="or",
     )
     create_site(valid_site_payload())
     joined = client.get(
@@ -593,9 +726,9 @@ def test_group_rule_edits_rejoin_members_on_next_reconcile(
     assert [item["model_name"] for item in joined["items"]] == ["gpt-4o"]
 
     client.put(
-        f"/api/admin/regex-rules/{rule['id']}",
+        f"/api/admin/model-groups/{group['id']}",
         headers=admin_headers,
-        json={"pattern": "^claude-"},
+        json={"match_regex": "^claude-", "match_regex_operator": "or"},
     )
     create_site(
         valid_site_payload(
@@ -615,23 +748,16 @@ def test_group_rule_edits_rejoin_members_on_next_reconcile(
     ]
 
 
-def test_route_groups_clear_match_rules(
-    client,
-    admin_headers,
-    create_regex_rule,
-) -> None:
-    rule = create_regex_rule("Claude", "^claude-")
+def test_route_groups_clear_local_match_rules(client, admin_headers) -> None:
     execution = _create_group(client, admin_headers, name="execution")
     created = _create_group(
         client,
         admin_headers,
         name="alias",
         route_group_id=execution["id"],
-        match_rule_ids=[rule["id"]],
+        match_regex="^claude-",
     )
-    group = _create_group(
-        client, admin_headers, name="family", match_rule_ids=[rule["id"]]
-    )
+    group = _create_group(client, admin_headers, name="family", match_regex="^claude-")
 
     updated = client.put(
         f"/api/admin/model-groups/{group['id']}",
@@ -639,38 +765,9 @@ def test_route_groups_clear_match_rules(
         json={"route_group_id": execution["id"]},
     )
 
-    assert created["match_rule_ids"] == []
+    assert created["match_regex"] == ""
     assert updated.status_code == 200, updated.text
-    assert updated.json()["match_rule_ids"] == []
-
-
-def test_deleting_rule_removes_it_from_referencing_groups(
-    client,
-    admin_headers,
-    create_regex_rule,
-) -> None:
-    kept = create_regex_rule("Keep", "^gpt-")
-    dropped = create_regex_rule("Drop", "-preview$")
-    group = _create_group(
-        client,
-        admin_headers,
-        name="family",
-        match_rule_ids=[dropped["id"], kept["id"]],
-    )
-
-    listed = client.get("/api/admin/regex-rules", headers=admin_headers).json()
-    response = client.delete(
-        f"/api/admin/regex-rules/{dropped['id']}", headers=admin_headers
-    )
-
-    assert response.status_code == 204
-    assert next(rule for rule in listed if rule["id"] == dropped["id"])["groups"] == [
-        {"id": group["id"], "name": "family"}
-    ]
-    stored = client.get(
-        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
-    ).json()
-    assert stored["match_rule_ids"] == [kept["id"]]
+    assert updated.json()["match_regex"] == ""
 
 
 def test_merge_model_group_folds_source_into_target(
@@ -722,6 +819,30 @@ def test_merge_model_group_folds_source_into_target(
             f"/api/admin/model-groups/{vision['id']}", headers=admin_headers
         ).json()["fallback_group_ids"]
     ) == [target["id"]]
+
+
+def test_merge_keeps_target_match_operator_when_source_has_no_regex(
+    client,
+    admin_headers,
+) -> None:
+    target = _create_group(
+        client,
+        admin_headers,
+        name="family",
+        match_regex="claude-",
+        match_regex_operator="and",
+    )
+    source = _create_group(client, admin_headers, name="other")
+
+    response = client.post(
+        f"/api/admin/model-groups/{source['id']}/merge",
+        headers=admin_headers,
+        json={"target_group_id": target["id"]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["match_regex"] == "claude-"
+    assert response.json()["match_regex_operator"] == "and"
 
 
 @pytest.mark.parametrize(

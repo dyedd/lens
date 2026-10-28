@@ -11,7 +11,6 @@ import { toForm, toPayload } from "./channelFormConversion";
 import {
   aggregateModelGroupKey,
   applyApiKeyDrafts,
-  buildModels,
   createLocalId,
   emptyForm,
   emptyProtocolConfig,
@@ -21,18 +20,6 @@ import {
   protocolConfigModelKey,
 } from "./channelModels";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
-
-/** Splits pasted model names on commas and line breaks. */
-function parseModelNames(value: string) {
-  return Array.from(
-    new Set(
-      value
-        .split(/[\n,，]+/)
-        .map((name) => name.trim())
-        .filter(Boolean),
-    ),
-  );
-}
 
 function validateChannelForm(form: FormState, locale: Locale) {
   const credentials = applyApiKeyDrafts(form).credentials;
@@ -126,10 +113,6 @@ export function useChannelForm(locale: Locale) {
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [formSnapshot, setFormSnapshot] = useState("");
-  const [pendingGroupPlacement, setPendingGroupPlacement] = useState<{
-    group_id: string;
-    model_names: string[];
-  } | null>(null);
   const currentSnapshot = useMemo(
     () =>
       JSON.stringify({
@@ -154,13 +137,11 @@ export function useChannelForm(locale: Locale) {
   }
   function openCreate() {
     setEditingSiteId(null);
-    setPendingGroupPlacement(null);
     applyPreparedForm(emptyForm());
     setIsDialogOpen(true);
   }
   function openEdit(site: Site) {
     setEditingSiteId(site.id);
-    setPendingGroupPlacement(null);
     applyPreparedForm(toForm(site));
     setIsDialogOpen(true);
   }
@@ -306,33 +287,16 @@ export function useChannelForm(locale: Locale) {
     }));
   }
 
-  function addBinding(
-    modelNames: string,
-    protocols: ProtocolKind[],
-    groupId = "",
-  ) {
-    const names = parseModelNames(modelNames);
-    if (!names.length || !protocols.length) return false;
+  /** Replaces one key's model filter; the next sync reconciles its models. */
+  function setCredentialPattern(credentialId: string, pattern: string) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => {
-        const credentialIds = config.credential_ids.length
-          ? config.credential_ids
-          : current.credentials.map((item) => item.id);
-        const newModels = names.flatMap((name) =>
-          buildModels(config, credentialIds, name, protocols),
-        );
-        if (!newModels.length) return config;
-        return {
-          ...config,
-          models: [...config.models, ...newModels],
-        };
-      }),
+      credentials: current.credentials.map((item) =>
+        item.id === credentialId
+          ? { ...item, model_pattern: pattern.trim() }
+          : item,
+      ),
     }));
-    if (groupId) {
-      setPendingGroupPlacement({ group_id: groupId, model_names: names });
-    }
-    return true;
   }
 
   return {
@@ -352,9 +316,7 @@ export function useChannelForm(locale: Locale) {
     updateModelContextWindow,
     removeAggregateModel,
     toggleAggregateEnabled,
-    addBinding,
-    pendingGroupPlacement,
-    setPendingGroupPlacement,
+    setCredentialPattern,
     addBaseUrl,
     updateBaseUrl,
     removeBaseUrl,

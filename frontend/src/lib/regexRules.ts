@@ -1,7 +1,4 @@
-import type { RegexRule, RegexRuleReference } from "@/lib/api/regexRules";
-import { type Locale, titleForLocale } from "@/lib/I18nContext";
-
-const USAGE_NAME_PREVIEW_LIMIT = 5;
+import type { MatchRegexOperator } from "@/lib/api/groups";
 
 /** Compile a rule pattern case-insensitively, or null when empty or invalid. */
 export function compileRegexRulePattern(pattern: string) {
@@ -18,33 +15,19 @@ export function compileRegexRulePattern(pattern: string) {
   }
 }
 
-/** Format how many groups use a rule. */
-export function formatRegexRuleUsage(rule: RegexRule, locale: Locale) {
-  return titleForLocale(
-    locale,
-    `${rule.groups.length} 个模型组`,
-    `${rule.groups.length} groups`,
-  );
-}
-
-function formatReferenceNames(
-  references: RegexRuleReference[],
-  locale: Locale,
+/** Match the group name and its optional local regex. */
+export function matchesModelGroup(
+  groupName: string,
+  modelName: string,
+  pattern: RegExp | null,
+  operator: MatchRegexOperator = "or",
 ) {
-  const names = references
-    .slice(0, USAGE_NAME_PREVIEW_LIMIT)
-    .map((reference) => reference.name)
-    .join(titleForLocale(locale, "、", ", "));
-  return references.length > USAGE_NAME_PREVIEW_LIMIT
-    ? `${names}${titleForLocale(locale, " 等", ", …")}`
-    : names;
-}
-
-/** List the groups that use a rule. */
-export function listRegexRuleUsageLines(rule: RegexRule, locale: Locale) {
-  return [
-    rule.groups.length
-      ? `${titleForLocale(locale, "模型组：", "Groups: ")}${formatReferenceNames(rule.groups, locale)}`
-      : "",
-  ].filter(Boolean);
+  const nameMatches =
+    Boolean(groupName.trim()) &&
+    modelName.toLocaleLowerCase().includes(groupName.toLocaleLowerCase());
+  if (!pattern) return nameMatches;
+  const regexMatches = pattern.test(modelName);
+  return operator === "and"
+    ? nameMatches && regexMatches
+    : nameMatches || regexMatches;
 }

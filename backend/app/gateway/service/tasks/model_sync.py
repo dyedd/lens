@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException
 
 from ....core.errors import ResourceNotFoundError
+from ....core.model_names import ModelPatternKind, classify_model_pattern
 from ....core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ....models.channels import (
     ChannelConfig,
@@ -43,7 +44,10 @@ def channel_for_credential(
 
 
 async def sync_channel_models(
-    state: AppState, *, site_ids: list[str] | None = None
+    state: AppState,
+    *,
+    site_ids: list[str] | None = None,
+    credential_ids: list[str] | None = None,
 ) -> ChannelModelSyncResponse:
     """Run the model pipeline for enabled sites and record the run.
 
@@ -53,6 +57,9 @@ async def sync_channel_models(
     """
     started_at = datetime.now(UTC)
     requested_site_ids = set(site_ids) if site_ids is not None else None
+    requested_credential_ids = (
+        set(credential_ids) if credential_ids is not None else None
+    )
     sites = [
         site
         for site in await state.channel_store.list_sites()
@@ -61,7 +68,7 @@ async def sync_channel_models(
     ]
     items: list[ChannelModelSyncResultItem] = []
     for site in sites:
-        items.extend(await _sync_site_models(state, site))
+        items.extend(await _sync_site_models(state, site, requested_credential_ids))
 
     logger.info(
         "Channel model sync: targets=%s updated=%s failed=%s",
@@ -84,34 +91,31 @@ async def sync_channel_models(
 async def _reconcile_synced_groups(
     state: AppState, items: list[ChannelModelSyncResultItem]
 ) -> ModelGroupReconcileReport:
-    # A failed catalog says nothing about which models vanished upstream.
-    synced_targets = {
-        (item.protocol_config_id, item.credential_id)
-        for item in items
-        if item.status != ChannelModelSyncStatus.FAILED
-    }
     try:
-        report = await state.group_repo.reconcile_group_members(
-            synced_targets=synced_targets
-        )
+        report = await state.group_repo.reconcile_group_members()
     except Exception:
         logger.exception("Model group reconcile after model sync failed")
         return ModelGroupReconcileReport()
     logger.info(
-        "Model sync groups: added=%s created=%s pending=%s retired=%s",
+        "Model sync groups: added=%s created=%s pending=%s removed=%s",
         len(report.added),
         len(report.created_groups),
         len(report.pending),
-        len(report.retired),
+        len(report.removed),
     )
     return report
 
 
 async def _sync_site_models(
-    state: AppState, site: SiteConfig
+    state: AppState,
+    site: SiteConfig,
+    requested_credential_ids: set[str] | None = None,
 ) -> list[ChannelModelSyncResultItem]:
     credential_names = {
         credential.id: credential.name for credential in site.credentials
+    }
+    credential_patterns = {
+        credential.id: credential.model_pattern for credential in site.credentials
     }
     channels_by_config: dict[str, list[ChannelConfig]] = defaultdict(list)
     for channel in state.channel_store.flatten_site(site):
@@ -123,6 +127,11 @@ async def _sync_site_models(
     for protocol_config in site.protocols:
         channels = channels_by_config.get(protocol_config.id, [])
         for credential_id in protocol_config.credential_ids:
+            if (
+                requested_credential_ids is not None
+                and credential_id not in requested_credential_ids
+            ):
+                continue
             item = ChannelModelSyncResultItem(
                 site_id=site.id,
                 site_name=site.name,
@@ -138,6 +147,7 @@ async def _sync_site_models(
                     protocol_config,
                     channels,
                     item,
+                    credential_patterns,
                 )
             except (HTTPException, ResourceNotFoundError, ValueError) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
@@ -152,8 +162,14 @@ async def _sync_credential_models(
     protocol_config: SiteProtocolConfig,
     channels: list[ChannelConfig],
     item: ChannelModelSyncResultItem,
+    credential_patterns: dict[str, str],
 ) -> None:
     # Protocols of one config share a base URL, so one catalog fetch serves all.
+    pattern = credential_patterns.get(item.credential_id, "").strip()
+    if not pattern:
+        return
+    if classify_model_pattern(pattern) is ModelPatternKind.INVALID:
+        raise ValueError("invalid model pattern")
     fetch_channel = next(
         (
             credential_channel
@@ -169,11 +185,15 @@ async def _sync_credential_models(
     if fetch_channel is None:
         raise ValueError("no usable credential for model discovery")
     upstream_models = await fetch_upstream_models(fetch_channel)
+    if not upstream_models:
+        # An empty catalog is a failed fetch, not proof every model vanished.
+        raise ValueError("upstream returned no models")
     upstream_names = {model.name for model in upstream_models}
     changes = await state.channel_store.sync_upstream_models(
         protocol_config.id,
         item.credential_id,
         upstream_names=upstream_names,
+        upstream_pattern=pattern,
         upstream_context_windows={
             model.name: model.context_window
             for model in upstream_models
