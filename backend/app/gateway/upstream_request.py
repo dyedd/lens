@@ -198,16 +198,27 @@ def resolve_channel_api_key(
     )
 
 
+def resolve_proxy_url(
+    proxy_mode: ChannelProxyMode,
+    channel_proxy: str,
+    global_proxy_url: str | None = None,
+) -> str | None:
+    """Resolve the effective proxy URL for one upstream endpoint."""
+    if proxy_mode == ChannelProxyMode.DIRECT:
+        return None
+    if proxy_mode == ChannelProxyMode.CUSTOM:
+        return channel_proxy.strip() or None
+    global_proxy = (global_proxy_url or "").strip()
+    return global_proxy or None
+
+
 def resolve_upstream_proxy_url(
     channel: ChannelConfig, global_proxy_url: str | None = None
 ) -> str | None:
     """Resolve the effective proxy URL for a channel."""
-    if channel.proxy_mode == ChannelProxyMode.DIRECT:
-        return None
-    if channel.proxy_mode == ChannelProxyMode.CUSTOM:
-        return channel.channel_proxy.strip() or None
-    global_proxy = (global_proxy_url or "").strip()
-    return global_proxy or None
+    return resolve_proxy_url(
+        channel.proxy_mode, channel.channel_proxy, global_proxy_url
+    )
 
 
 def resolve_channel_model_list_url(channel: ChannelConfig, api_key: str) -> str:

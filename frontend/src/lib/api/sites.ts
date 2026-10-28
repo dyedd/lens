@@ -232,6 +232,18 @@ export type SiteBatchImportResult = {
   not_committed_count: number;
   items: SiteBatchImportItemResult[];
 };
+export type SiteEndpointProbePayload = {
+  base_url: string;
+  proxy_mode: ChannelProxyMode;
+  channel_proxy: string;
+};
+/** Round-trip time until the endpoint answers with response headers. */
+export type SiteEndpointProbeResult = {
+  success: boolean;
+  status_code: number | null;
+  latency_ms: number;
+  error_message: string;
+};
 export type SiteModelFetchPayload = {
   base_url: string;
   /** Picks the list endpoint and auth headers. */
