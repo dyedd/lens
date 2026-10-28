@@ -110,6 +110,10 @@ class SiteCredentialEntity(Base):
     base_url_id: Mapped[str] = mapped_column(
         String(80), nullable=False, default="", server_default=text("''")
     )
+    # Whole-name filter deciding which upstream models this key keeps.
+    model_pattern: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''")
+    )
 
 
 class SiteCredentialRateEntity(Base):
@@ -162,11 +166,6 @@ class SiteDiscoveredModelEntity(Base):
     enabled: Mapped[int] = enabled_column()
     sort_order: Mapped[int] = sort_order_column()
     protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    upstream_missing: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
-    # When a sync first found the model missing; retirement counts from here.
-    upstream_missing_since: Mapped[datetime | None] = mapped_column(nullable=True)
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
     upstream_context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -184,7 +183,14 @@ class ModelGroupEntity(Base):
     route_group_id: Mapped[str] = mapped_column(
         String(80), nullable=False, default="", index=True
     )
-    # Library regex rules; when set they replace name matching for this group.
+    # The group name matches as a case-insensitive substring.
+    match_regex: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''")
+    )
+    match_regex_operator: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="or", server_default="or"
+    )
+    # Legacy shared-rule references retained for old data and API clients.
     match_rule_ids_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )

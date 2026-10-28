@@ -119,7 +119,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
   return (
     <>
       <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
-        <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
+        <SheetContent className="flex flex-col gap-0 sm:max-w-[520px]">
           <SheetHeader className="shrink-0 px-5 py-4 pr-14">
             <div className="flex items-center gap-3">
               <div className="min-w-0">
@@ -294,7 +294,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
         <SheetContent
           side="right"
           showOverlay={false}
-          className="flex flex-col gap-0 sm:right-[calc(560px+1.5rem)] sm:max-w-[520px]"
+          className="flex flex-col gap-0 sm:right-[calc(520px+1.5rem)] sm:max-w-[520px]"
         >
           <SheetHeader className="shrink-0 px-5 py-4 pr-14">
             <SheetTitle>
@@ -303,7 +303,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
           </SheetHeader>
           <section
             aria-label={locale === "zh-CN" ? "可选模型" : "Available models"}
-            className="mx-5 mb-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/60"
+            className="mx-5 mb-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg"
           >
             <ModelGroupCandidateToolbar
               locale={locale}

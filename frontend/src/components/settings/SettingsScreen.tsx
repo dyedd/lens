@@ -20,7 +20,6 @@ import {
   GeneralSettingsSection,
   ModelTestSettingsSection,
 } from "./ProfileSettingsSections";
-import { RegexRuleLibrarySection } from "./RegexRuleLibrarySection";
 import { createSettingsTabs, SettingsNavigation } from "./SettingsNavigation";
 import { useAccountSettings } from "./useAccountSettings";
 import { useSettingsDraft } from "./useSettingsDraft";
@@ -92,7 +91,6 @@ export function SettingsScreen() {
               locale={locale}
               settings={settings}
             />
-            <RegexRuleLibrarySection locale={locale} />
             <TabsContent value="api-keys" className="mt-0">
               <ApiKeysScreen />
             </TabsContent>

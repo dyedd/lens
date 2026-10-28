@@ -53,6 +53,7 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
             "api_key": row.api_key,
             "sort_order": row.sort_order,
             "base_url_id": row.base_url_id,
+            "model_pattern": row.model_pattern,
             "rate_source": rate.source if rate is not None else "none",
             "rate_protocol_config_id": (
                 rate.protocol_config_id if rate is not None else ""
@@ -78,7 +79,6 @@ async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
                 "protocol": (
                     row.protocol if row.protocol in valid_protocol_values else None
                 ),
-                "upstream_missing": bool(row.upstream_missing),
                 "context_window": coerce_context_window(row.context_window),
                 "upstream_context_window": coerce_context_window(
                     row.upstream_context_window
@@ -243,6 +243,7 @@ async def replace_sites(
                     api_key=credential.api_key,
                     sort_order=credential.sort_order,
                     base_url_id=credential.base_url_id,
+                    model_pattern=credential.model_pattern,
                 )
             )
 
@@ -317,7 +318,6 @@ async def replace_sites(
                         enabled=1 if model.enabled else 0,
                         sort_order=model.sort_order,
                         protocol=model.protocol.value,
-                        upstream_missing=int(model.upstream_missing),
                         context_window=model.context_window,
                         upstream_context_window=model.upstream_context_window,
                     )

@@ -181,8 +181,3 @@ class GroupValidationMixin:
                 f"{reason_label}Model is disabled in channel {item.channel_id} "
                 f"credential={item.credential_id}: {item.model_name}"
             )
-        if reason == ModelGroupItemReason.MODEL_UPSTREAM_MISSING:
-            raise ValueError(
-                f"{reason_label}Model is missing upstream in channel "
-                f"{item.channel_id} credential={item.credential_id}: {item.model_name}"
-            )

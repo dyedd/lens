@@ -1,10 +1,10 @@
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
-import { useRegexRules } from "@/hooks/useRegexRules";
 import type {
+  MatchRegexOperator,
   ModelGroupCandidateItem,
   ModelGroupCandidatesResponse,
 } from "@/lib/api/groups";
-import { compileRegexRulePattern } from "@/lib/regexRules";
+import { compileRegexRulePattern, matchesModelGroup } from "@/lib/regexRules";
 import type { FormState } from "./groupTypes";
 import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
 import { modelGroupItemKey } from "./modelGroupFormatting";
@@ -13,8 +13,9 @@ type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;
   candidateSearch: string;
   expandedChannels: string[];
-  /** Rule ids the group joins by; empty means join by name. */
-  joinRuleIds: string[];
+  /** Local regex combined with the group's name match. */
+  matchRegex: string;
+  matchRegexOperator: MatchRegexOperator;
   locale: "zh-CN" | "en-US";
   setExpandedChannels: Dispatch<SetStateAction<string[]>>;
   setForm: Dispatch<SetStateAction<FormState>>;
@@ -25,22 +26,17 @@ export function useGroupCandidates({
   candidateResponse,
   candidateSearch,
   expandedChannels,
-  joinRuleIds,
+  matchRegex,
+  matchRegexOperator,
   locale,
   setExpandedChannels,
   setForm,
 }: GroupCandidateOptions) {
   const [candidateRegex, setCandidateRegex] = useState(false);
-  const library = useRegexRules();
-  /** The group's rules compiled; empty keeps name matching. */
-  const joinPatterns = useMemo(() => {
-    const rulesById = new Map(library.rules.map((rule) => [rule.id, rule]));
-    return joinRuleIds.flatMap((ruleId) => {
-      const rule = rulesById.get(ruleId);
-      const pattern = rule ? compileRegexRulePattern(rule.pattern) : null;
-      return pattern ? [pattern] : [];
-    });
-  }, [joinRuleIds, library.rules]);
+  const joinPattern = useMemo(
+    () => compileRegexRulePattern(matchRegex),
+    [matchRegex],
+  );
   const candidates = candidateResponse?.candidates;
   function changeName(name: string) {
     setForm((current) => ({ ...current, name }));
@@ -139,11 +135,12 @@ export function useGroupCandidates({
 
   /** Whether saving would join this model back by the group's rules or name. */
   function isAutoJoined(current: FormState, modelName: string) {
-    if (joinPatterns.length) {
-      return joinPatterns.some((joinPattern) => joinPattern.test(modelName));
-    }
-    const name = current.name.trim();
-    return name !== "" && modelName.trim().toLowerCase() === name.toLowerCase();
+    return matchesModelGroup(
+      current.name.trim(),
+      modelName,
+      joinPattern,
+      matchRegexOperator,
+    );
   }
 
   return {

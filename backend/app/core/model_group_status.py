@@ -25,7 +25,6 @@ _UNAVAILABLE_REASONS = frozenset(
         ModelGroupItemReason.CHANNEL_DISABLED,
         ModelGroupItemReason.CREDENTIAL_DISABLED,
         ModelGroupItemReason.MODEL_DISABLED,
-        ModelGroupItemReason.MODEL_UPSTREAM_MISSING,
     }
 )
 
@@ -100,11 +99,8 @@ def evaluate_model_group_item(
     model = channel_lookup.models_by_key.get((item.credential_id, item.model_name))
     if model is None:
         reasons.append(ModelGroupItemReason.MODEL_NOT_FOUND)
-    else:
-        if not model.enabled:
-            reasons.append(ModelGroupItemReason.MODEL_DISABLED)
-        if model.upstream_missing:
-            reasons.append(ModelGroupItemReason.MODEL_UPSTREAM_MISSING)
+    elif not model.enabled:
+        reasons.append(ModelGroupItemReason.MODEL_DISABLED)
 
     return _evaluation(protocol_config_id, protocol, reasons)
 

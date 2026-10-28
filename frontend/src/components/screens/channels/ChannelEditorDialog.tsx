@@ -94,7 +94,7 @@ export function ChannelEditorDialog({
 
   return (
     <Sheet open={isDialogOpen} onOpenChange={handleOpenChange}>
-      <SheetContent className="flex min-w-0 max-w-full flex-col gap-0 sm:max-w-[560px]">
+      <SheetContent className="flex min-w-0 max-w-full flex-col gap-0 sm:max-w-[520px]">
         <SheetHeader className="px-4 pb-4">
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>

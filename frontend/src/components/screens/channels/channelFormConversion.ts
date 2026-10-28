@@ -171,6 +171,7 @@ export function toForm(site: Site): FormState {
     id: persistedCredentialId(item.id),
     name: isGeneratedCredentialName(item.name) ? "" : item.name,
     api_key: item.api_key,
+    model_pattern: item.model_pattern ?? "",
     rate_source: item.rate_source,
     rate_protocol_config_id: item.rate_protocol_config_id,
     rate_group: item.rate_group,
@@ -191,7 +192,6 @@ export function toForm(site: Site): FormState {
         credential_id: persistedCredentialId(model.credential_id),
         model_name: model.model_name,
         enabled: model.enabled,
-        upstream_missing: model.upstream_missing,
         context_window: model.context_window,
         upstream_context_window: model.upstream_context_window,
       })),
@@ -278,6 +278,7 @@ export function toPayload(form: FormState): SitePayload {
       name: item.name.trim() || fallbackCredentialName(index),
       api_key: item.api_key.trim(),
       base_url_id: item.baseUrlId,
+      model_pattern: item.model_pattern.trim(),
       rate_source: item.rate_source,
       rate_protocol_config_id: resolveRateProtocolConfigId(
         item,
@@ -316,7 +317,6 @@ export function toPayload(form: FormState): SitePayload {
             credential_id: persistedCredentialId(model.credential_id),
             model_name: model.model_name.trim(),
             enabled: model.enabled,
-            upstream_missing: model.upstream_missing,
             context_window: model.context_window,
             upstream_context_window: model.upstream_context_window,
           }));

@@ -91,8 +91,6 @@ type Props = {
   onImport: () => void;
   onOpenEdit: (site: Site) => void;
   onManageModels: (site: Site) => void;
-  onReviewPendingModels: (site: Site) => void;
-  onFetchModels: (site: Site) => void;
   onToggleSiteEnabled: (site: Site, enabled: boolean) => void;
   onDelete: (site: Site) => void;
   onBulkEnabled: (sites: Site[], enabled: boolean) => void;
@@ -121,8 +119,6 @@ export function ChannelsOverview({
   onImport,
   onOpenEdit,
   onManageModels,
-  onReviewPendingModels,
-  onFetchModels,
   onToggleSiteEnabled,
   onDelete,
   onBulkEnabled,
@@ -347,8 +343,6 @@ export function ChannelsOverview({
         onSelectOne={selection.toggleId}
         onEdit={onOpenEdit}
         onManageModels={onManageModels}
-        onReviewPendingModels={onReviewPendingModels}
-        onFetchModels={onFetchModels}
         onToggleEnabled={onToggleSiteEnabled}
         onDelete={onDelete}
       />

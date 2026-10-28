@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import AwareDatetime, Field, HttpUrl, field_validator
@@ -30,8 +29,6 @@ class ChannelDiscoveredModel(StrictBaseModel):
     credential_name: str = ""
     model_name: str
     enabled: bool = True
-    upstream_missing: bool = False
-    upstream_missing_since: datetime | None = Field(default=None, exclude=True)
     sort_order: int = Field(default=0, ge=0)
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
@@ -74,6 +71,7 @@ class ChannelConfig(StrictBaseModel):
 
 class ChannelModelSyncRequest(StrictBaseModel):
     site_ids: list[str] | None = None
+    credential_ids: list[str] | None = None
 
 
 class ChannelModelSyncResultItem(StrictBaseModel):
