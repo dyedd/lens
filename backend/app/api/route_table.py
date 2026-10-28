@@ -53,6 +53,7 @@ from ..gateway.service.admin.sites import (
     list_model_health,
     list_model_sync_runs,
     list_sites,
+    probe_endpoint_latency,
     sync_channel_models,
     sync_site_credential_rate,
     test_site_model,
@@ -91,6 +92,7 @@ from ..models.auth import (
 from ..models.backups import ConfigImportResult
 from ..models.channels import ChannelModelSyncResponse
 from ..models.cronjobs import CronjobItem, CronjobRunResult
+from ..models.endpoint_probe import EndpointProbeResult
 from ..models.foreign_imports import ForeignSiteImportPreview
 from ..models.gateway_keys import GatewayApiKey
 from ..models.health import HealthSummary
@@ -207,6 +209,12 @@ def register_sites(app: FastAPI) -> None:
         test_site_model,
         methods=["POST"],
         response_model=SiteModelTestResult,
+    )
+    app.add_api_route(
+        "/api/admin/endpoint-probes",
+        probe_endpoint_latency,
+        methods=["POST"],
+        response_model=EndpointProbeResult,
     )
     app.add_api_route(
         "/api/admin/channel-model-sync",

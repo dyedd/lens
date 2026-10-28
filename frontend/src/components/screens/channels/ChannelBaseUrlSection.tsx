@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/Select";
 import { cn } from "@/lib/classNames";
 import { ChannelCredentialSection } from "./ChannelCredentialSection";
+import { ChannelEndpointProbe } from "./ChannelEndpointProbe";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 type Props = {
@@ -67,13 +68,21 @@ export function ChannelBaseUrlSection({
       >
         {locale === "zh-CN" ? "接口地址" : "Base URL"}
       </Label>
-      <Input
-        id="channel-url"
-        required
-        placeholder="https://api.example.com/v1"
-        value={primary.url}
-        onChange={(event) => onUpdate(0, { url: event.target.value })}
-      />
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Input
+          id="channel-url"
+          required
+          placeholder="https://api.example.com/v1"
+          value={primary.url}
+          onChange={(event) => onUpdate(0, { url: event.target.value })}
+        />
+        <ChannelEndpointProbe
+          url={primary.url}
+          proxyMode={form.proxy_mode}
+          channelProxy={form.channel_proxy}
+          locale={locale}
+        />
+      </div>
       <div className="pt-1">
         <button
           type="button"
@@ -106,7 +115,7 @@ export function ChannelBaseUrlSection({
               return (
                 <div
                   key={baseUrl.id}
-                  className="grid min-w-0 grid-cols-[minmax(0,8rem)_minmax(0,1fr)_1.5rem] items-center gap-2 rounded-md bg-muted/35 p-2.5"
+                  className="grid min-w-0 grid-cols-[10rem_minmax(0,1fr)_1.5rem_1.5rem] items-center gap-2 rounded-md bg-muted/35 p-2.5"
                 >
                   <Select
                     value={baseUrl.kind}
@@ -116,7 +125,7 @@ export function ChannelBaseUrlSection({
                       })
                     }
                   >
-                    <SelectTrigger className="h-7 w-full min-w-0 overflow-hidden px-2">
+                    <SelectTrigger className="h-7 w-full min-w-0 gap-1 px-2 text-xs">
                       <SelectValue className="min-w-0 flex-1 truncate text-left">
                         {endpointLabel(baseUrl.kind)}
                       </SelectValue>
@@ -151,10 +160,16 @@ export function ChannelBaseUrlSection({
                       onUpdate(index, { url: event.target.value })
                     }
                   />
+                  <ChannelEndpointProbe
+                    url={baseUrl.url}
+                    proxyMode={form.proxy_mode}
+                    channelProxy={form.channel_proxy}
+                    locale={locale}
+                  />
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon-xs"
                     className="size-6 justify-self-end text-muted-foreground hover:text-foreground"
                     aria-label={
                       locale === "zh-CN" ? "删除地址" : "Remove endpoint"
@@ -165,7 +180,7 @@ export function ChannelBaseUrlSection({
                   </Button>
                   <label
                     htmlFor={`share-keys-${baseUrl.id}`}
-                    className="col-span-2 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
+                    className="col-span-3 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
                   >
                     <Checkbox
                       id={`share-keys-${baseUrl.id}`}
@@ -196,7 +211,7 @@ export function ChannelBaseUrlSection({
                     {locale === "zh-CN" ? "共用主地址密钥" : "Use primary keys"}
                   </label>
                   {shareKeys ? null : (
-                    <div className="col-span-2 min-w-0">
+                    <div className="col-span-3 min-w-0">
                       <ChannelCredentialSection
                         locale={locale}
                         inputId={`channel-keys-${baseUrl.id}`}
