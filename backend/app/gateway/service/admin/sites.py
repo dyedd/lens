@@ -9,6 +9,7 @@ from ....models.channels import (
     ChannelModelSyncRequest,
     ChannelModelSyncResponse,
 )
+from ....models.endpoint_probe import EndpointProbeRequest, EndpointProbeResult
 from ....models.health import HealthSummary
 from ....models.site_import import SiteBatchImportRequest, SiteBatchImportResult
 from ....models.site_model_test import (
@@ -178,6 +179,15 @@ async def test_site_model(
 ) -> SiteModelTestResult:
     """Probe one site model with the supplied request settings."""
     return await run_site_model_probe(payload, request)
+
+
+async def probe_endpoint_latency(
+    payload: EndpointProbeRequest, _: Any = Depends(get_current_admin)
+) -> EndpointProbeResult:
+    """Time one upstream address from the gateway host."""
+    from ..tasks.endpoint_probe import probe_endpoint
+
+    return await probe_endpoint(payload)
 
 
 async def sync_channel_models(
