@@ -5,6 +5,7 @@ from .contract import (
     EXT_REQUEST_OBSERVER,
     EXT_UPSTREAM_CREDENTIAL,
     EXT_UPSTREAM_REQUEST,
+    EXT_UPSTREAM_RESPONSE,
     PLUGIN_API_VERSION,
     CatalogEntry,
     CronjobContribution,
@@ -12,19 +13,23 @@ from .contract import (
     PluginContext,
     PluginDefinition,
     PluginManifest,
+    PluginSetting,
     RequestObserver,
     RequestRecord,
+    ResponseHook,
     TaskHandler,
     UpstreamCall,
     UpstreamHook,
+    UpstreamResponse,
 )
-from .registry import PluginRegistry
+from .registry import PluginRegistry, PluginSettingsError
 
 __all__ = [
     "EXT_MODEL_CATALOG",
     "EXT_REQUEST_OBSERVER",
     "EXT_UPSTREAM_CREDENTIAL",
     "EXT_UPSTREAM_REQUEST",
+    "EXT_UPSTREAM_RESPONSE",
     "PLUGIN_API_VERSION",
     "CatalogEntry",
     "CronjobContribution",
@@ -33,9 +38,13 @@ __all__ = [
     "PluginDefinition",
     "PluginManifest",
     "PluginRegistry",
+    "PluginSetting",
+    "PluginSettingsError",
     "RequestObserver",
     "RequestRecord",
+    "ResponseHook",
     "TaskHandler",
     "UpstreamCall",
     "UpstreamHook",
+    "UpstreamResponse",
 ]

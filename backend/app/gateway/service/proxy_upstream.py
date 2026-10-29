@@ -13,8 +13,8 @@ from fastapi import Response
 from ...core.context_windows import is_context_window_exceeded_error
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
-from ...plugins.contract import UpstreamCall
-from ...plugins.upstream import apply_upstream_hooks
+from ...plugins.contract import UpstreamCall, UpstreamResponse
+from ...plugins.upstream import apply_response_hooks, apply_upstream_hooks
 from ..converters import (
     convert_response,
     convert_stream_iterator,
@@ -418,6 +418,18 @@ async def _build_json_result(
             )
         except ValueError as exc:
             raise _invalid_upstream("Invalid upstream response", exc) from exc
+
+    hooked = await apply_response_hooks(
+        UpstreamResponse(
+            channel=channel,
+            protocol=channel.protocol.value,
+            status_code=response.status_code,
+            headers=passthrough_headers(response.headers),
+            content=content,
+        ),
+        app_state.plugin_registry.response_hooks(),
+    )
+    content = hooked.content
 
     return await _json_upstream_result(
         response,

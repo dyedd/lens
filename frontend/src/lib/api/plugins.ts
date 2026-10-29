@@ -1,4 +1,13 @@
-export type PluginState = "active" | "disabled" | "failed";
+export type PluginState = "active" | "pending" | "disabled" | "failed";
+
+export type PluginSetting = {
+  key: string;
+  label: string;
+  type: "bool" | "int" | "string" | "enum";
+  description: string;
+  options: string[];
+  value: string | number | boolean;
+};
 
 export type PluginItem = {
   id: string;
@@ -10,5 +19,7 @@ export type PluginItem = {
   source: "builtin" | "external";
   state: PluginState;
   error: string;
+  requires: string[];
   extensions: string[];
+  settings: PluginSetting[];
 };

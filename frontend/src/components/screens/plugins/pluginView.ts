@@ -3,6 +3,7 @@ import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 const PLUGIN_TITLES: Record<string, [string, string]> = {
   channel_credential_bridge: ["自定义渠道凭据", "Custom channel credential"],
+  response_header_stamp: ["响应标记", "Response stamp"],
 };
 
 const PLUGIN_DESCRIPTIONS: Record<string, [string, string]> = {
@@ -10,17 +11,23 @@ const PLUGIN_DESCRIPTIONS: Record<string, [string, string]> = {
     "为指定渠道改用插件提供的鉴权头，并改写请求、补齐模型、观察请求",
     "Swap a channel credential for one the plugin issues",
   ],
+  response_header_stamp: [
+    "给经自定义渠道凭据插件处理的响应补一个标记头",
+    "Stamp responses handled by the credential plugin",
+  ],
 };
 
 const EXTENSION_LABELS: Record<string, [string, string]> = {
   upstream_request: ["请求改写", "Request rewrite"],
   upstream_credential: ["渠道鉴权", "Channel credential"],
+  upstream_response: ["响应改写", "Response rewrite"],
   request_observer: ["请求观察", "Request observer"],
   model_catalog: ["模型目录", "Model catalog"],
 };
 
 const STATE_LABELS: Record<PluginState, [string, string]> = {
   active: ["已启用", "Enabled"],
+  pending: ["等待依赖", "Waiting"],
   disabled: ["已停用", "Disabled"],
   failed: ["异常", "Failed"],
 };

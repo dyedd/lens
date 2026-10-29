@@ -2,7 +2,7 @@
 
 四个能力都演示在同一插件里，方便对照扩展点写法：
 
-1. `upstream_request`：给出站请求加标记头。
+1. `upstream_request`：给出站请求加标记头（头名可配置）。
 2. `upstream_credential`：把渠道里保存的密钥换成插件签发的凭据头。
 3. `model_catalog`：为匹配渠道补充一个上游没返回的模型。
 4. `request_observer`：只读地记录已完成请求，不改变任何结果。
@@ -25,6 +25,7 @@ from ..contract import (
     PluginContext,
     PluginDefinition,
     PluginManifest,
+    PluginSetting,
     RequestRecord,
     UpstreamCall,
 )
@@ -35,8 +36,30 @@ MANIFEST = PluginManifest(
     id="channel_credential_bridge",
     name="自定义渠道凭据",
     description="为指定渠道改用插件提供的鉴权头，并补齐请求、模型与请求观察",
-    version="0.2.0",
+    version="0.3.0",
     author="Lens",
+    settings=(
+        PluginSetting(
+            key="marker_header",
+            label="请求标记头",
+            type="string",
+            default="x-lens-plugin",
+            description="写进出站请求的头名称；留空则不加",
+        ),
+        PluginSetting(
+            key="credential",
+            label="签发的凭据",
+            type="string",
+            default="plugin-issued-credential",
+            description="替换渠道密钥时使用的 Bearer 值",
+        ),
+        PluginSetting(
+            key="observe",
+            label="记录请求",
+            type="bool",
+            default=True,
+        ),
+    ),
 )
 
 # 只接管明确标记为自定义代理模式的渠道，避免影响平台默认鉴权。
@@ -44,7 +67,10 @@ MATCHED_PROXY_MODE = ChannelProxyMode.CUSTOM
 
 
 class RequestRewriteHook:
-    """给出站请求加一个标记头。"""
+    """给出站请求加一个可配置的标记头。"""
+
+    def __init__(self, marker_header: str) -> None:
+        self.marker_header = marker_header
 
     def extension(self) -> str:
         return EXT_UPSTREAM_REQUEST
@@ -53,7 +79,10 @@ class RequestRewriteHook:
         return call.channel.proxy_mode == MATCHED_PROXY_MODE
 
     async def apply(self, call: UpstreamCall) -> UpstreamCall:
-        headers = {**call.headers, "x-lens-plugin": MANIFEST.id}
+        headers = dict(call.headers)
+        marker = self.marker_header.strip()
+        if marker:
+            headers[marker] = MANIFEST.id
         return UpstreamCall(
             channel=call.channel,
             protocol=call.protocol,
@@ -67,6 +96,9 @@ class RequestRewriteHook:
 class ChannelCredentialHook:
     """把渠道凭据换成插件签发的那一份。"""
 
+    def __init__(self, credential: str) -> None:
+        self.credential = credential
+
     def extension(self) -> str:
         return EXT_UPSTREAM_CREDENTIAL
 
@@ -74,7 +106,7 @@ class ChannelCredentialHook:
         return call.channel.proxy_mode == MATCHED_PROXY_MODE
 
     async def apply(self, call: UpstreamCall) -> UpstreamCall:
-        headers = {**call.headers, "authorization": "Bearer plugin-issued-credential"}
+        headers = {**call.headers, "authorization": f"Bearer {self.credential}"}
         return UpstreamCall(
             channel=call.channel,
             protocol=call.protocol,
@@ -114,10 +146,18 @@ class RequestLogObserver:
 
 
 def register(context: PluginContext) -> None:
-    context.add_upstream_hook(RequestRewriteHook())
-    context.add_upstream_hook(ChannelCredentialHook())
+    settings = context.settings
+    context.add_upstream_hook(
+        RequestRewriteHook(str(settings.get("marker_header", "x-lens-plugin")))
+    )
+    context.add_upstream_hook(
+        ChannelCredentialHook(
+            str(settings.get("credential", "plugin-issued-credential"))
+        )
+    )
     context.add_model_catalog_hook(ExtraModelCatalog())
-    context.add_request_observer(RequestLogObserver())
+    if settings.get("observe", True):
+        context.add_request_observer(RequestLogObserver())
 
 
 PLUGIN = PluginDefinition(manifest=MANIFEST, register=register)

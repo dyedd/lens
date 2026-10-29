@@ -21,10 +21,30 @@ data/plugins/<plugin_id>.py            # 单文件形式
 | --- | --- | --- |
 | `upstream_request` | 改写出站请求 | `matches(call)` / `async apply(call) -> UpstreamCall` |
 | `upstream_credential` | 为渠道签发凭据 | 同上，改 `headers` 即可替换鉴权 |
+| `upstream_response` | 改写上游返回的响应（非流式） | `matches(response)` / `async apply(response) -> UpstreamResponse` |
 | `request_observer` | 只读观察已完成请求 | `async completed(record) -> None` |
 | `model_catalog` | 为渠道补充模型 | `matches(channel)` / `async models(channel) -> [CatalogEntry]` |
 
 所有扩展点 **fail open**：插件抛错只记录日志，请求照原样发出。
+
+## 设置与依赖
+
+清单里可以声明设置项，Lens 会为它生成表单，值在 `context.settings` 里读取：
+
+```python
+settings=(
+    PluginSetting(key="marker_header", label="标记头", type="string", default="x-lens-plugin"),
+    PluginSetting(key="observe", label="记录请求", type="bool", default=True),
+),
+```
+
+类型支持 `bool` / `int` / `string` / `enum`（`enum` 需给 `options`）。保存设置后会重新注册插件，因此新的值立即生效。
+
+`requires=("other_plugin",)` 声明依赖：依赖被停用时，本插件进入 `pending`，不挂任何扩展点。
+
+## 热加载
+
+改完插件文件后调用 `POST /api/admin/plugins/reload`（设置页右上角的重扫按钮）即可，无需重启进程。
 
 ## 写一个插件
 

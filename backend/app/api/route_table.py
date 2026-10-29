@@ -39,7 +39,12 @@ from ..gateway.service.admin.ops import (
     update_model_price,
     update_settings,
 )
-from ..gateway.service.admin.plugins import list_plugins, update_plugin
+from ..gateway.service.admin.plugins import (
+    list_plugins,
+    reload_plugins,
+    update_plugin,
+    update_plugin_settings,
+)
 from ..gateway.service.admin.sites import (
     create_site,
     delete_site,
@@ -414,6 +419,18 @@ def register_plugins(app: FastAPI) -> None:
         update_plugin,
         methods=["PUT"],
         response_model=PluginView,
+    )
+    app.add_api_route(
+        "/api/admin/plugins/{plugin_id}/settings",
+        update_plugin_settings,
+        methods=["PUT"],
+        response_model=PluginView,
+    )
+    app.add_api_route(
+        "/api/admin/plugins/reload",
+        reload_plugins,
+        methods=["POST"],
+        response_model=list[PluginView],
     )
 
 

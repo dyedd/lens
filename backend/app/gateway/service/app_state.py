@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -172,6 +173,21 @@ class AppState:
         for client in clients:
             if not client.is_closed:
                 await client.aclose()
+
+    async def set_plugin_settings(
+        self, plugin_id: str, values: dict[str, Any]
+    ) -> PluginView:
+        """校验并保存插件设置，然后重新组合扩展点。"""
+        view = await self.plugin_registry.set_settings(plugin_id, values)
+        self._apply_plugin_contributions()
+        return view
+
+    async def reload_plugins(self) -> list[PluginView]:
+        """重新扫描插件目录并重建，无需重启进程。"""
+        self.plugin_registry.reload((*BUILTIN_PLUGINS, *discover_external_plugins()))
+        self._apply_plugin_contributions()
+        await self.cronjob_runner.ensure_cronjobs()
+        return self.plugin_registry.views()
 
     async def load_plugins(self) -> None:
         """读取插件启停状态，重新组合扩展点。"""

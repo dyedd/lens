@@ -15,8 +15,10 @@ from .contract import (
     ModelCatalogHook,
     RequestObserver,
     RequestRecord,
+    ResponseHook,
     UpstreamCall,
     UpstreamHook,
+    UpstreamResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,21 @@ async def apply_upstream_hooks(
             current = await hook.apply(current)
         except Exception:
             logger.exception("Upstream hook failed: %s", hook.extension())
+    return current
+
+
+async def apply_response_hooks(
+    response: UpstreamResponse, hooks: Iterable[ResponseHook]
+) -> UpstreamResponse:
+    """依次应用匹配的响应钩子，返回最终响应。"""
+    current = response
+    for hook in hooks:
+        try:
+            if not hook.matches(current):
+                continue
+            current = await hook.apply(current)
+        except Exception:
+            logger.exception("Response hook failed: %s", hook.extension())
     return current
 
 

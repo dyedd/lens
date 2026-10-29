@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RotateCcw } from "lucide-react";
+import { RefreshCw, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { SettingsSection } from "@/components/settings/settingsLayout";
@@ -26,6 +26,12 @@ export function PluginsScreen() {
     staleTime: 10_000,
   });
 
+  function replacePlugin(plugin: PluginItem) {
+    queryClient.setQueryData<PluginItem[]>(["plugins"], (current) =>
+      (current ?? []).map((item) => (item.id === plugin.id ? plugin : item)),
+    );
+  }
+
   const togglePlugin = useMutation({
     mutationFn: ({
       plugin,
@@ -36,16 +42,10 @@ export function PluginsScreen() {
     }) =>
       apiRequest<PluginItem>(
         `/admin/plugins/${encodeURIComponent(plugin.id)}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ enabled }),
-        },
+        { method: "PUT", body: JSON.stringify({ enabled }) },
       ),
     onSuccess: (plugin) => {
-      queryClient.setQueryData<PluginItem[]>(["plugins"], (current) =>
-        (current ?? []).map((item) => (item.id === plugin.id ? plugin : item)),
-      );
-      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
+      replacePlugin(plugin);
       toast.success(
         titleForLocale(
           locale,
@@ -65,30 +65,115 @@ export function PluginsScreen() {
     },
   });
 
+  const saveSettings = useMutation({
+    mutationFn: ({
+      plugin,
+      key,
+      value,
+    }: {
+      plugin: PluginItem;
+      key: string;
+      value: string | number | boolean;
+    }) =>
+      apiRequest<PluginItem>(
+        `/admin/plugins/${encodeURIComponent(plugin.id)}/settings`,
+        { method: "PUT", body: JSON.stringify({ values: { [key]: value } }) },
+      ),
+    onSuccess: (plugin) => {
+      replacePlugin(plugin);
+      toast.success(
+        titleForLocale(locale, "插件设置已保存", "Plugin settings saved"),
+      );
+    },
+    onError: (error) => {
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
+      toast.error(
+        getApiErrorMessage(
+          error,
+          titleForLocale(locale, "保存插件设置失败", "Failed to save settings"),
+        ),
+      );
+    },
+  });
+
+  const reloadPlugins = useMutation({
+    mutationFn: () =>
+      apiRequest<PluginItem[]>("/admin/plugins/reload", { method: "POST" }),
+    onSuccess: (plugins) => {
+      queryClient.setQueryData(["plugins"], plugins);
+      toast.success(
+        titleForLocale(locale, "插件已重新加载", "Plugins reloaded"),
+      );
+    },
+    onError: (error) =>
+      toast.error(
+        getApiErrorMessage(
+          error,
+          titleForLocale(
+            locale,
+            "重新加载插件失败",
+            "Failed to reload plugins",
+          ),
+        ),
+      ),
+  });
+
   const plugins = pluginsQuery.data ?? [];
+  const busyPluginId = togglePlugin.isPending
+    ? togglePlugin.variables?.plugin.id
+    : saveSettings.isPending
+      ? saveSettings.variables?.plugin.id
+      : undefined;
 
   return (
     <>
       <DashboardHeaderActions>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              type="button"
-              aria-label={titleForLocale(locale, "刷新", "Refresh")}
-              onClick={() =>
-                void queryClient.invalidateQueries({ queryKey: ["plugins"] })
-              }
-              disabled={pluginsQuery.isFetching}
-            >
-              <RotateCcw data-icon="inline-start" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {titleForLocale(locale, "刷新", "Refresh")}
-          </TooltipContent>
-        </Tooltip>
+        <div className="flex items-center justify-end gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                aria-label={titleForLocale(
+                  locale,
+                  "重新扫描插件",
+                  "Rescan plugins",
+                )}
+                onClick={() => reloadPlugins.mutate()}
+                disabled={reloadPlugins.isPending}
+              >
+                <RefreshCw data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {titleForLocale(
+                locale,
+                "重新扫描插件目录",
+                "Rescan plugin directory",
+              )}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                aria-label={titleForLocale(locale, "刷新", "Refresh")}
+                onClick={() =>
+                  void queryClient.invalidateQueries({ queryKey: ["plugins"] })
+                }
+                disabled={pluginsQuery.isFetching}
+              >
+                <RotateCcw data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {titleForLocale(locale, "刷新", "Refresh")}
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </DashboardHeaderActions>
       <SettingsSection title={titleForLocale(locale, "插件", "Plugins")}>
         <PluginsTable
@@ -96,13 +181,12 @@ export function PluginsScreen() {
           plugins={plugins}
           isFetching={pluginsQuery.isFetching}
           pluginsIsError={pluginsQuery.isError}
-          togglingPluginId={
-            togglePlugin.isPending
-              ? togglePlugin.variables?.plugin.id
-              : undefined
-          }
+          busyPluginId={busyPluginId}
           onToggleEnabled={(plugin, enabled) =>
             togglePlugin.mutate({ plugin, enabled })
+          }
+          onChangeSetting={(plugin, key, value) =>
+            saveSettings.mutate({ plugin, key, value })
           }
         />
       </SettingsSection>
