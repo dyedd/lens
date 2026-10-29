@@ -34,9 +34,11 @@ type Props = {
   locale: Locale;
   channelName: string;
   loading: boolean;
+  /** Protocols of the selected models are being detected. */
+  importing: boolean;
   onOpenChange: (open: boolean) => void;
   onLoad: () => Promise<RemoteModelCatalog | null>;
-  onImport: (items: PickerModelItem[]) => void;
+  onImport: (items: PickerModelItem[]) => Promise<void>;
 };
 
 function statusLabel(status: CatalogRow["status"], locale: Locale) {
@@ -50,6 +52,7 @@ export function ChannelRemoteModelsDialog({
   locale,
   channelName,
   loading,
+  importing,
   onOpenChange,
   onLoad,
   onImport,
@@ -115,11 +118,11 @@ export function ChannelRemoteModelsDialog({
     });
   }
 
-  function importSelected() {
+  async function importSelected() {
     const items = (catalog?.items ?? []).filter((item) =>
       selected.has(item.model_name),
     );
-    onImport(items);
+    await onImport(items);
     toast.success(
       locale === "zh-CN"
         ? `已加入 ${selected.size} 个模型，保存后同步生效。`
@@ -158,13 +161,21 @@ export function ChannelRemoteModelsDialog({
             <Button
               type="button"
               size="sm"
-              disabled={loading || selected.size === 0}
-              onClick={importSelected}
+              disabled={loading || importing || selected.size === 0}
+              onClick={() => void importSelected()}
             >
-              <CloudDownload className="size-3.5" />
-              {locale === "zh-CN"
-                ? `加入所选 ${selected.size}`
-                : `Add selected ${selected.size}`}
+              {importing ? (
+                <RefreshCw className="size-3.5 animate-spin" />
+              ) : (
+                <CloudDownload className="size-3.5" />
+              )}
+              {importing
+                ? locale === "zh-CN"
+                  ? "识别协议中..."
+                  : "Detecting protocols..."
+                : locale === "zh-CN"
+                  ? `加入所选 ${selected.size}`
+                  : `Add selected ${selected.size}`}
             </Button>
           </>
         }

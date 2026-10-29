@@ -43,9 +43,9 @@ def test_fetch_site_models_uses_selected_credentials(
             UpstreamModel(name="gpt-4o-mini"),
         ]
 
-    import app.gateway.service.admin.sites as sites
+    import app.gateway.service.tasks.model_discovery as model_discovery
 
-    monkeypatch.setattr(sites, "fetch_upstream_models", fake_fetch)
+    monkeypatch.setattr(model_discovery, "fetch_upstream_models", fake_fetch)
 
     response = client.post(
         "/api/admin/site-model-discoveries",
@@ -150,6 +150,112 @@ def test_fetch_site_models_uses_protocol_native_model_list(
         assert request.headers[name] == value
 
 
+def test_fetch_site_models_falls_back_to_a_native_model_list(
+    client, admin_headers, monkeypatch
+) -> None:
+    import app.gateway.service.tasks.model_discovery as model_discovery
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "authorization" in request.headers:
+            return httpx.Response(401, json={"error": {"message": "bad key"}})
+        return httpx.Response(200, json={"data": [{"id": "claude-sonnet-4-5"}]})
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        model_discovery, "resolve_http_client", lambda _proxy: upstream_client
+    )
+
+    response = client.post(
+        "/api/admin/site-model-discoveries",
+        headers=admin_headers,
+        json={
+            "base_url": "https://upstream.example",
+            "credentials": [{"id": "cred-a", "name": "primary", "api_key": "sk-test"}],
+            "credential_ids": ["cred-a"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert [item["model_name"] for item in response.json()] == ["claude-sonnet-4-5"]
+
+
+def test_detect_site_model_protocols_probes_only_open_chat_models(
+    client, admin_headers, monkeypatch
+) -> None:
+    import app.gateway.service.tasks.model_discovery as model_discovery
+    import app.gateway.service.tasks.site_model_probe as probe
+
+    probes: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "deepseek-chat", "supported_endpoint_types": ["openai"]},
+                        {"id": "gpt-5"},
+                        {"id": "claude-sonnet-4-5"},
+                        {"id": "text-embedding-3-small"},
+                        {"id": "mystery-model"},
+                    ]
+                },
+            )
+        model = json.loads(request.content)["model"]
+        probes.append((model, request.url.path))
+        if model == "mystery-model":
+            return httpx.Response(404, json={"error": {"message": "no route"}})
+        if request.url.path == "/v1/messages":
+            return httpx.Response(
+                200, json={"content": [{"type": "text", "text": "hello"}]}
+            )
+        if request.url.path == "/v1/chat/completions":
+            return httpx.Response(
+                200, json={"choices": [{"message": {"content": "hello"}}]}
+            )
+        return httpx.Response(404, json={"error": {"message": "no route"}})
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        model_discovery, "resolve_http_client", lambda _proxy: upstream_client
+    )
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
+
+    response = client.post(
+        "/api/admin/site-model-protocol-detections",
+        headers=admin_headers,
+        json={
+            "base_url": "https://upstream.example",
+            "credential": {"id": "cred-a", "api_key": "sk-test"},
+            "model_names": [
+                "deepseek-chat",
+                "gpt-5",
+                "claude-sonnet-4-5",
+                "text-embedding-3-small",
+                "mystery-model",
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert {item["model_name"]: item["protocol"] for item in response.json()} == {
+        "deepseek-chat": "openai_chat",
+        "gpt-5": "openai_chat",
+        "claude-sonnet-4-5": "anthropic",
+        "text-embedding-3-small": "openai_embedding",
+        "mystery-model": None,
+    }
+    assert {model for model, _path in probes} == {
+        "gpt-5",
+        "claude-sonnet-4-5",
+        "mystery-model",
+    }
+    assert [path for model, path in probes if model == "gpt-5"] == [
+        "/v1/responses",
+        "/v1/chat/completions",
+    ]
+
+
 def test_fetch_site_models_reports_missing_credentials(client, admin_headers) -> None:
     response = client.post(
         "/api/admin/site-model-discoveries",
@@ -189,9 +295,9 @@ def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
     async def failing_fetch(_channel: Any) -> list[str]:
         raise HTTPException(status_code=503, detail="upstream unavailable")
 
-    import app.gateway.service.admin.sites as sites
+    import app.gateway.service.tasks.model_discovery as model_discovery
 
-    monkeypatch.setattr(sites, "fetch_upstream_models", failing_fetch)
+    monkeypatch.setattr(model_discovery, "fetch_upstream_models", failing_fetch)
 
     response = client.post(
         "/api/admin/site-model-discoveries",
@@ -651,6 +757,42 @@ def test_channel_model_sync_wildcard_filter_takes_every_model(
     assert _stored_models(client, admin_headers) == {
         ("cred-a", "gpt-4o"),
         ("cred-a", "claude-3-opus"),
+    }
+
+
+def test_channel_model_sync_stores_a_protocol_per_new_model(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    from app.gateway.service.tasks.model_discovery import UpstreamModel
+
+    _create_sync_site(
+        client, admin_headers, _sync_site_payload(patterns={"cred-a": "*"})
+    )
+
+    async def fake_fetch(_channel: Any) -> list[UpstreamModel]:
+        return [
+            UpstreamModel(name="gpt-4o"),
+            UpstreamModel(name="text-embedding-3-small"),
+            UpstreamModel(
+                name="claude-sonnet-4-5",
+                protocols=(ProtocolKind.OPENAI_CHAT, ProtocolKind.ANTHROPIC),
+            ),
+        ]
+
+    _patch_upstream_models(monkeypatch, fake_fetch)
+
+    _run_model_sync(client, admin_headers)
+    site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+
+    assert {
+        (model["model_name"], model["protocol"])
+        for model in site["protocols"][0]["models"]
+    } == {
+        ("gpt-4o", "openai_chat"),
+        ("text-embedding-3-small", "openai_embedding"),
+        ("claude-sonnet-4-5", "anthropic"),
     }
 
 

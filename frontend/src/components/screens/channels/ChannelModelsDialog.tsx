@@ -5,9 +5,13 @@ import {
   CloudDownload,
   Funnel,
   Plus,
+  Wand2,
 } from "lucide-react";
 import { type FormEventHandler, useMemo, useState } from "react";
-import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
+import {
+  BulkActionButton,
+  BulkActionsPopover,
+} from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
@@ -67,6 +71,8 @@ type Props = {
   onDelete: (key: string) => void;
   onTest: (key: string) => void;
   testing: boolean;
+  detecting: boolean;
+  onDetectProtocols: (keys: string[]) => Promise<void>;
   onOpenRemote: () => void;
   /** Keys whose model rule can be edited, with their current filters. */
   credentialOptions: Array<{ id: string; label: string; pattern: string }>;
@@ -99,6 +105,8 @@ function ChannelModelsBody({
   onDelete,
   onTest,
   testing,
+  detecting,
+  onDetectProtocols,
   onOpenRemote,
   credentialOptions,
   onUpdateCredentialPattern,
@@ -298,6 +306,20 @@ function ChannelModelsBody({
             }}
             onDelete={() => requestRemoval(selectedKeys)}
           >
+            <BulkActionButton
+              icon={<Wand2 className="size-3.5" />}
+              label={
+                detecting
+                  ? locale === "zh-CN"
+                    ? "识别协议中..."
+                    : "Detecting protocols..."
+                  : locale === "zh-CN"
+                    ? "自动识别协议"
+                    : "Detect protocols"
+              }
+              isBusy={detecting}
+              onClick={() => void onDetectProtocols(selectedKeys)}
+            />
             <div className="mt-1 flex h-7 w-full items-center gap-1.5">
               <Button
                 type="button"
