@@ -19,28 +19,30 @@ def _cronjob_ids(client: TestClient, admin_headers: dict[str, str]) -> set[str]:
     return {item["id"] for item in response.json()}
 
 
-def test_plugin_toggle_controls_its_cronjobs(
+def test_plugin_extension_round_trip(
     client: TestClient, admin_headers: dict[str, str]
 ) -> None:
     plugins = _list_plugins(client, admin_headers)
-    price_sync = plugins["model_price_sync"]
-    assert price_sync["state"] == "active"
-    assert [task["id"] for task in price_sync["cronjobs"]] == ["model_price_sync"]
+    bridge = plugins["channel_credential_bridge"]
+    assert bridge["state"] == "active"
+    assert bridge["extensions"] == ["upstream_credential"]
 
+    # 平台自身的计划任务不因插件启停而消失。
     disable_response = client.put(
-        "/api/admin/plugins/model_price_sync",
+        "/api/admin/plugins/channel_credential_bridge",
         headers=admin_headers,
         json={"enabled": False},
     )
     assert disable_response.status_code == 200, disable_response.text
-    assert disable_response.json()["state"] == "disabled"
-    assert "model_price_sync" not in _cronjob_ids(client, admin_headers)
+    disabled = disable_response.json()
+    assert disabled["state"] == "disabled"
+    assert disabled["extensions"] == []
+    assert {"version_check", "model_price_sync"} <= _cronjob_ids(client, admin_headers)
 
     enable_response = client.put(
-        "/api/admin/plugins/model_price_sync",
+        "/api/admin/plugins/channel_credential_bridge",
         headers=admin_headers,
         json={"enabled": True},
     )
     assert enable_response.status_code == 200, enable_response.text
-    assert enable_response.json()["state"] == "active"
-    assert "model_price_sync" in _cronjob_ids(client, admin_headers)
+    assert enable_response.json()["extensions"] == ["upstream_credential"]

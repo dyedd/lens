@@ -13,6 +13,8 @@ from fastapi import Response
 from ...core.context_windows import is_context_window_exceeded_error
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
+from ...plugins.contract import UpstreamCall
+from ...plugins.upstream import apply_upstream_hooks
 from ..converters import (
     convert_response,
     convert_stream_iterator,
@@ -23,7 +25,11 @@ from ..router.cooldown import (
     ErrorCategory,
     classify_error,
 )
-from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
+from ..upstream_request import (
+    UpstreamRequest,
+    build_upstream_request,
+    resolve_upstream_proxy_url,
+)
 from .app_state import app_state
 from .error_responses import stream_error_frame
 from .payload_serialization import (
@@ -433,7 +439,7 @@ async def _build_json_result(
     )
 
 
-def prepare_upstream_request(
+async def prepare_upstream_request(
     channel: ChannelConfig,
     body: dict[str, Any],
     *,
@@ -456,6 +462,23 @@ def prepare_upstream_request(
         upstream_headers_config=upstream_headers_config,
         model_group_headers=model_group_headers,
         path_suffix=path_suffix,
+    )
+    hooked = await apply_upstream_hooks(
+        UpstreamCall(
+            channel=channel,
+            protocol=channel.protocol.value,
+            url=upstream.url,
+            headers=dict(upstream.headers),
+            body=upstream.json_body,
+            credential_id=credential_id,
+        ),
+        app_state.plugin_registry.upstream_hooks(),
+    )
+    upstream = UpstreamRequest(
+        method=upstream.method,
+        url=hooked.url,
+        headers=dict(hooked.headers),
+        json_body=hooked.body,
     )
     if multipart_files is not None:
         multipart_request = httpx.Request(

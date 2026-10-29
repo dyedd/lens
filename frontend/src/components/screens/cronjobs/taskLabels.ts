@@ -1,6 +1,6 @@
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-/** 计划任务与插件共用的本地化标题，按 id 对齐后端清单。 */
+/** 计划任务的本地化标题，按 id 对齐后端清单。 */
 export const TASK_TITLES: Record<string, [string, string]> = {
   request_log_prune: ["请求日志清理", "Request log cleanup"],
   model_price_sync: ["模型价格同步", "Model price sync"],

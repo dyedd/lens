@@ -1,33 +1,20 @@
 import type { PluginItem, PluginState } from "@/lib/api/plugins";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-import { taskTitle } from "../cronjobs/taskLabels";
+const PLUGIN_TITLES: Record<string, [string, string]> = {
+  channel_credential_bridge: ["自定义渠道凭据", "Custom channel credential"],
+};
 
 const PLUGIN_DESCRIPTIONS: Record<string, [string, string]> = {
-  request_log_prune: [
-    "按日志保留天数清理过期请求日志",
-    "Remove expired request logs by the retention period",
+  channel_credential_bridge: [
+    "为指定渠道改用插件提供的鉴权头，并改写它的出站请求",
+    "Swap a channel's upstream credential for one the plugin supplies",
   ],
-  model_price_sync: [
-    "从 LiteLLM 同步模型价格",
-    "Sync model prices from LiteLLM",
-  ],
-  request_log_stats_persist: [
-    "归档请求日志统计数据",
-    "Archive request log statistics",
-  ],
-  version_check: [
-    "检测 GitHub releases 是否有新版本",
-    "Check GitHub releases for a newer version",
-  ],
-  channel_model_sync: [
-    "为启用的渠道拉取上游模型，按凭证规则保存匹配项",
-    "Pull upstream models for enabled channels and keep the credential matches",
-  ],
-  credential_rate_sync: [
-    "同步 Sub2API 有效倍率与 NewAPI 分组参考倍率",
-    "Sync Sub2API effective rates and NewAPI group reference rates",
-  ],
+};
+
+const EXTENSION_LABELS: Record<string, [string, string]> = {
+  upstream_credential: ["渠道鉴权", "Channel credential"],
+  upstream_headers: ["请求改写", "Request rewrite"],
 };
 
 const STATE_LABELS: Record<PluginState, [string, string]> = {
@@ -37,7 +24,8 @@ const STATE_LABELS: Record<PluginState, [string, string]> = {
 };
 
 export function pluginTitle(locale: Locale, plugin: PluginItem) {
-  return taskTitle(locale, plugin.id, plugin.name);
+  const label = PLUGIN_TITLES[plugin.id];
+  return label ? titleForLocale(locale, label[0], label[1]) : plugin.name;
 }
 
 export function pluginDescription(locale: Locale, plugin: PluginItem) {
@@ -50,6 +38,9 @@ export function pluginStateLabel(locale: Locale, state: PluginState) {
   return titleForLocale(locale, label[0], label[1]);
 }
 
-export function pluginCronjobTitles(locale: Locale, plugin: PluginItem) {
-  return plugin.cronjobs.map((task) => taskTitle(locale, task.id, task.name));
+export function pluginExtensionLabels(locale: Locale, plugin: PluginItem) {
+  return plugin.extensions.map((extension) => {
+    const label = EXTENSION_LABELS[extension];
+    return label ? titleForLocale(locale, label[0], label[1]) : extension;
+  });
 }

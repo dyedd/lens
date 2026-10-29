@@ -23,6 +23,8 @@ class PluginView(StrictBaseModel):
     version: str
     state: PluginState
     error: str = ""
+    # 插件挂到的扩展点标识，例如 upstream_headers / upstream_credential。
+    extensions: list[str] = Field(default_factory=list)
     cronjobs: list[PluginCronjobView] = Field(default_factory=list)
 
 

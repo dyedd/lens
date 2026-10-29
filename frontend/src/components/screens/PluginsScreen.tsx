@@ -45,7 +45,7 @@ export function PluginsScreen() {
       queryClient.setQueryData<PluginItem[]>(["plugins"], (current) =>
         (current ?? []).map((item) => (item.id === plugin.id ? plugin : item)),
       );
-      void queryClient.invalidateQueries({ queryKey: ["cronjobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
       toast.success(
         titleForLocale(
           locale,

@@ -1,10 +1,5 @@
 export type PluginState = "active" | "disabled" | "failed";
 
-export type PluginCronjob = {
-  id: string;
-  name: string;
-};
-
 export type PluginItem = {
   id: string;
   name: string;
@@ -12,5 +7,5 @@ export type PluginItem = {
   version: string;
   state: PluginState;
   error: string;
-  cronjobs: PluginCronjob[];
+  extensions: string[];
 };

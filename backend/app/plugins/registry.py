@@ -16,6 +16,7 @@ from .contract import (
     PluginContext,
     PluginDefinition,
     TaskHandler,
+    UpstreamHook,
 )
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ class _PluginEntry:
 
 
 class PluginRegistry:
-    """组合已注册插件，按启用状态决定哪些贡献生效。
+    """组合已注册插件，按启用状态决定哪些扩展点生效。
 
     单个插件注册失败只把自己标记为 failed，其余插件照常生效。
     """
@@ -54,6 +55,7 @@ class PluginRegistry:
         self._entries: dict[str, _PluginEntry] = {}
         self._cronjob_specs: tuple[CronjobSpec, ...] = ()
         self._cronjob_handlers: dict[str, TaskHandler] = {}
+        self._upstream_hooks: list[UpstreamHook] = []
         self._reconcile()
 
     def views(self) -> list[PluginView]:
@@ -61,12 +63,16 @@ class PluginRegistry:
         return [self._view(entry) for entry in self._entries.values()]
 
     def cronjob_specs(self) -> tuple[CronjobSpec, ...]:
-        """当前生效插件贡献的计划任务定义。"""
+        """当前生效插件追加的计划任务定义。"""
         return self._cronjob_specs
 
     def cronjob_handlers(self) -> dict[str, TaskHandler]:
-        """当前生效插件贡献的计划任务执行函数。"""
+        """当前生效插件追加的计划任务执行函数。"""
         return dict(self._cronjob_handlers)
+
+    def upstream_hooks(self) -> list[UpstreamHook]:
+        """当前生效的出站请求钩子，按插件注册顺序。"""
+        return list(self._upstream_hooks)
 
     async def load(self) -> None:
         """读取持久化的停用清单，重建生效插件。"""
@@ -132,6 +138,7 @@ class PluginRegistry:
 
         self._entries = entries
         self._cronjob_specs, self._cronjob_handlers = self._compose_cronjobs(entries)
+        self._upstream_hooks = _compose_upstream_hooks(entries)
 
     def _compose_cronjobs(
         self, entries: dict[str, _PluginEntry]
@@ -156,13 +163,17 @@ class PluginRegistry:
     @staticmethod
     def _view(entry: _PluginEntry) -> PluginView:
         manifest = entry.definition.manifest
+        context = entry.context
         cronjobs = (
             [
                 PluginCronjobView(id=item.spec.id, name=item.spec.name)
-                for item in entry.context.cronjobs
+                for item in context.cronjobs
             ]
-            if entry.context is not None
+            if context is not None
             else []
+        )
+        extensions = sorted(
+            {hook.id() for hook in context.upstream_hooks} if context else set()
         )
         return PluginView(
             id=manifest.id,
@@ -172,7 +183,17 @@ class PluginRegistry:
             state=entry.state,
             error=entry.error,
             cronjobs=cronjobs,
+            extensions=extensions,
         )
+
+
+def _compose_upstream_hooks(entries: dict[str, _PluginEntry]) -> list[UpstreamHook]:
+    hooks: list[UpstreamHook] = []
+    for entry in entries.values():
+        if entry.context is None:
+            continue
+        hooks.extend(entry.context.upstream_hooks)
+    return hooks
 
 
 def _parse_disabled_ids(raw_value: str, *, logger: logging.Logger) -> set[str]:

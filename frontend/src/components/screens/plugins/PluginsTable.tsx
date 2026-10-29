@@ -11,8 +11,8 @@ import type { PluginItem } from "@/lib/api/plugins";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 import {
-  pluginCronjobTitles,
   pluginDescription,
+  pluginExtensionLabels,
   pluginStateLabel,
   pluginTitle,
 } from "./pluginView";
@@ -26,7 +26,7 @@ type PluginsTableProps = {
   onToggleEnabled: (plugin: PluginItem, enabled: boolean) => void;
 };
 
-/** Render installed plugins with their contributed scheduled tasks. */
+/** Render installed plugins and the extension points they attach to. */
 export function PluginsTable({
   locale,
   plugins,
@@ -36,7 +36,7 @@ export function PluginsTable({
   onToggleEnabled,
 }: PluginsTableProps) {
   if (pluginsIsError) return null;
-  const taskSeparator = titleForLocale(locale, "、", ", ");
+  const listSeparator = titleForLocale(locale, "、", ", ");
 
   return (
     <Table>
@@ -44,7 +44,7 @@ export function PluginsTable({
         <TableRow className="hover:bg-transparent">
           <TableHead>{titleForLocale(locale, "插件", "Plugin")}</TableHead>
           <TableHead className="w-[16rem]">
-            {titleForLocale(locale, "计划任务", "Scheduled tasks")}
+            {titleForLocale(locale, "扩展点", "Extension points")}
           </TableHead>
           <TableHead className="w-[132px]">
             {titleForLocale(locale, "状态", "Status")}
@@ -68,7 +68,7 @@ export function PluginsTable({
           </TableRow>
         ) : (
           plugins.map((plugin) => {
-            const taskTitles = pluginCronjobTitles(locale, plugin);
+            const extensions = pluginExtensionLabels(locale, plugin);
             return (
               <TableRow key={plugin.id}>
                 <TableCell className="max-w-[24rem] align-top">
@@ -85,8 +85,8 @@ export function PluginsTable({
                   ) : null}
                 </TableCell>
                 <TableCell className="align-top text-xs text-muted-foreground">
-                  {taskTitles.length
-                    ? taskTitles.join(taskSeparator)
+                  {extensions.length
+                    ? extensions.join(listSeparator)
                     : titleForLocale(locale, "无", "None")}
                 </TableCell>
                 <TableCell className="align-top">

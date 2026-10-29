@@ -246,7 +246,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
 
     reasoning_effort = extract_request_reasoning_effort(request.body, upstream_body)
     try:
-        upstream, body_bytes, upstream_request_content = prepare_upstream_request(
+        upstream, body_bytes, upstream_request_content = await prepare_upstream_request(
             channel,
             upstream_body,
             credential_id=target.credential_id,
