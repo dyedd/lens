@@ -1,0 +1,186 @@
+name: Container image
+
+# 供 CI 与自动发版复用的镜像流程：按平台在原生 runner 上构建，再合并成多架构 manifest。
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 要构建的提交；留空则使用调用方触发时的提交
+        type: string
+        required: false
+        default: ""
+      push:
+        description: 是否推送镜像到 GHCR
+        type: boolean
+        required: false
+        default: false
+      prune:
+        description: 推送后清理只带 sha 标签的旧版本
+        type: boolean
+        required: false
+        default: false
+      tags:
+        description: docker/metadata-action 的 tags 列表
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build image (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            cache-scope: container-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            cache-scope: container-arm64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: ${{ inputs.tags }}
+
+      - name: Login to GHCR
+        if: inputs.push
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # ghcr.io 偶发连接超时，重试 3 次
+          for i in 1 2 3; do
+            if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin; then exit 0; fi
+            sleep $((i * 5))
+          done
+          exit 1
+
+      - name: Build image
+        if: ${{ !inputs.push }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: false
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.cache-scope }}
+          cache-to: type=gha,scope=${{ matrix.cache-scope }},mode=max
+
+      - name: Build and push image by digest
+        if: inputs.push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.cache-scope }}
+          cache-to: type=gha,scope=${{ matrix.cache-scope }},mode=max
+
+      - name: Export image digest
+        if: inputs.push
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload image digest
+        if: inputs.push
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.cache-scope }}-digest
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifest:
+    name: Merge image manifest
+    needs: build
+    if: inputs.push
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download image digests
+        uses: actions/download-artifact@v7
+        with:
+          path: /tmp/digests
+          pattern: container-*-digest
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: ${{ inputs.tags }}
+
+      - name: Login to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # ghcr.io 偶发连接超时，重试 3 次
+          for i in 1 2 3; do
+            if echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin; then exit 0; fi
+            sleep $((i * 5))
+          done
+          exit 1
+
+      - name: Create and push manifest
+        working-directory: /tmp/digests
+        env:
+          METADATA_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
+            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
+
+      - name: Prune old sha image versions
+        if: inputs.prune
+        env:
+          # 关联仓库通常可用 GITHUB_TOKEN；否则配置 read:packages + delete:packages 的 PRUNE_TOKEN。
+          GH_TOKEN: ${{ secrets.PRUNE_TOKEN || secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.repository }}
+          KEEP: "30"
+        run: |
+          set -euo pipefail
+
+          package="${REPO#*/}"
+          versions_file="$(mktemp)"
+          trap 'rm -f "$versions_file"' EXIT
+
+          # 发布版本带有 latest/版本标签，不在纯 sha 候选中；按创建时间倒序清理纯 sha 版本。
+          gh api --paginate \
+            "/users/${OWNER}/packages/container/${package}/versions?per_page=100" \
+            --jq '.[] | select((.metadata.container.tags // []) as $tags | ($tags | length) > 0 and ([$tags[] | startswith("sha-")] | all)) | [.id, .created_at] | @tsv' \
+            | sort -k2,2r > "$versions_file"
+
+          total="$(wc -l < "$versions_file")"
+          echo "纯 sha 版本共 ${total} 个，保留最近 ${KEEP} 个"
+          [ "$total" -le "$KEEP" ] && exit 0
+
+          tail -n +$((KEEP + 1)) "$versions_file" | cut -f1 | while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            gh api --method DELETE \
+              "/users/${OWNER}/packages/container/${package}/versions/${id}"
+            echo "已删除版本 ${id}"
+          done
