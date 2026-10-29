@@ -1,14 +1,39 @@
-name: Draft Release
+name: Release
 
+# 提交攒够后自动发版：升 patch 版本号 → 构建并推送多架构镜像 → 发布正式 release。
+# GitHub 的 cron 只能固定 UTC 时间，因此“随机时刻”由发版前随机等待实现。
 on:
+  schedule:
+    # 每天 UTC 02:07（北京时间 10:07）检查一次 main 上的提交数
+    - cron: "7 2 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: 忽略提交数门槛，立即发版
+        type: boolean
+        default: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  draft_release:
-    if: github.ref_name == 'main'
+  prepare:
+    name: Prepare release
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: write
+    outputs:
+      released: ${{ steps.gate.outputs.released }}
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      major_minor: ${{ steps.bump.outputs.major_minor }}
+      sha: ${{ steps.bump.outputs.sha }}
+      short_sha: ${{ steps.bump.outputs.short_sha }}
 
     steps:
       - uses: actions/checkout@v5
@@ -16,13 +41,62 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Prepare version on main
-        id: version
+      - name: Check commit threshold
+        id: gate
+        shell: bash
+        env:
+          MIN_COMMITS: "5"
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --tags --force
+
+          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "$last_tag" ]; then
+            range="${last_tag}..origin/main"
+          else
+            range="origin/main"
+          fi
+
+          count="$(git rev-list --count "$range")"
+          echo "自 ${last_tag:-仓库起点} 以来共 ${count} 个提交，发版门槛 ${MIN_COMMITS} 个"
+
+          if [ "$count" -eq 0 ]; then
+            echo "没有新提交，跳过发版"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$count" -lt "$MIN_COMMITS" ] && [ "${FORCE:-false}" != "true" ]; then
+            echo "提交数未达门槛，跳过发版"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "released=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for a random moment
+        if: github.event_name == 'schedule' && steps.gate.outputs.released == 'true'
+        shell: bash
+        env:
+          JITTER_MINUTES: "45"
+        run: |
+          set -euo pipefail
+          delay=$(( RANDOM % (JITTER_MINUTES * 60) ))
+          echo "随机等待 ${delay} 秒后开始发版"
+          sleep "$delay"
+
+      - name: Bump version
+        id: bump
+        if: steps.gate.outputs.released == 'true'
         shell: bash
         run: |
           set -euo pipefail
 
-          git fetch origin main --tags
+          git fetch origin main --tags --force
+          git reset --hard origin/main
+
           last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
           if [ -n "$last_tag" ]; then
             base_version="${last_tag#v}"
@@ -30,7 +104,7 @@ jobs:
             base_version="0.0.0"
           fi
 
-          next_version="$(python - "$base_version" <<'PY'
+          version="$(python3 - "$base_version" <<'PY'
           import re
           import sys
           from pathlib import Path
@@ -76,19 +150,61 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add backend/app/__init__.py
-            git commit -m "chore: 更新版本号至 ${next_version}"
+            git commit -m "chore: 更新版本号至 ${version}"
             git push origin HEAD:refs/heads/main
           fi
 
-          echo "version=${next_version}" >> "$GITHUB_OUTPUT"
+          git fetch origin main --tags --force
+          sha="$(git rev-parse origin/main)"
 
-      - name: Prepare draft release
-        id: prepare
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${sha:0:7}" >> "$GITHUB_OUTPUT"
+
+  containers:
+    name: Build release image
+    needs: prepare
+    if: needs.prepare.outputs.released == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/container-image.yml
+    secrets: inherit
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      push: true
+      tags: |
+        type=raw,value=latest
+        type=raw,value=${{ needs.prepare.outputs.tag }}
+        type=raw,value=${{ needs.prepare.outputs.version }}
+        type=raw,value=${{ needs.prepare.outputs.major_minor }}
+        type=raw,value=sha-${{ needs.prepare.outputs.short_sha }}
+
+  publish:
+    name: Publish release
+    needs: [prepare, containers]
+    if: needs.prepare.outputs.released == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compose release notes
+        id: notes
         shell: bash
         env:
-          NEXT_VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ needs.prepare.outputs.sha }}
         run: |
           set -euo pipefail
+
+          git fetch origin main --tags --force
 
           commit_type() {
             local subject="$1"
@@ -110,19 +226,17 @@ jobs:
 
           last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
           if [ -n "$last_tag" ]; then
-            range="${last_tag}..HEAD"
+            range="${last_tag}..${SHA}"
           else
-            range="HEAD"
+            range="${SHA}"
           fi
-          current_sha="$(git rev-parse HEAD)"
 
           commit_count="$(git rev-list --count "$range")"
           if [ "$commit_count" -eq 0 ]; then
-            echo "No commits found for draft release" >&2
+            echo "No commits found for release" >&2
             exit 1
           fi
 
-          next_tag="v${NEXT_VERSION}"
           body_path="release-body.md"
           features_file="$(mktemp)"
           fixes_file="$(mktemp)"
@@ -194,40 +308,33 @@ jobs:
             if [ -n "$last_tag" ]; then
               echo "## Range"
               echo
-              echo "- From \`${last_tag}\` to \`${current_sha:0:7}\`"
+              echo "- From \`${last_tag}\` to \`${SHA:0:7}\`"
             else
               echo "## Range"
               echo
-              echo "- Initial draft release from repository start to \`${current_sha:0:7}\`"
+              echo "- Initial release from repository start to \`${SHA:0:7}\`"
             fi
           } > "$body_path"
 
-          echo "tag_name=${next_tag}" >> "$GITHUB_OUTPUT"
-          echo "release_name=${next_tag}" >> "$GITHUB_OUTPUT"
           echo "body_path=${body_path}" >> "$GITHUB_OUTPUT"
-          echo "target_commitish=${current_sha}" >> "$GITHUB_OUTPUT"
 
-      - name: Create or update draft release
+      - name: Create published release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ steps.prepare.outputs.tag_name }}
-          RELEASE_NAME: ${{ steps.prepare.outputs.release_name }}
-          BODY_PATH: ${{ steps.prepare.outputs.body_path }}
-          TARGET_COMMITISH: ${{ steps.prepare.outputs.target_commitish }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+          BODY_PATH: ${{ steps.notes.outputs.body_path }}
         run: |
           set -euo pipefail
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release edit "$TAG_NAME" \
-              --title "$RELEASE_NAME" \
-              --notes-file "$BODY_PATH" \
-              --target "$TARGET_COMMITISH" \
-              --draft
-          else
-            gh release create "$TAG_NAME" \
-              --title "$RELEASE_NAME" \
-              --notes-file "$BODY_PATH" \
-              --target "$TARGET_COMMITISH" \
-              --draft
+            echo "Release ${TAG_NAME} 已存在，跳过创建"
+            exit 0
           fi
+
+          gh release create "$TAG_NAME" \
+            --title "$TAG_NAME" \
+            --notes-file "$BODY_PATH" \
+            --target "$SHA" \
+            --latest
