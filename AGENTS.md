@@ -27,6 +27,17 @@ Lens 是统一处理认证、模型组路由、协议转换、上游调用、故
 
 提交前建议运行 `uv run --no-sync prek install -f` 安装本地格式化 hook；全仓检查仅在明确需要时运行 `uv run --no-sync prek run --all-files`。前端 hook 会格式化整个 `frontend/`，提交前务必复查生成的变更，避免引入范围外修改。
 
+## 发布
+
+发版由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动完成，无需手动打 tag：
+
+- **触发**：每天 UTC 03:00（北京时间 11:00）检查一次，`main` 自上一个 `v*` tag 起的提交数达到 5 即发版；达标后直接开始发版。
+- **流程**：升 patch 版本号（来源为 `backend/app/__init__.py`）→ 提交并推送 `main` → 构建 amd64/arm64 镜像并推送到 `ghcr.io/dyedd/lens` → 创建正式 release。镜像构建失败时不发版，避免出现有 tag 无镜像。
+- **手动**：Actions → Release → Run workflow，默认只预览；取消勾选 `dry_run` 后执行正式发版，至少需要 1 个提交。
+- **镜像标签**：正式版产出 `latest`、`dev`、`vX.Y.Z`、`X.Y.Z`、`X.Y` 与 `sha-<7 位提交>`；`main` 的普通推送产出 `dev`。
+
+镜像构建逻辑在 [container-image.yml](.github/workflows/container-image.yml) 中复用，CI 与发版共用同一套多架构构建。
+
 ## 常用检查
 
 ```bash
