@@ -1,11 +1,10 @@
 name: Release
 
 # 提交攒够后自动发版：升 patch 版本号 → 构建并推送多架构镜像 → 发布正式 release。
-# GitHub 的 cron 只能固定 UTC 时间，因此“随机时刻”由发版前随机等待实现。
 on:
   schedule:
-    # 每天 UTC 02:07（北京时间 10:07）检查一次 main 上的提交数
-    - cron: "7 2 * * *"
+    # 每天 UTC 03:00（北京时间 11:00）检查一次 main 上的提交数
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -49,7 +48,6 @@ jobs:
         env:
           # 自动发版要攒够 5 个提交；手动触发只要 1 个（至少得有点实际改动）。
           MIN_COMMITS: ${{ github.event_name == 'schedule' && '5' || '1' }}
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
 
@@ -83,8 +81,6 @@ jobs:
       - name: Preview release
         if: steps.gate.outputs.released == 'true' && inputs.dry_run
         shell: bash
-        env:
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
 
@@ -136,22 +132,11 @@ jobs:
               next_version = f"{major}.{minor}.{patch + 1}"
 
           print(f"预览：将于 v{next_version} 发版")
-          print(f"预览：镜像标签 latest、v{next_version}、{next_version}、{'.'.join(next_version.split('.')[:2])}")
+          print(f"预览：镜像标签 latest、dev、v{next_version}、{next_version}、{'.'.join(next_version.split('.')[:2])}")
           print(f"预览：标题与 tag 为 v{next_version}")
           PY
 
           echo "预览模式，未改版本号、未建镜像、未发 release"
-
-      - name: Wait for a random moment
-        if: github.event_name == 'schedule' && steps.gate.outputs.released == 'true' && !inputs.dry_run
-        shell: bash
-        env:
-          JITTER_MINUTES: "45"
-        run: |
-          set -euo pipefail
-          delay=$(( RANDOM % (JITTER_MINUTES * 60) ))
-          echo "随机等待 ${delay} 秒后开始发版"
-          sleep "$delay"
 
       - name: Bump version
         id: bump
@@ -242,6 +227,7 @@ jobs:
       ref: ${{ needs.prepare.outputs.sha }}
       push: true
       tags: |
+        type=raw,value=dev
         type=raw,value=latest
         type=raw,value=${{ needs.prepare.outputs.tag }}
         type=raw,value=${{ needs.prepare.outputs.version }}

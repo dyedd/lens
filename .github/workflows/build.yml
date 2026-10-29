@@ -99,7 +99,7 @@ jobs:
       push: ${{ github.event_name != 'pull_request' }}
       prune: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       tags: |
-        type=raw,value=dev,enable=${{ github.event_name == 'push' }}
+        type=raw,value=dev,enable=${{ github.event_name == 'push' || github.event_name == 'release' }}
         type=raw,value=latest,enable=${{ github.event_name == 'release' }}
         type=ref,event=tag,enable=${{ github.event_name == 'release' }}
         type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
