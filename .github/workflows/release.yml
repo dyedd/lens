@@ -8,8 +8,8 @@ on:
     - cron: "7 2 * * *"
   workflow_dispatch:
     inputs:
-      force:
-        description: 忽略提交数门槛，立即发版
+      dry_run:
+        description: 只预演，不升版本、不建镜像、不发 release
         type: boolean
         default: true
 
@@ -23,12 +23,14 @@ permissions:
 jobs:
   prepare:
     name: Prepare release
+    if: github.ref_name == 'main'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: write
     outputs:
       released: ${{ steps.gate.outputs.released }}
+      dry_run: ${{ inputs.dry_run }}
       version: ${{ steps.bump.outputs.version }}
       tag: ${{ steps.bump.outputs.tag }}
       major_minor: ${{ steps.bump.outputs.major_minor }}
@@ -45,8 +47,9 @@ jobs:
         id: gate
         shell: bash
         env:
-          MIN_COMMITS: "5"
-          FORCE: ${{ inputs.force }}
+          # 自动发版要攒够 5 个提交；手动触发只要 1 个（至少得有点实际改动）。
+          MIN_COMMITS: ${{ github.event_name == 'schedule' && '5' || '1' }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
 
@@ -68,16 +71,79 @@ jobs:
             exit 0
           fi
 
-          if [ "$count" -lt "$MIN_COMMITS" ] && [ "${FORCE:-false}" != "true" ]; then
-            echo "提交数未达门槛，跳过发版"
+          if [ "$count" -lt "$MIN_COMMITS" ]; then
+            echo "提交数未达门槛 ${MIN_COMMITS} 个，跳过发版"
             echo "released=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # 预览只打印将要发生的动作，不改仓库、不打 tag、不建镜像。
           echo "released=true" >> "$GITHUB_OUTPUT"
 
+      - name: Preview release
+        if: steps.gate.outputs.released == 'true' && inputs.dry_run
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # 与实际发版保持同一份代码，避免 checkout 快照落后于 main。
+          git fetch origin main --tags --force
+          git reset --hard origin/main
+
+          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "$last_tag" ]; then
+            base_version="${last_tag#v}"
+          else
+            base_version="0.0.0"
+          fi
+
+          # 与 Bump version 使用同一套推导，但不写文件、不提交。
+          python3 - "$base_version" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          base_version = sys.argv[1]
+          source = Path("backend/app/__init__.py").read_text(encoding="utf-8")
+          match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', source)
+          if match is None:
+              raise SystemExit("Could not find __version__")
+
+          current_version = match.group(1)
+          semver = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+          base_match = semver.fullmatch(base_version)
+          current_match = semver.fullmatch(current_version)
+          if base_match is None or current_match is None:
+              raise SystemExit(
+                  f"Unsupported version: base={base_version}, current={current_version}"
+              )
+
+          base_parts = tuple(map(int, base_match.groups()))
+          current_parts = tuple(map(int, current_match.groups()))
+          if current_parts < base_parts:
+              print(
+                  f"预览：跳过发版，当前 {current_version} 落后于 {base_version}，"
+                  "先把 backend/app/__init__.py 的版本号提到最新 tag"
+              )
+              raise SystemExit(0)
+
+          if current_parts > base_parts:
+              next_version = current_version
+          else:
+              major, minor, patch = base_parts
+              next_version = f"{major}.{minor}.{patch + 1}"
+
+          print(f"预览：将于 v{next_version} 发版")
+          print(f"预览：镜像标签 latest、v{next_version}、{next_version}、{'.'.join(next_version.split('.')[:2])}")
+          print(f"预览：标题与 tag 为 v{next_version}")
+          PY
+
+          echo "预览模式，未改版本号、未建镜像、未发 release"
+
       - name: Wait for a random moment
-        if: github.event_name == 'schedule' && steps.gate.outputs.released == 'true'
+        if: github.event_name == 'schedule' && steps.gate.outputs.released == 'true' && !inputs.dry_run
         shell: bash
         env:
           JITTER_MINUTES: "45"
@@ -89,7 +155,7 @@ jobs:
 
       - name: Bump version
         id: bump
-        if: steps.gate.outputs.released == 'true'
+        if: steps.gate.outputs.released == 'true' && !inputs.dry_run
         shell: bash
         run: |
           set -euo pipefail
@@ -166,7 +232,7 @@ jobs:
   containers:
     name: Build release image
     needs: prepare
-    if: needs.prepare.outputs.released == 'true'
+    if: needs.prepare.outputs.released == 'true' && needs.prepare.outputs.dry_run != 'true'
     permissions:
       contents: read
       packages: write
@@ -185,7 +251,7 @@ jobs:
   publish:
     name: Publish release
     needs: [prepare, containers]
-    if: needs.prepare.outputs.released == 'true'
+    if: needs.prepare.outputs.released == 'true' && needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
