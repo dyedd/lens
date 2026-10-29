@@ -2,14 +2,20 @@ from pydantic import Field, HttpUrl, field_validator
 
 from ..core.urls import canonicalize_base_url
 from .protocols import ChannelProxyMode, ProtocolKind
-from .sites import SiteCredentialInput, require_non_empty_text
+from .sites import (
+    SiteBaseUrlKind,
+    SiteCredentialInput,
+    canonicalize_text_list,
+    require_non_empty_text,
+)
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel
 
 
 class SiteModelFetchRequest(StrictBaseModel):
     base_url: HttpUrl
-    protocol: ProtocolKind = ProtocolKind.OPENAI_CHAT
+    # Omitted: try each listing protocol until the upstream answers.
+    protocol: ProtocolKind | None = None
     headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
@@ -51,6 +57,29 @@ class SiteModelTestRequest(StrictBaseModel):
     _require_non_empty_text = field_validator("model_name", "prompt")(
         require_non_empty_text
     )
+
+
+class SiteModelProtocolDetectionRequest(StrictBaseModel):
+    base_url: HttpUrl
+    endpoint_kind: SiteBaseUrlKind = "default"
+    headers: list[HeaderRule] = Field(default_factory=list)
+    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
+    channel_proxy: str = ""
+    param_override: list[ParamOverrideRule] = Field(default_factory=list)
+    credential: SiteModelTestCredential
+    model_names: list[str] = Field(min_length=1, max_length=50)
+
+    _canonicalize_base_url = field_validator("base_url", mode="before")(
+        canonicalize_base_url
+    )
+    _canonicalize_model_names = field_validator("model_names")(canonicalize_text_list)
+
+
+class SiteModelProtocolDetectionResult(StrictBaseModel):
+    model_name: str
+    # None when no protocol answered; the error says why.
+    protocol: ProtocolKind | None = None
+    error_message: str = ""
 
 
 class SiteModelTestResult(StrictBaseModel):

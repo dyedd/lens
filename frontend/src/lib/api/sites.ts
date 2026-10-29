@@ -247,8 +247,8 @@ export type SiteEndpointProbeResult = {
 };
 export type SiteModelFetchPayload = {
   base_url: string;
-  /** Picks the list endpoint and auth headers. */
-  protocol: ProtocolKind;
+  /** Picks the list endpoint and auth headers; omitted, each one is tried. */
+  protocol?: ProtocolKind;
   headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
@@ -264,6 +264,22 @@ export type SiteModelFetchItem = {
   credential_name: string;
   model_name: string;
   context_window: number | null;
+};
+export type SiteModelProtocolDetectionPayload = {
+  base_url: string;
+  endpoint_kind: SiteBaseUrlKind;
+  headers: HeaderRule[];
+  proxy_mode: ChannelProxyMode;
+  channel_proxy: string;
+  param_override: ParamOverrideRule[];
+  credential: { id: string; name: string; api_key: string };
+  model_names: string[];
+};
+export type SiteModelProtocolDetectionResult = {
+  model_name: string;
+  /** Null when no protocol answered; the error says why. */
+  protocol: ProtocolKind | null;
+  error_message: string;
 };
 export type SiteModelTestPayload = {
   protocol: ProtocolKind;
