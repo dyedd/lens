@@ -7,6 +7,8 @@ from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from ...models.request_logs import RequestLogInput
+from ...plugins.contract import RequestRecord
+from ...plugins.upstream import notify_request_observers
 from .app_state import app_state
 from .routing_plan import elapsed_ms
 from .runtime_types import (
@@ -214,4 +216,18 @@ class RequestLogger:
             payload.billing_units = result.billing_units
         await app_state.request_log_store.commands.update_request_log(
             self.request_log_id, payload
+        )
+        await notify_request_observers(
+            RequestRecord(
+                channel_id=channel.id if channel else "",
+                channel_name=channel.name if channel else "",
+                protocol=self.protocol.value,
+                model=upstream_model_name or self.resolved_group_name or "",
+                status_code=status_code or 0,
+                success=success,
+                is_stream=is_stream,
+                latency_ms=payload.latency_ms,
+                total_tokens=payload.total_tokens,
+            ),
+            app_state.plugin_registry.request_observers(),
         )

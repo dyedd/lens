@@ -13,8 +13,10 @@ from ..persistence.cronjob_store import CronjobSpec
 from ..persistence.settings_keys import SETTING_PLUGINS_DISABLED
 from .contract import (
     PLUGIN_API_VERSION,
+    ModelCatalogHook,
     PluginContext,
     PluginDefinition,
+    RequestObserver,
     TaskHandler,
     UpstreamHook,
 )
@@ -56,6 +58,8 @@ class PluginRegistry:
         self._cronjob_specs: tuple[CronjobSpec, ...] = ()
         self._cronjob_handlers: dict[str, TaskHandler] = {}
         self._upstream_hooks: list[UpstreamHook] = []
+        self._request_observers: list[RequestObserver] = []
+        self._model_catalog_hooks: list[ModelCatalogHook] = []
         self._reconcile()
 
     def views(self) -> list[PluginView]:
@@ -71,8 +75,16 @@ class PluginRegistry:
         return dict(self._cronjob_handlers)
 
     def upstream_hooks(self) -> list[UpstreamHook]:
-        """当前生效的出站请求钩子，按插件注册顺序。"""
+        """当前生效的出站请求钩子。"""
         return list(self._upstream_hooks)
+
+    def request_observers(self) -> list[RequestObserver]:
+        """当前生效的请求观察者。"""
+        return list(self._request_observers)
+
+    def model_catalog_hooks(self) -> list[ModelCatalogHook]:
+        """当前生效的模型目录钩子。"""
+        return list(self._model_catalog_hooks)
 
     async def load(self) -> None:
         """读取持久化的停用清单，重建生效插件。"""
@@ -138,7 +150,12 @@ class PluginRegistry:
 
         self._entries = entries
         self._cronjob_specs, self._cronjob_handlers = self._compose_cronjobs(entries)
-        self._upstream_hooks = _compose_upstream_hooks(entries)
+        active = [entry.context for entry in entries.values() if entry.context]
+        self._upstream_hooks = [h for ctx in active for h in ctx.upstream_hooks]
+        self._request_observers = [o for ctx in active for o in ctx.request_observers]
+        self._model_catalog_hooks = [
+            m for ctx in active for m in ctx.model_catalog_hooks
+        ]
 
     def _compose_cronjobs(
         self, entries: dict[str, _PluginEntry]
@@ -172,28 +189,26 @@ class PluginRegistry:
             if context is not None
             else []
         )
-        extensions = sorted(
-            {hook.id() for hook in context.upstream_hooks} if context else set()
-        )
+        extensions: list[str] = []
+        if context is not None:
+            extensions = sorted(
+                {hook.extension() for hook in context.upstream_hooks}
+                | {observer.extension() for observer in context.request_observers}
+                | {hook.extension() for hook in context.model_catalog_hooks}
+            )
         return PluginView(
             id=manifest.id,
             name=manifest.name,
             description=manifest.description,
             version=manifest.version,
+            author=manifest.author,
+            homepage=manifest.homepage,
+            source=entry.definition.source,
             state=entry.state,
             error=entry.error,
-            cronjobs=cronjobs,
             extensions=extensions,
+            cronjobs=cronjobs,
         )
-
-
-def _compose_upstream_hooks(entries: dict[str, _PluginEntry]) -> list[UpstreamHook]:
-    hooks: list[UpstreamHook] = []
-    for entry in entries.values():
-        if entry.context is None:
-            continue
-        hooks.extend(entry.context.upstream_hooks)
-    return hooks
 
 
 def _parse_disabled_ids(raw_value: str, *, logger: logging.Logger) -> set[str]:

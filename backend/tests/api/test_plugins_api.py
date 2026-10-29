@@ -4,6 +4,13 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+EXPECTED_EXTENSIONS = {
+    "upstream_request",
+    "upstream_credential",
+    "request_observer",
+    "model_catalog",
+}
+
 
 def _list_plugins(
     client: TestClient, admin_headers: dict[str, str]
@@ -25,7 +32,9 @@ def test_plugin_extension_round_trip(
     plugins = _list_plugins(client, admin_headers)
     bridge = plugins["channel_credential_bridge"]
     assert bridge["state"] == "active"
-    assert bridge["extensions"] == ["upstream_credential"]
+    assert bridge["author"] == "Lens"
+    assert bridge["source"] == "builtin"
+    assert set(bridge["extensions"]) == EXPECTED_EXTENSIONS
 
     # 平台自身的计划任务不因插件启停而消失。
     disable_response = client.put(
@@ -45,4 +54,4 @@ def test_plugin_extension_round_trip(
         json={"enabled": True},
     )
     assert enable_response.status_code == 200, enable_response.text
-    assert enable_response.json()["extensions"] == ["upstream_credential"]
+    assert set(enable_response.json()["extensions"]) == EXPECTED_EXTENSIONS

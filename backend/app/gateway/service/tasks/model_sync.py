@@ -17,6 +17,7 @@ from ....models.channels import (
 from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus
 from ....models.sites import SiteConfig, SiteProtocolConfig
+from ....plugins.upstream import collect_catalog_entries
 from ..app_state import logger
 from .model_discovery import fetch_upstream_models
 
@@ -189,6 +190,12 @@ async def _sync_credential_models(
         # An empty catalog is a failed fetch, not proof every model vanished.
         raise ValueError("upstream returned no models")
     upstream_names = {model.name for model in upstream_models}
+    # 插件可以为渠道补充上游目录里没有的模型。
+    for entry in await collect_catalog_entries(
+        fetch_channel, state.plugin_registry.model_catalog_hooks()
+    ):
+        if entry.enabled:
+            upstream_names.add(entry.model_name)
     changes = await state.channel_store.sync_upstream_models(
         protocol_config.id,
         item.credential_id,

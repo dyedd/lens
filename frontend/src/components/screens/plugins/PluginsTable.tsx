@@ -13,6 +13,7 @@ import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import {
   pluginDescription,
   pluginExtensionLabels,
+  pluginOriginLabel,
   pluginStateLabel,
   pluginTitle,
 } from "./pluginView";
@@ -77,6 +78,9 @@ export function PluginsTable({
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
                     {pluginDescription(locale, plugin)}
+                  </p>
+                  <p className="truncate font-mono text-[11px] text-muted-foreground/80">
+                    {pluginOriginLabel(locale, plugin)}
                   </p>
                   {plugin.error ? (
                     <p className="mt-1 whitespace-pre-wrap text-xs text-destructive">

@@ -33,6 +33,7 @@ from ...persistence.settings_keys import (
 )
 from ...plugins import PluginRegistry
 from ...plugins.builtin import BUILTIN_PLUGINS
+from ...plugins.discovery import discover_external_plugins
 from ..cronjob_runner import CronjobRunner, TaskHandler
 from ..router import GatewayRouter
 
@@ -112,7 +113,7 @@ class AppState:
         self.backup_store = BackupStore(self.session_factory)
         self.router = GatewayRouter()
         self.plugin_registry = PluginRegistry(
-            BUILTIN_PLUGINS,
+            (*BUILTIN_PLUGINS, *discover_external_plugins()),
             state=self,
             logger=logger,
         )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from ..models.channels import ChannelConfig
@@ -14,15 +14,23 @@ PLUGIN_API_VERSION = 1
 
 TaskHandler = Callable[[], Awaitable[None]]
 
+# 扩展点标识。插件通过这些标识声明自己挂在哪里。
+EXT_UPSTREAM_REQUEST = "upstream_request"  # 改写出站请求
+EXT_UPSTREAM_CREDENTIAL = "upstream_credential"  # 为渠道签发凭据
+EXT_REQUEST_OBSERVER = "request_observer"  # 只读观察已完成的请求
+EXT_MODEL_CATALOG = "model_catalog"  # 为渠道补充模型
+
 
 @dataclass(frozen=True, slots=True)
 class PluginManifest:
-    """插件身份与兼容性声明。"""
+    """插件身份、作者与兼容性声明。"""
 
     id: str
     name: str
     description: str = ""
     version: str = "1.0.0"
+    author: str = ""
+    homepage: str = ""
     api_version: int = PLUGIN_API_VERSION
 
 
@@ -39,29 +47,59 @@ class UpstreamCall:
 
 
 @dataclass(frozen=True, slots=True)
-class UpstreamCredential:
-    """插件为渠道提供的凭据，用于替代渠道里保存的密钥。"""
+class RequestRecord:
+    """一次已完成请求的只读摘要，供观察者使用。"""
 
-    headers: Mapping[str, str]
-    query: Mapping[str, str] = field(default_factory=dict)
+    channel_id: str
+    channel_name: str
+    protocol: str
+    model: str
+    status_code: int
+    success: bool
+    is_stream: bool
+    latency_ms: int
+    total_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogEntry:
+    """插件为渠道补充的一个模型。"""
+
+    model_name: str
+    enabled: bool = True
 
 
 class UpstreamHook(Protocol):
-    """出站请求扩展点：改写请求，或接手渠道鉴权。
+    """出站请求扩展点：改写请求，或接手渠道鉴权。"""
 
-    `apply` 是异步的，允许插件在发送前换取、刷新凭据。
-    """
-
-    def id(self) -> str: ...
+    def extension(self) -> str: ...
 
     def matches(self, call: UpstreamCall) -> bool: ...
 
     async def apply(self, call: UpstreamCall) -> UpstreamCall: ...
 
 
+class RequestObserver(Protocol):
+    """请求观察者：只读，不能改变请求或响应。"""
+
+    def extension(self) -> str: ...
+
+    async def completed(self, record: RequestRecord) -> None: ...
+
+
+class ModelCatalogHook(Protocol):
+    """模型目录扩展点：为渠道补充平台未发现的模型。"""
+
+    def extension(self) -> str: ...
+
+    def matches(self, channel: ChannelConfig) -> bool: ...
+
+    async def models(self, channel: ChannelConfig) -> Sequence[CatalogEntry]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class CronjobContribution:
-    """插件追加的计划任务（附加能力，不是插件的主定位）。"""
+    """插件追加的计划任务。"""
 
     spec: CronjobSpec
     handler: TaskHandler
@@ -74,14 +112,24 @@ class PluginContext:
         self.state = state
         self.cronjobs: list[CronjobContribution] = []
         self.upstream_hooks: list[UpstreamHook] = []
+        self.request_observers: list[RequestObserver] = []
+        self.model_catalog_hooks: list[ModelCatalogHook] = []
 
     def add_cronjob(self, spec: CronjobSpec, handler: TaskHandler) -> None:
         """追加一个计划任务。"""
         self.cronjobs.append(CronjobContribution(spec=spec, handler=handler))
 
     def add_upstream_hook(self, hook: UpstreamHook) -> None:
-        """登记出站请求钩子：可改写请求，也可为渠道提供鉴权。"""
+        """登记出站请求钩子：改写请求，或为渠道签发凭据。"""
         self.upstream_hooks.append(hook)
+
+    def add_request_observer(self, observer: RequestObserver) -> None:
+        """登记请求观察者；只读，异常被吞掉。"""
+        self.request_observers.append(observer)
+
+    def add_model_catalog_hook(self, hook: ModelCatalogHook) -> None:
+        """登记模型目录钩子，为匹配的渠道补充模型。"""
+        self.model_catalog_hooks.append(hook)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,3 +138,6 @@ class PluginDefinition:
 
     manifest: PluginManifest
     register: Callable[[PluginContext], None]
+    # builtin：随 Lens 发布；external：用户放在插件目录里。
+    source: str = "builtin"
+    path: str = ""

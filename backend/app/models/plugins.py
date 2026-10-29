@@ -21,9 +21,13 @@ class PluginView(StrictBaseModel):
     name: str
     description: str = ""
     version: str
+    author: str = ""
+    homepage: str = ""
+    # builtin：随 Lens 发布；external：用户放在插件目录里。
+    source: str = "builtin"
     state: PluginState
     error: str = ""
-    # 插件挂到的扩展点标识，例如 upstream_headers / upstream_credential。
+    # 插件挂到的扩展点标识，如 upstream_request / upstream_credential。
     extensions: list[str] = Field(default_factory=list)
     cronjobs: list[PluginCronjobView] = Field(default_factory=list)
 

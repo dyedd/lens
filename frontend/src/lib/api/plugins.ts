@@ -5,6 +5,9 @@ export type PluginItem = {
   name: string;
   description: string;
   version: string;
+  author: string;
+  homepage: string;
+  source: "builtin" | "external";
   state: PluginState;
   error: string;
   extensions: string[];

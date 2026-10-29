@@ -115,7 +115,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 - Health and cooldown: Model health page graded by success rate, built-in circuit-breaker cooldown with exponential backoff, and custom cooldown detection rules
 - Pricing: LiteLLM model price sync, credential rate multipliers, and per-image pricing
 - Scheduled tasks: Built-in jobs for channel model sync, price sync, and credential rate sync; platform features, not plugins
-- Plugins: Attach to core extension points (currently outbound request rewrite and channel credential, letting a plugin issue a channel's credential) and can be switched off in Settings, which also detaches its extension points
+- Plugins: Attach to core extension points (request rewrite, channel credential, request observation, model catalog). Ship built in or install your own from the plugins directory; switch them off in Settings to detach their extension points
 - Config backup: Export/import sites, model groups, settings, pricing, cron jobs, and stats; optionally include gateway keys and request logs
 
 ## Screenshots

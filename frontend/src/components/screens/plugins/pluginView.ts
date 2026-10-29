@@ -7,14 +7,16 @@ const PLUGIN_TITLES: Record<string, [string, string]> = {
 
 const PLUGIN_DESCRIPTIONS: Record<string, [string, string]> = {
   channel_credential_bridge: [
-    "为指定渠道改用插件提供的鉴权头，并改写它的出站请求",
-    "Swap a channel's upstream credential for one the plugin supplies",
+    "为指定渠道改用插件提供的鉴权头，并改写请求、补齐模型、观察请求",
+    "Swap a channel credential for one the plugin issues",
   ],
 };
 
 const EXTENSION_LABELS: Record<string, [string, string]> = {
+  upstream_request: ["请求改写", "Request rewrite"],
   upstream_credential: ["渠道鉴权", "Channel credential"],
-  upstream_headers: ["请求改写", "Request rewrite"],
+  request_observer: ["请求观察", "Request observer"],
+  model_catalog: ["模型目录", "Model catalog"],
 };
 
 const STATE_LABELS: Record<PluginState, [string, string]> = {
@@ -43,4 +45,13 @@ export function pluginExtensionLabels(locale: Locale, plugin: PluginItem) {
     const label = EXTENSION_LABELS[extension];
     return label ? titleForLocale(locale, label[0], label[1]) : extension;
   });
+}
+
+/** 作者与来源合成一行副标题，缺省项直接省略。 */
+export function pluginOriginLabel(locale: Locale, plugin: PluginItem) {
+  const source =
+    plugin.source === "external"
+      ? titleForLocale(locale, "外部", "External")
+      : titleForLocale(locale, "内置", "Built-in");
+  return plugin.author ? `${plugin.author} · ${source}` : source;
 }
