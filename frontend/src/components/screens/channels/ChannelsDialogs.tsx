@@ -106,6 +106,8 @@ export function ChannelsDialogs({
           onDelete={editor.removeAggregateModel}
           onTest={modelTest.openAggregateModelTest}
           testing={modelTest.testingModel}
+          detecting={picker.detecting}
+          onDetectProtocols={picker.detectModelProtocols}
           onUpdateCredentialPattern={editor.setCredentialPattern}
           credentialOptions={editor.form.credentials.flatMap(
             (credential, index) =>
@@ -129,6 +131,7 @@ export function ChannelsDialogs({
           locale={locale}
           channelName={editor.form.name}
           loading={picker.fetching}
+          importing={picker.detecting}
           onOpenChange={setRemoteOpen}
           onLoad={picker.discoverRemoteCatalog}
           onImport={picker.importRemoteModels}
