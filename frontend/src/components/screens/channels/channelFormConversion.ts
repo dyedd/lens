@@ -67,24 +67,27 @@ function credentialIdsForUrl(
     .map((item) => item.id);
 }
 
-function remapModelsToCredentials(
-  models: FormModel[],
-  credentialIds: string[],
-): FormModel[] {
-  if (!models.length || !credentialIds.length) return [];
-  const templates = new Map<string, FormModel>();
-  for (const model of models) {
-    const key = JSON.stringify([model.model_name, [...model.protocols].sort()]);
-    if (!templates.has(key)) templates.set(key, model);
-  }
-  return Array.from(templates.values()).flatMap((template) =>
-    credentialIds.map((credentialId) => ({
-      ...template,
-      credential_id: credentialId,
-      protocolIds:
-        template.credential_id === credentialId ? template.protocolIds : {},
-    })),
-  );
+function resolveModelBaseUrlId(
+  form: Pick<FormState, "base_urls" | "credentials">,
+  credentialId: string,
+  protocol: ProtocolKind,
+) {
+  return form.base_urls
+    .filter(
+      (url) =>
+        url.url.trim() &&
+        url.kind !== "models" &&
+        credentialIdsForUrl(form, url.id).includes(credentialId) &&
+        endpointSupportsProtocol(url.kind, [protocol]),
+    )
+    .sort(
+      (left, right) =>
+        endpointPriority(right.kind) - endpointPriority(left.kind),
+    )[0]?.id;
+}
+
+function endpointPriority(kind: FormBaseUrl["kind"]) {
+  return endpointProtocolByKind[kind] ? 2 : kind === "china" ? 1 : 0;
 }
 
 /** Rebuilds one protocol config per base URL with the keys it can use. */
@@ -95,25 +98,40 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
   const existingByUrl = new Map(
     form.protocolConfigs.map((config) => [config.base_url_id, config] as const),
   );
-  const primaryConfig = form.protocolConfigs[0];
+  const modelsByUrl = new Map<string, Map<string, FormModel>>();
+  for (const config of form.protocolConfigs) {
+    for (const model of config.models) {
+      for (const protocol of model.protocols) {
+        const urlId = resolveModelBaseUrlId(
+          form,
+          model.credential_id,
+          protocol,
+        );
+        if (!urlId) continue;
+        const models = modelsByUrl.get(urlId) ?? new Map<string, FormModel>();
+        const key = JSON.stringify([
+          model.credential_id,
+          model.model_name,
+          protocol,
+        ]);
+        if (!models.has(key) || config.base_url_id === urlId)
+          models.set(key, {
+            ...model,
+            protocols: [protocol],
+            protocolIds: config.base_url_id === urlId ? model.protocolIds : {},
+          });
+        modelsByUrl.set(urlId, models);
+      }
+    }
+  }
   return urls.map((url) => {
     const credentialIds = credentialIdsForUrl(form, url.id);
     const existing = existingByUrl.get(url.id);
-    const source = existing ?? primaryConfig;
-    const sourceModels = existing?.models.length
-      ? existing.models
-      : remapModelsToCredentials(source?.models ?? [], credentialIds);
-    const models = sourceModels.filter(
-      (model) =>
-        credentialIds.includes(model.credential_id) &&
-        endpointSupportsProtocol(url.kind, model.protocols),
-    );
+    const models = [...(modelsByUrl.get(url.id)?.values() ?? [])];
     const protocols = protocolConfigEffectiveProtocols({ models });
-    const fallbackProtocols = (
-      existing?.protocols ??
-      source?.protocols ??
-      []
-    ).filter((protocol) => endpointSupportsProtocol(url.kind, [protocol]));
+    const fallbackProtocols = (existing?.protocols ?? []).filter((protocol) =>
+      endpointSupportsProtocol(url.kind, [protocol]),
+    );
     const base =
       existing ??
       ({
