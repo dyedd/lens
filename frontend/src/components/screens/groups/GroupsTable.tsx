@@ -40,11 +40,13 @@ import type {
   SimilarGroupView,
 } from "./groupTypes";
 import {
+  buildPluginStrategyIds,
   formatCredentialIdentity,
   isGroupEnabled,
   STRATEGY_OPTIONS,
   strategyLabel,
 } from "./modelGroupFormatting";
+import { usePluginStrategyIds } from "./usePluginStrategyIds";
 
 type Props = {
   locale: "zh-CN" | "en-US";
@@ -165,6 +167,7 @@ export function GroupsTable({
   onDelete,
   onTest,
 }: Props) {
+  const pluginStrategyIds = usePluginStrategyIds();
   const allSelected =
     items.length > 0 && items.every((item) => selected.has(item.id));
   const someSelected = items.some((item) => selected.has(item.id));
@@ -317,6 +320,20 @@ export function GroupsTable({
                             {locale === "zh-CN" ? option.zh : option.en}
                           </span>
                           {group.strategy === option.value ? (
+                            <Check className="size-3.5 text-muted-foreground" />
+                          ) : null}
+                        </DropdownMenuItem>
+                      ))}
+                      {buildPluginStrategyIds([
+                        ...pluginStrategyIds,
+                        group.strategy,
+                      ]).map((strategy) => (
+                        <DropdownMenuItem
+                          key={strategy}
+                          onSelect={() => onChangeStrategy(group, strategy)}
+                        >
+                          <span className="flex-1 font-mono">{strategy}</span>
+                          {group.strategy === strategy ? (
                             <Check className="size-3.5 text-muted-foreground" />
                           ) : null}
                         </DropdownMenuItem>

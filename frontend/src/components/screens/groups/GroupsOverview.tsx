@@ -55,6 +55,7 @@ import { GroupsTable } from "./GroupsTable";
 import type { GroupRow, GroupSort, SimilarGroupView } from "./groupTypes";
 import { STRATEGY_OPTIONS } from "./modelGroupFormatting";
 import { UnplacedModelsPanel } from "./UnplacedModelsPanel";
+import { usePluginStrategyIds } from "./usePluginStrategyIds";
 
 const groupId = (group: GroupRow) => group.id;
 
@@ -93,6 +94,8 @@ type Props = {
   isLoading: boolean;
   search: string;
   strategyFilter: "all" | RoutingStrategy;
+  /** Plugin strategy ids that groups use, offered by the strategy filter. */
+  strategyFilterIds: RoutingStrategy[];
   sortBy: GroupSort;
   activeFilterCount: number;
   familyOptions: ModelPrefixOption[];
@@ -133,6 +136,7 @@ export function GroupsOverview({
   isLoading,
   search,
   strategyFilter,
+  strategyFilterIds,
   sortBy,
   activeFilterCount,
   familyOptions,
@@ -168,6 +172,7 @@ export function GroupsOverview({
     paginationProps,
   } = useClientPagination(visibleGroups);
   const selection = useRowSelection(visibleGroups, groupId);
+  const pluginStrategyIds = usePluginStrategyIds();
   const selectedGroups = selection.selectedRows;
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
@@ -261,6 +266,11 @@ export function GroupsOverview({
                       <SelectItem value="failover">
                         {locale === "zh-CN" ? "故障切换" : "Failover"}
                       </SelectItem>
+                      {strategyFilterIds.map((strategy) => (
+                        <SelectItem key={strategy} value={strategy}>
+                          <span className="font-mono">{strategy}</span>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -359,6 +369,20 @@ export function GroupsOverview({
                 isBusy={Boolean(busyId)}
                 onClick={() => {
                   void onBulkStrategy(selectedGroups, option.value);
+                  selection.clear();
+                }}
+              />
+            ))}
+            {pluginStrategyIds.map((strategy) => (
+              <BulkActionButton
+                key={strategy}
+                icon={<Shuffle className="size-3.5" />}
+                label={
+                  locale === "zh-CN" ? `设为 ${strategy}` : `Set to ${strategy}`
+                }
+                isBusy={Boolean(busyId)}
+                onClick={() => {
+                  void onBulkStrategy(selectedGroups, strategy);
                   selection.clear();
                 }}
               />

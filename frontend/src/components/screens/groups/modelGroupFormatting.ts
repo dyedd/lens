@@ -16,6 +16,13 @@ export const STRATEGY_OPTIONS: Array<{
   { value: "round_robin", zh: "平滑轮询", en: "Round Robin" },
 ];
 
+/** Return the plugin strategy ids among `strategies`, deduplicated in order. */
+export function buildPluginStrategyIds(strategies: RoutingStrategy[]) {
+  return Array.from(new Set(strategies)).filter(
+    (strategy) => !STRATEGY_OPTIONS.some((option) => option.value === strategy),
+  );
+}
+
 /** Return the localized label for a routing strategy. */
 export function strategyLabel(
   strategy: RoutingStrategy,

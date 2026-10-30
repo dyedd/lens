@@ -10,7 +10,6 @@ from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from ...models.model_groups import ModelGroup
-from ...models.protocols import RoutingStrategy
 from ..router import RouteSelection, RouteTarget
 from ..router.cooldown import ErrorCategory
 
@@ -40,7 +39,7 @@ class RoutingPlan:
     resolved_group_name: str | None
     requested_group: ModelGroup | None
     resolved_group: ModelGroup | None
-    strategy: RoutingStrategy
+    strategy: str
     route_targets: list[RouteTarget] | None
     use_model_matching: bool
     cursor_key: str | None = None

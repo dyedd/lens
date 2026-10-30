@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Protocol
@@ -9,6 +10,7 @@ from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouteState
+from ...plugins.contract import RouteSeat
 from .targets import (
     RouteTarget,
     build_route_targets,
@@ -16,6 +18,9 @@ from .targets import (
     endpoint_supports_protocol,
     target_key,
 )
+
+# (策略 id, pool, 候选) -> 下标的排列；None 表示按列出的顺序。路由器不再校验排列。
+SeatOrderer = Callable[[str, str, Sequence[RouteSeat]], list[int] | None]
 
 
 @dataclass(slots=True)
@@ -80,6 +85,7 @@ class RoutePlanner:
         self._affinity_seconds = 0.0
         self._affinity: dict[str, tuple[RouteTarget, float]] = {}
         self._affinity_armed: set[str] = set()
+        self.seat_orderer: SeatOrderer | None = None
 
     def configure_affinity(self, seconds: float) -> None:
         self._affinity_seconds = max(seconds, 0.0)
@@ -111,7 +117,7 @@ class RoutePlanner:
         channels: list[ChannelConfig],
         protocol: ProtocolKind,
         requested_model: str | None,
-        strategy: RoutingStrategy,
+        strategy: str,
         allowed_channel_ids: set[str] | None,
         use_model_matching: bool,
         route_targets: list[RouteTarget] | None,
@@ -165,7 +171,12 @@ class RoutePlanner:
         ]
         ordered_available = [
             *self._order_available(preferred_available, route_key, strategy),
-            *self._order_available(fallback_available, route_key, strategy),
+            *self._order_available(
+                fallback_available,
+                route_key,
+                strategy,
+                strategy_pool=f"{route_key}#fallback",
+            ),
         ]
         affinity = self._affinity.get(route_key)
         if affinity is not None:
@@ -193,12 +204,33 @@ class RoutePlanner:
         self,
         available: list[RouteTarget],
         route_key: str,
-        strategy: RoutingStrategy,
+        strategy: str,
         *,
         mutate: bool = True,
+        strategy_pool: str | None = None,
     ) -> list[RouteTarget]:
         if not available:
             return []
+        if strategy not in RoutingStrategy:
+            # 诊断快照（mutate=False）不调用插件；插件策略不可用时按列出的顺序。
+            if mutate and len(available) >= 2 and self.seat_orderer is not None:
+                seats = [
+                    RouteSeat(
+                        channel_id=target.channel.id,
+                        channel_name=target.channel.name,
+                        credential_id=target.credential_id,
+                        credential_name=target.credential_name or "",
+                        model_name=target.model_name,
+                        rate_multiplier=target.rate_multiplier,
+                        context_window=target.context_window,
+                        health_score=self._health.score(target),
+                    )
+                    for target in available
+                ]
+                order = self.seat_orderer(strategy, strategy_pool or route_key, seats)
+                if order is not None:
+                    return [available[index] for index in order]
+            return list(available)
         if strategy == RoutingStrategy.FAILOVER:
             return list(available)
         primary_index = self._swrr_pick_index(available, route_key, mutate=mutate)

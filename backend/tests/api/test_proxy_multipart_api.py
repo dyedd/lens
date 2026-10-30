@@ -25,6 +25,7 @@ def test_proxy_image_edits_forwards_form_fields_and_files(
         *,
         path_suffix: str = "",
         multipart_files: list[Any] | None = None,
+        request_path: str = "",
     ) -> JSONResponse:
         calls.append(
             {

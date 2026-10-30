@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import textwrap
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -174,6 +176,7 @@ async def _noop_lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 async def _close_state(state: Any) -> None:
+    await state.close_plugins()
     await state.close_http_clients()
     await state.engine.dispose()
 
@@ -231,6 +234,7 @@ def app_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Iterator[Any]:
     monkeypatch.setattr(
         settings, "database_url", f"sqlite+aiosqlite:///{db_path.as_posix()}"
     )
+    monkeypatch.setattr(settings, "plugins_dir", str(tmp_path / "plugins"))
     import app.api.app as api_app
     import app.gateway.service.app_state as state_mod
 
@@ -267,6 +271,19 @@ def admin_headers(client: TestClient) -> dict[str, str]:
     assert response.status_code == 200, response.text
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def install_plugin(client: TestClient, admin_headers: dict[str, str]) -> Any:
+    def _install_plugin(source: str, plugin_id: str) -> dict[str, Any]:
+        plugin_dir = Path(settings.plugins_dir) / plugin_id
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        (plugin_dir / "plugin.py").write_text(textwrap.dedent(source), encoding="utf-8")
+        response = client.post("/api/admin/plugins/reload", headers=admin_headers)
+        assert response.status_code == 200, response.text
+        return {item["id"]: item for item in response.json()}[plugin_id]
+
+    return _install_plugin
 
 
 @pytest.fixture

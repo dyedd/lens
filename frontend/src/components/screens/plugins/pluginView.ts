@@ -1,28 +1,19 @@
-import type { PluginItem, PluginState } from "@/lib/api/plugins";
+import type {
+  PluginExtensionStats,
+  PluginItem,
+  PluginState,
+} from "@/lib/api/plugins";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
-const PLUGIN_TITLES: Record<string, [string, string]> = {
-  channel_credential_bridge: ["自定义渠道凭据", "Custom channel credential"],
-  response_header_stamp: ["响应标记", "Response stamp"],
-};
-
-const PLUGIN_DESCRIPTIONS: Record<string, [string, string]> = {
-  channel_credential_bridge: [
-    "为指定渠道改用插件提供的鉴权头，并改写请求、补齐模型、观察请求",
-    "Swap a channel credential for one the plugin issues",
-  ],
-  response_header_stamp: [
-    "给经自定义渠道凭据插件处理的响应补一个标记头",
-    "Stamp responses handled by the credential plugin",
-  ],
-};
-
 const EXTENSION_LABELS: Record<string, [string, string]> = {
-  upstream_request: ["请求改写", "Request rewrite"],
+  request_rewrite: ["请求改写", "Request rewrite"],
+  upstream_request: ["出站改写", "Outbound rewrite"],
   upstream_credential: ["渠道鉴权", "Channel credential"],
   upstream_response: ["响应改写", "Response rewrite"],
+  response_event: ["流式事件", "Stream events"],
   request_observer: ["请求观察", "Request observer"],
   model_catalog: ["模型目录", "Model catalog"],
+  route_strategy: ["路由策略", "Routing strategy"],
 };
 
 const STATE_LABELS: Record<PluginState, [string, string]> = {
@@ -32,26 +23,50 @@ const STATE_LABELS: Record<PluginState, [string, string]> = {
   failed: ["异常", "Failed"],
 };
 
-export function pluginTitle(locale: Locale, plugin: PluginItem) {
-  const label = PLUGIN_TITLES[plugin.id];
-  return label ? titleForLocale(locale, label[0], label[1]) : plugin.name;
-}
-
-export function pluginDescription(locale: Locale, plugin: PluginItem) {
-  const text = PLUGIN_DESCRIPTIONS[plugin.id];
-  return text ? titleForLocale(locale, text[0], text[1]) : plugin.description;
-}
-
 export function pluginStateLabel(locale: Locale, state: PluginState) {
   const label = STATE_LABELS[state];
   return titleForLocale(locale, label[0], label[1]);
 }
 
-export function pluginExtensionLabels(locale: Locale, plugin: PluginItem) {
-  return plugin.extensions.map((extension) => {
-    const label = EXTENSION_LABELS[extension];
-    return label ? titleForLocale(locale, label[0], label[1]) : extension;
+export function pluginExtensionLabel(locale: Locale, extension: string) {
+  const label = EXTENSION_LABELS[extension];
+  return label ? titleForLocale(locale, label[0], label[1]) : extension;
+}
+
+/** 调用次数与平均耗时；没有调用时返回空串。 */
+export function formatExtensionUsage(
+  locale: Locale,
+  stats: PluginExtensionStats,
+) {
+  if (!stats.calls) return "";
+  const calls = stats.calls.toLocaleString(locale);
+  const avgMs = stats.avg_ms.toLocaleString(locale, {
+    maximumFractionDigits: 1,
   });
+  return titleForLocale(
+    locale,
+    `调用 ${calls} · 平均 ${avgMs} ms`,
+    `${calls} ${stats.calls === 1 ? "call" : "calls"} · avg ${avgMs} ms`,
+  );
+}
+
+/** 失败与丢弃次数，只列出非零项。 */
+export function formatExtensionFailures(
+  locale: Locale,
+  stats: PluginExtensionStats,
+) {
+  const parts: string[] = [];
+  if (stats.failures) {
+    const failures = stats.failures.toLocaleString(locale);
+    parts.push(
+      titleForLocale(locale, `失败 ${failures}`, `${failures} failed`),
+    );
+  }
+  if (stats.dropped) {
+    const dropped = stats.dropped.toLocaleString(locale);
+    parts.push(titleForLocale(locale, `丢弃 ${dropped}`, `${dropped} dropped`));
+  }
+  return parts.join(" · ");
 }
 
 /** 作者与来源合成一行副标题，缺省项直接省略。 */

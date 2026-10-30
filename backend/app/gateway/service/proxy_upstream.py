@@ -14,7 +14,13 @@ from ...core.context_windows import is_context_window_exceeded_error
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
 from ...plugins.contract import UpstreamCall, UpstreamResponse
-from ...plugins.upstream import apply_response_hooks, apply_upstream_hooks
+from ...plugins.runtime import (
+    PluginRun,
+    apply_response_hooks,
+    apply_upstream_hooks,
+    rewrite_event_stream,
+    system_run,
+)
 from ..converters import (
     convert_response,
     convert_stream_iterator,
@@ -68,6 +74,44 @@ from .upstream_support import (
 )
 
 _NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
+# 由网关按实际内容决定，插件改写的响应头里不能带。
+_FRAMING_HEADERS = frozenset({"content-length", "transfer-encoding"})
+
+
+def _resolve_plugin_run(
+    plugin_run: PluginRun | None, channel: ChannelConfig
+) -> PluginRun:
+    """调用方没有传本次请求的插件状态时，按网关自己发起的请求处理。"""
+    if plugin_run is not None:
+        return plugin_run
+    return system_run(app_state.plugin_registry.hook_set(), channel.protocol.value)
+
+
+async def _apply_reply_hooks(
+    plugin_run: PluginRun,
+    channel: ChannelConfig,
+    client_protocol: ProtocolKind | None,
+    status_code: int,
+    headers: dict[str, str],
+    content: bytes,
+) -> tuple[dict[str, str], bytes]:
+    """对已转换成客户端协议的非流式 JSON 回复运行 upstream_response 钩子。"""
+    hooked = await apply_response_hooks(
+        plugin_run,
+        UpstreamResponse(
+            channel=channel,
+            protocol=(client_protocol or channel.protocol).value,
+            status_code=status_code,
+            headers=headers,
+            content=content,
+        ),
+    )
+    hooked_headers = {
+        key: value
+        for key, value in hooked.headers.items()
+        if key.lower() not in _FRAMING_HEADERS
+    }
+    return hooked_headers, hooked.content
 
 
 def _image_count(body: dict[str, Any], payload: Any) -> int:
@@ -217,6 +261,7 @@ async def _build_anthropic_sse_to_json_result(
     *,
     content: bytes | None = None,
     deadline: RequestDeadline,
+    plugin_run: PluginRun,
 ) -> UpstreamResult:
     if content is None:
         content = await _read_response_body(response, deadline)
@@ -256,6 +301,16 @@ async def _build_anthropic_sse_to_json_result(
             raise _invalid_upstream("Invalid upstream response", exc) from exc
         response_content = decode_content_bytes(content)
 
+    if media_type == "application/json":
+        response_headers, content = await _apply_reply_hooks(
+            plugin_run,
+            channel,
+            client_protocol,
+            response.status_code,
+            response_headers,
+            content,
+        )
+
     return await _json_upstream_result(
         response,
         content=content,
@@ -281,6 +336,7 @@ async def _build_stream_result(
     log_body_enabled: bool,
     *,
     deadline: RequestDeadline,
+    plugin_run: PluginRun,
 ) -> UpstreamResult:
     chat_expected_choices = body.get("n", 1)
     if (
@@ -328,6 +384,9 @@ async def _build_stream_result(
         converted_iter = raw_iter
         stream_media = response.headers.get("content-type")
 
+    # 转换后的流总是 SSE，透传时只有 NDJSON 不是；用量与请求日志读取的是改写前的流。
+    if stream_media == "text/event-stream" or capture.event_format != "ndjson":
+        converted_iter = rewrite_event_stream(plugin_run, converted_iter)
     converted_iter = _stream_client_iterator(converted_iter, capture, client_protocol)
 
     return UpstreamResult(
@@ -391,6 +450,8 @@ async def _build_json_result(
     rate_multiplier: float | None,
     request_content: str | None,
     log_body_enabled: bool,
+    *,
+    plugin_run: PluginRun,
 ) -> UpstreamResult:
     try:
         payload: Any = json.loads(content)
@@ -419,23 +480,22 @@ async def _build_json_result(
         except ValueError as exc:
             raise _invalid_upstream("Invalid upstream response", exc) from exc
 
-    hooked = await apply_response_hooks(
-        UpstreamResponse(
-            channel=channel,
-            protocol=channel.protocol.value,
-            status_code=response.status_code,
-            headers=passthrough_headers(response.headers),
-            content=content,
-        ),
-        app_state.plugin_registry.response_hooks(),
+    # 与流式一致，请求日志记录插件改写前的回复。
+    response_content = decode_log_content_bytes(content) if log_body_enabled else None
+    headers, content = await _apply_reply_hooks(
+        plugin_run,
+        channel,
+        client_protocol,
+        response.status_code,
+        passthrough_headers(response.headers),
+        content,
     )
-    content = hooked.content
 
     return await _json_upstream_result(
         response,
         content=content,
         media_type=response.headers.get("content-type"),
-        headers=passthrough_headers(response.headers),
+        headers=headers,
         parsed=parsed,
         pricing_group_name=pricing_group_name,
         rate_multiplier=rate_multiplier,
@@ -445,9 +505,7 @@ async def _build_json_result(
             else 0
         ),
         request_content=request_content,
-        response_content=(
-            decode_log_content_bytes(content) if log_body_enabled else None
-        ),
+        response_content=response_content,
     )
 
 
@@ -464,6 +522,7 @@ async def prepare_upstream_request(
     max_request_body_bytes: int,
     path_suffix: str | None = None,
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
+    plugin_run: PluginRun | None = None,
 ) -> tuple[Any, bytes, str | None]:
     upstream = build_upstream_request(
         channel,
@@ -475,7 +534,9 @@ async def prepare_upstream_request(
         model_group_headers=model_group_headers,
         path_suffix=path_suffix,
     )
+    target_model = upstream.json_body.get("model")
     hooked = await apply_upstream_hooks(
+        _resolve_plugin_run(plugin_run, channel),
         UpstreamCall(
             channel=channel,
             protocol=channel.protocol.value,
@@ -483,8 +544,8 @@ async def prepare_upstream_request(
             headers=dict(upstream.headers),
             body=upstream.json_body,
             credential_id=credential_id,
+            model_name=target_model if isinstance(target_model, str) else None,
         ),
-        app_state.plugin_registry.upstream_hooks(),
     )
     upstream = UpstreamRequest(
         method=upstream.method,
@@ -555,6 +616,7 @@ async def _build_channel_result(
     log_body_enabled: bool,
     *,
     deadline: RequestDeadline,
+    plugin_run: PluginRun,
 ) -> tuple[UpstreamResult, httpx.Response | None]:
     """Build a response result and return the response still owned by the caller."""
     active_response = response
@@ -585,6 +647,7 @@ async def _build_channel_result(
                     rate_multiplier,
                     request_content,
                     log_body_enabled,
+                    plugin_run=plugin_run,
                 )
                 result.first_token_latency_ms = elapsed_ms(stream_started_at)
                 return result, response
@@ -608,6 +671,7 @@ async def _build_channel_result(
                 log_body_enabled,
                 content=buffered_content,
                 deadline=deadline,
+                plugin_run=plugin_run,
             )
             result.first_token_latency_ms = elapsed_ms(stream_started_at)
             return result, response
@@ -622,6 +686,7 @@ async def _build_channel_result(
                 stream_started_at,
                 log_body_enabled,
                 deadline=deadline,
+                plugin_run=plugin_run,
             )
             return result, None
         if buffered_content is None:
@@ -636,6 +701,7 @@ async def _build_channel_result(
             rate_multiplier,
             request_content,
             log_body_enabled,
+            plugin_run=plugin_run,
         )
         result.first_token_latency_ms = elapsed_ms(stream_started_at)
         return result, response
@@ -659,6 +725,7 @@ async def execute_upstream_request(
     client_protocol: ProtocolKind | None = None,
     log_body_enabled: bool = False,
     global_proxy_url: str | None = None,
+    plugin_run: PluginRun | None = None,
 ) -> UpstreamResult:
     proxy_url = resolve_upstream_proxy_url(channel, global_proxy_url)
     client = resolve_http_client(proxy_url)
@@ -685,6 +752,7 @@ async def execute_upstream_request(
             stream_started_at,
             log_body_enabled,
             deadline=deadline,
+            plugin_run=_resolve_plugin_run(plugin_run, channel),
         )
         return result
     except httpx.HTTPStatusError as exc:

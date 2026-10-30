@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import replace
 from math import ceil
 from time import perf_counter
 from typing import Any
@@ -16,6 +17,8 @@ from ...core.model_name_parser import parse_model_name
 from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind
+from ...plugins.contract import InboundRequest, PluginRejection
+from ...plugins.runtime import PluginRun, begin_run, run_request_rewrite
 from ..router import RouteSelection, RouteTarget, TargetKey, target_key
 from ..router.failover import RetryAction, next_candidate
 from .app_state import app_state
@@ -58,6 +61,7 @@ async def _create_pending_proxy_log_context(
     requested_group_name: str | None,
     is_stream: bool,
     request_content: str | None,
+    plugin_run: PluginRun,
 ) -> RequestLogger:
     request_log = await app_state.request_log_store.commands.create_request_log(
         RequestLogInput(
@@ -82,6 +86,7 @@ async def _create_pending_proxy_log_context(
         request_content=request_content,
         attempts=[],
         user_agent=user_agent,
+        plugin_run=plugin_run,
         requested_group_name=requested_group_name,
     )
 
@@ -346,6 +351,7 @@ async def _missing_model_response(
     user_agent: str,
     is_stream_body: bool,
     request_content: str | None,
+    plugin_run: PluginRun,
 ) -> Response:
     log_ctx = await _create_pending_proxy_log_context(
         protocol=protocol,
@@ -356,6 +362,7 @@ async def _missing_model_response(
         requested_group_name=None,
         is_stream=is_stream_body,
         request_content=request_content,
+        plugin_run=plugin_run,
     )
     await log_ctx.record_failure(
         status_code=400,
@@ -368,6 +375,27 @@ async def _missing_model_response(
         status_code=400,
         error_type="missing_model",
         message="Request model is required",
+    )
+
+
+async def _failed_request_response(
+    *,
+    protocol: ProtocolKind,
+    log_ctx: RequestLogger,
+    is_stream_body: bool,
+    status_code: int,
+    error_type: str,
+    message: str,
+) -> Response:
+    """Finalize a request that never reached routing and answer in its protocol."""
+    await log_ctx.record_failure(
+        status_code=status_code, error_message=message, is_stream=is_stream_body
+    )
+    return protocol_error_response(
+        protocol=protocol,
+        status_code=status_code,
+        error_type=error_type,
+        message=message,
     )
 
 
@@ -566,6 +594,7 @@ async def proxy_protocol(
     inbound_headers: Mapping[str, str] | None = None,
     path_suffix: str | None = None,
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
+    request_path: str = "",
 ) -> Response:
     (
         channels,
@@ -580,6 +609,16 @@ async def proxy_protocol(
     )
     started_at = deadline.started_at
     requested_model = body.get("model")
+    plugin_run = begin_run(
+        app_state.plugin_registry.hook_set(),
+        InboundRequest(
+            protocol=protocol.value,
+            path=request_path,
+            model=requested_model.strip() if isinstance(requested_model, str) else "",
+            is_stream=is_stream_body,
+            user_agent=sanitize_user_agent(inbound_user_agent),
+        ),
+    )
     if not isinstance(requested_model, str) or not requested_model.strip():
         return await _missing_model_response(
             protocol=protocol,
@@ -589,6 +628,7 @@ async def proxy_protocol(
             user_agent=upstream_user_agent,
             is_stream_body=is_stream_body,
             request_content=request_content,
+            plugin_run=plugin_run,
         )
     requested_model = requested_model.strip()
     original_requested_model = requested_model
@@ -612,19 +652,67 @@ async def proxy_protocol(
         requested_group_name=original_requested_model,
         is_stream=is_stream_body,
         request_content=request_content,
+        plugin_run=plugin_run,
     )
-    access_error = await _check_gateway_model_access(
-        protocol=protocol,
-        gateway_key=gateway_key,
-        requested_model=requested_model,
-        log_ctx=log_ctx,
-        is_stream_body=is_stream_body,
-        request_content=request_content,
-    )
-    if access_error is not None:
-        return access_error
-    required_context_tokens = estimate_request_context_tokens(body, protocol)
     try:
+        try:
+            rewritten_body = await run_request_rewrite(plugin_run, body)
+        except PluginRejection as exc:
+            return await _failed_request_response(
+                protocol=protocol,
+                log_ctx=log_ctx,
+                is_stream_body=is_stream_body,
+                status_code=exc.status_code,
+                error_type=exc.error_type,
+                message=exc.public_message,
+            )
+        if rewritten_body is not body:
+            # 请求日志保留客户端原始请求体；之后的检查、路由与尝试都按改写后的请求。
+            body = rewritten_body
+            rewritten_model = body.get("model")
+            if not isinstance(rewritten_model, str) or not rewritten_model.strip():
+                return await _failed_request_response(
+                    protocol=protocol,
+                    log_ctx=log_ctx,
+                    is_stream_body=is_stream_body,
+                    status_code=400,
+                    error_type="missing_model",
+                    message="Request model is required",
+                )
+            original_requested_model = rewritten_model.strip()
+            try:
+                parsed_model = parse_model_name(original_requested_model)
+            except ValueError as exc:
+                return await _failed_request_response(
+                    protocol=protocol,
+                    log_ctx=log_ctx,
+                    is_stream_body=is_stream_body,
+                    status_code=400,
+                    error_type="invalid_model",
+                    message=str(exc),
+                )
+            requested_model = parsed_model.base_model
+            is_stream_body = bool(body.get("stream"))
+            plugin_run.request = replace(
+                plugin_run.request,
+                model=original_requested_model,
+                is_stream=is_stream_body,
+            )
+            log_ctx.plan_route(
+                requested_group_name=original_requested_model,
+                resolved_group_name=None,
+            )
+        access_error = await _check_gateway_model_access(
+            protocol=protocol,
+            gateway_key=gateway_key,
+            requested_model=requested_model,
+            log_ctx=log_ctx,
+            is_stream_body=is_stream_body,
+            request_content=request_content,
+        )
+        if access_error is not None:
+            return access_error
+        required_context_tokens = estimate_request_context_tokens(body, protocol)
         route_resolution = await _resolve_proxy_route(
             channels=channels,
             protocol=protocol,
@@ -699,6 +787,9 @@ async def proxy_protocol(
                 required_context_tokens=required_context_tokens,
             )
             if retry_resolution.error is not None:
+                # 重选路失败只记进了失败账本，这里才是终态写入。
+                if failures.last_log_failure is not None:
+                    await failures.last_log_failure.write(log_ctx)
                 return retry_resolution.error
             if (
                 retry_resolution.plan is not None

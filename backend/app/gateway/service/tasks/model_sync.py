@@ -17,7 +17,7 @@ from ....models.channels import (
 from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus
 from ....models.sites import SiteConfig, SiteProtocolConfig
-from ....plugins.upstream import collect_catalog_entries
+from ....plugins.runtime import collect_catalog_entries
 from ..app_state import logger
 from .model_discovery import fetch_upstream_models
 
@@ -192,7 +192,7 @@ async def _sync_credential_models(
     upstream_names = {model.name for model in upstream_models}
     # 插件可以为渠道补充上游目录里没有的模型。
     for entry in await collect_catalog_entries(
-        fetch_channel, state.plugin_registry.model_catalog_hooks()
+        state.plugin_registry.hook_set(), fetch_channel
     ):
         if entry.enabled:
             upstream_names.add(entry.model_name)
