@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from ...models.channels import ChannelConfig
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from ...models.request_logs import RequestLogInput
+from ...plugins.contract import RequestRecord
+from ...plugins.runtime import PluginRun, finish_run
 from .app_state import app_state
 from .routing_plan import elapsed_ms
 from .runtime_types import (
@@ -34,6 +37,7 @@ class RequestLogger:
     request_content: str | None
     attempts: list[AttemptLog]
     user_agent: str
+    plugin_run: PluginRun
     requested_group_name: str | None = None
     resolved_group_name: str | None = None
     rate_multiplier: float | None = None
@@ -215,3 +219,50 @@ class RequestLogger:
         await app_state.request_log_store.commands.update_request_log(
             self.request_log_id, payload
         )
+        await self.finish_plugin_run(payload)
+
+    async def finish_plugin_run(self, payload: RequestLogInput) -> None:
+        """终态行写入后把请求摘要交给观察者；连接中与流式中的中间写入不算。"""
+        if payload.lifecycle_status not in _TERMINAL_LIFECYCLE_STATUSES:
+            return
+        await finish_run(self.plugin_run, build_request_record(payload))
+
+
+_TERMINAL_LIFECYCLE_STATUSES = frozenset(
+    {
+        RequestLogLifecycleStatus.SUCCEEDED,
+        RequestLogLifecycleStatus.FAILED,
+        RequestLogLifecycleStatus.CANCELLED,
+    }
+)
+
+
+def build_request_record(payload: RequestLogInput) -> RequestRecord:
+    """从终态日志行取白名单字段；凭据取最后一次尝试。"""
+    attempts = payload.attempts or []
+    credential_id = attempts[-1].get("credential_id") if attempts else None
+    return RequestRecord(
+        channel_id=payload.channel_id or "",
+        channel_name=payload.channel_name or "",
+        protocol=payload.protocol,
+        model=payload.upstream_model_name or payload.resolved_group_name or "",
+        status_code=payload.status_code or 0,
+        success=payload.success,
+        is_stream=payload.is_stream,
+        latency_ms=payload.latency_ms,
+        total_tokens=payload.total_tokens,
+        finished_at=datetime.now(UTC).isoformat(),
+        lifecycle_status=payload.lifecycle_status.value,
+        requested_model=payload.requested_group_name or "",
+        resolved_group_name=payload.resolved_group_name or "",
+        credential_id=credential_id if isinstance(credential_id, str) else "",
+        gateway_key_id=payload.gateway_key_id or "",
+        first_token_latency_ms=payload.first_token_latency_ms,
+        input_tokens=payload.input_tokens,
+        output_tokens=payload.output_tokens,
+        cache_read_input_tokens=payload.cache_read_input_tokens,
+        cache_write_input_tokens=payload.cache_write_input_tokens,
+        total_cost_usd=payload.total_cost_usd,
+        attempt_count=len(attempts),
+        is_rejected=not payload.success and not attempts,
+    )

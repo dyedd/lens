@@ -246,7 +246,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
 
     reasoning_effort = extract_request_reasoning_effort(request.body, upstream_body)
     try:
-        upstream, body_bytes, upstream_request_content = prepare_upstream_request(
+        upstream, body_bytes, upstream_request_content = await prepare_upstream_request(
             channel,
             upstream_body,
             credential_id=target.credential_id,
@@ -262,6 +262,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
             max_request_body_bytes=int(request.runtime["max_request_body_bytes"]),
             path_suffix=request.path_suffix,
             multipart_files=request.multipart_files,
+            plugin_run=run.log_ctx.plugin_run,
         )
         run.effective_user_agent = effective_user_agent_from_headers(
             upstream.headers, request.upstream_user_agent
@@ -327,6 +328,7 @@ async def _send_attempt(
             log_body_enabled=run.log_body_enabled,
             deadline=run.deadline,
             global_proxy_url=str(request.runtime["proxy_url"]),
+            plugin_run=run.log_ctx.plugin_run,
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(

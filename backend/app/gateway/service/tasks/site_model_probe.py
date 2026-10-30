@@ -17,6 +17,8 @@ from ....core.upstream_rules import (
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
 from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
+from ....plugins.contract import UpstreamCall
+from ....plugins.runtime import apply_credential_hooks, system_run
 from ...upstream_request import (
     UpstreamRequest,
     build_upstream_request,
@@ -191,6 +193,25 @@ async def _call_site_model_probe_channel(
         user_agent=default_lens_user_agent(),
         upstream_headers_config=runtime["upstream_headers_config"],
         model_group_headers=list(model_group_headers),
+    )
+    # 探测与真实请求一样经过凭据插件，测通的才是实际会发出的鉴权。
+    hooked = await apply_credential_hooks(
+        system_run(app_state.plugin_registry.hook_set(), channel.protocol.value),
+        UpstreamCall(
+            channel=channel,
+            protocol=channel.protocol.value,
+            url=upstream.url,
+            headers=dict(upstream.headers),
+            body=upstream.json_body,
+            credential_id=credential_id,
+            model_name=model_name,
+        ),
+    )
+    upstream = UpstreamRequest(
+        method=upstream.method,
+        url=hooked.url,
+        headers=hooked.headers,
+        json_body=hooked.body,
     )
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client = resolve_http_client(proxy_url)

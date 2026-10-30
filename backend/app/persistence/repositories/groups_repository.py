@@ -163,7 +163,7 @@ class ModelGroupRepository(
             entity = ModelGroupEntity(
                 id=str(uuid.uuid4()),
                 name=payload.name.strip(),
-                strategy=payload.strategy.value,
+                strategy=payload.strategy,
                 route_group_id=route_group.id if route_group is not None else "",
                 match_regex=payload.match_regex,
                 match_regex_operator=payload.match_regex_operator,
@@ -259,7 +259,7 @@ class ModelGroupRepository(
             changes = payload.model_dump(exclude_unset=True)
             for key, value in changes.items():
                 if key == "strategy" and value is not None:
-                    entity.strategy = value.value
+                    entity.strategy = value
                 elif key == "match_regex":
                     if value is not None:
                         entity.match_regex = value

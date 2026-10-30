@@ -1,7 +1,8 @@
+import re
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AfterValidator, Field, field_validator, model_validator
 
 from ..core.context_windows import ContextWindowSource
 from ..core.model_group_matching import MatchRegexOperator
@@ -12,6 +13,14 @@ from .validation import ContextWindow, StrictBaseModel, validate_regex_pattern
 
 # 兼容最多 20 条旧规则各 500 字符的合并结果。
 MAX_MATCH_REGEX_LENGTH = 10_240
+
+# ponytail: model_groups.strategy is VARCHAR(32); widen with a new migration if longer ids are needed
+MODEL_GROUP_STRATEGY_MAX_LENGTH = 32
+
+# 插件策略标识 `<插件 id>/<策略名>`。
+_PLUGIN_STRATEGY_PATTERN = re.compile(
+    r"[a-z0-9][a-z0-9_]{0,63}/[A-Za-z0-9][A-Za-z0-9._-]*"
+)
 
 
 def _canonicalize_fallback_group_ids(value: list[str] | None) -> list[str] | None:
@@ -40,6 +49,22 @@ def _canonicalize_match_regex(value: str | None) -> str | None:
             f"{MAX_MATCH_REGEX_LENGTH} characters"
         )
     return validate_regex_pattern(pattern, error_label="model group match regex")
+
+
+def _validate_strategy(value: str) -> str:
+    if value in RoutingStrategy or _PLUGIN_STRATEGY_PATTERN.fullmatch(value):
+        return value
+    raise ValueError(
+        "Model group strategy must be round_robin, failover or <plugin_id>/<name>"
+    )
+
+
+# 不认识的插件策略也照存，插件恢复后即生效。
+RoutingStrategyId = Annotated[
+    str,
+    Field(max_length=MODEL_GROUP_STRATEGY_MAX_LENGTH),
+    AfterValidator(_validate_strategy),
+]
 
 
 class ModelGroupItemState(str, Enum):
@@ -72,7 +97,7 @@ class ModelGroupItemReason(str, Enum):
 class ModelGroup(StrictBaseModel):
     id: str
     name: str
-    strategy: RoutingStrategy
+    strategy: RoutingStrategyId
     route_group_id: str = ""
     route_group_name: str = ""
     # The group name always matches as a case-insensitive substring.
@@ -160,7 +185,7 @@ class ModelGroupItemInput(StrictBaseModel):
 
 class ModelGroupCreate(StrictBaseModel):
     name: str
-    strategy: RoutingStrategy = RoutingStrategy.FAILOVER
+    strategy: RoutingStrategyId = RoutingStrategy.FAILOVER.value
     route_group_id: str = ""
     match_regex: str = Field(default="", max_length=500)
     match_regex_operator: MatchRegexOperator = "or"
@@ -194,7 +219,7 @@ class ModelGroupCreate(StrictBaseModel):
 
 class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
-    strategy: RoutingStrategy | None = None
+    strategy: RoutingStrategyId | None = None
     route_group_id: str | None = None
     match_regex: str | None = Field(default=None, max_length=500)
     match_regex_operator: MatchRegexOperator | None = None

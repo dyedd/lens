@@ -221,7 +221,7 @@ async def replace_groups(
             ModelGroupEntity(
                 id=group.id,
                 name=group.name,
-                strategy=group.strategy.value,
+                strategy=group.strategy,
                 route_group_id=group.route_group_id,
                 match_regex=group.match_regex,
                 match_regex_operator=group.match_regex_operator,

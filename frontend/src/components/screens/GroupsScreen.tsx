@@ -140,6 +140,7 @@ export function GroupsScreen() {
         isLoading={queries.isLoading}
         search={filters.search}
         strategyFilter={filters.strategyFilter}
+        strategyFilterIds={filters.strategyFilterIds}
         sortBy={filters.sortBy}
         activeFilterCount={filters.activeFilterCount}
         familyOptions={filters.familyOptions}

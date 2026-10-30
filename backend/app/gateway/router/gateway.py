@@ -8,7 +8,7 @@ from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouterSnapshot
 from .cooldown import ClaimDecision, CooldownPolicy, ErrorCategory
 from .health import HealthTracker
-from .routing import RoutePlanner, RouteSelection
+from .routing import RoutePlanner, RouteSelection, SeatOrderer
 from .targets import RouteTarget
 
 # 冷却到期后的探测在该目标上独占多久，避免全部请求同时涌入。
@@ -59,12 +59,17 @@ class GatewayRouter:
                 self._routes.reset_weights()
             self._routes.configure_affinity(affinity_seconds)
 
+    # ponytail: routes with the registry's current hook set, not the request's; pass the request's hooks through select() to pin them
+    def set_seat_orderer(self, orderer: SeatOrderer) -> None:
+        with self._lock:
+            self._routes.seat_orderer = orderer
+
     def select(
         self,
         channels: list[ChannelConfig],
         protocol: ProtocolKind,
         requested_model: str | None = None,
-        strategy: RoutingStrategy = RoutingStrategy.FAILOVER,
+        strategy: str = RoutingStrategy.FAILOVER.value,
         allowed_channel_ids: set[str] | None = None,
         use_model_matching: bool = True,
         route_targets: list[RouteTarget] | None = None,
