@@ -239,7 +239,7 @@ Open `/channels`, create a site, configure Base URLs and credentials, then sync 
 
 - **Base URLs**: One site can maintain multiple upstream URLs.
 - **Credentials**: One site can maintain multiple API keys so routing can switch at credential granularity.
-- **Models**: Default to OpenAI Chat; clients using other chat protocols convert automatically. Pin Anthropic/Gemini for native upstreams. Models can bind to different credentials in the same site.
+- **Models**: The upstream protocol is detected, not picked. A protocol-specific endpoint, a native Anthropic/Gemini endpoint, an embedding/rerank/image model name, or the `supported_endpoint_types` a NewAPI-style upstream declares decides it directly; other chat models are probed in the order OpenAI Responses → OpenAI Chat → Anthropic → Gemini (Claude and Gemini models try their own protocol first), and the first that answers wins. Fetching models detects on add, the bulk actions in Manage models detect again, and a detected protocol can still be changed by hand. Scheduled syncs send no probes and decide from the same facts plus the configured protocols. Clients using other chat protocols convert automatically. Models can bind to different credentials in the same site.
 
 Common Base URLs:
 

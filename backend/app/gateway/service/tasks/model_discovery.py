@@ -8,8 +8,10 @@ import httpx
 from fastapi import HTTPException
 
 from ....core.context_windows import parse_upstream_model_context_window
+from ....core.model_protocols import parse_declared_protocols
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
+from ....models.protocols import ProtocolKind
 from ...upstream_request import (
     build_upstream_auth_headers,
     build_upstream_headers,
@@ -24,11 +26,55 @@ from ..upstream_support import (
     resolve_http_client,
 )
 
+# Every OpenAI-compatible protocol shares the first list; only Anthropic and
+# Gemini list models with their own auth and query.
+LISTING_PROTOCOLS = (
+    ProtocolKind.OPENAI_CHAT,
+    ProtocolKind.ANTHROPIC,
+    ProtocolKind.GEMINI,
+)
+NATIVE_LISTING_PROTOCOLS = frozenset({ProtocolKind.ANTHROPIC, ProtocolKind.GEMINI})
+
 
 @dataclass(frozen=True, slots=True)
 class UpstreamModel:
     name: str
     context_window: int | None = None
+    # Protocols a NewAPI-style list declares for this model.
+    protocols: tuple[ProtocolKind, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class UpstreamModelList:
+    """A model list and the listing protocol that answered it."""
+
+    protocol: ProtocolKind
+    models: list[UpstreamModel]
+
+
+async def fetch_upstream_model_list(
+    channel: ChannelConfig, protocols: tuple[ProtocolKind, ...] = LISTING_PROTOCOLS
+) -> UpstreamModelList:
+    """List models with the first listing protocol the upstream accepts."""
+    errors: list[HTTPException] = []
+    for protocol in protocols:
+        try:
+            models = await fetch_upstream_models(
+                channel.model_copy(update={"protocol": protocol})
+            )
+        except HTTPException as exc:
+            errors.append(exc)
+            continue
+        return UpstreamModelList(protocol=protocol, models=models)
+    if len(errors) == 1:
+        raise errors[0]
+    raise HTTPException(
+        status_code=errors[0].status_code,
+        detail="; ".join(
+            f"{protocol.value}: {exc.detail}"
+            for protocol, exc in zip(protocols, errors, strict=True)
+        ),
+    )
 
 
 async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
@@ -99,6 +145,7 @@ def _parse_model_list(payload: dict[str, Any]) -> list[UpstreamModel]:
                 UpstreamModel(
                     name=value,
                     context_window=parse_upstream_model_context_window(item),
+                    protocols=tuple(parse_declared_protocols(item)),
                 )
             )
 
