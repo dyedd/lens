@@ -7,20 +7,11 @@ from ...core.model_group_status import (
     evaluate_model_group_item,
 )
 from ...core.model_names import matches_model_pattern
+from ...core.model_protocols import ENDPOINT_KIND_PROTOCOLS
 from ...models.channels import ChannelConfig, ChannelKeyItem
 from ...models.model_groups import ModelGroupItemInput, ModelGroupItemState
 from ...models.protocols import ChannelStatus, ProtocolKind
 from ..converters import can_reach_protocol
-
-_ENDPOINT_PROTOCOLS: dict[str, ProtocolKind] = {
-    "openai_chat": ProtocolKind.OPENAI_CHAT,
-    "openai_responses": ProtocolKind.OPENAI_RESPONSES,
-    "openai_embedding": ProtocolKind.OPENAI_EMBEDDING,
-    "openai_image": ProtocolKind.OPENAI_IMAGE,
-    "anthropic": ProtocolKind.ANTHROPIC,
-    "gemini": ProtocolKind.GEMINI,
-    "rerank": ProtocolKind.RERANK,
-}
 
 
 @dataclass(slots=True)
@@ -57,7 +48,7 @@ def endpoint_supports_protocol(
 def _endpoint_protocol(channel: ChannelConfig) -> ProtocolKind | None:
     if channel.endpoint_kind == "protocol":
         return channel.protocol
-    return _ENDPOINT_PROTOCOLS.get(channel.endpoint_kind)
+    return ENDPOINT_KIND_PROTOCOLS.get(channel.endpoint_kind)
 
 
 @dataclass(frozen=True, slots=True)

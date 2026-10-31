@@ -11,10 +11,13 @@ from ....models.channels import (
 )
 from ....models.endpoint_probe import EndpointProbeRequest, EndpointProbeResult
 from ....models.health import HealthSummary
+from ....models.protocols import ProtocolKind
 from ....models.site_import import SiteBatchImportRequest, SiteBatchImportResult
 from ....models.site_model_test import (
     SiteModelFetchItem,
     SiteModelFetchRequest,
+    SiteModelProtocolDetectionRequest,
+    SiteModelProtocolDetectionResult,
     SiteModelTestRequest,
     SiteModelTestResult,
 )
@@ -27,8 +30,9 @@ from ....models.sites import (
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..tasks.model_discovery import fetch_upstream_models
+from ..tasks.model_discovery import LISTING_PROTOCOLS, fetch_upstream_model_list
 from ..tasks.model_group_reconcile import run_model_group_reconcile
+from ..tasks.model_protocol_detection import detect_model_protocols
 from ..tasks.site_model_probe import run_site_model_probe
 from ..upstream_support import format_channel_error
 
@@ -109,6 +113,9 @@ async def fetch_site_models(
 ) -> list[SiteModelFetchItem]:
     """Discover models available through the supplied site credentials."""
     previews = await app_state.channel_store.fetch_models_preview(payload)
+    listing_protocols = (
+        (payload.protocol,) if payload.protocol is not None else LISTING_PROTOCOLS
+    )
     items: list[SiteModelFetchItem] = []
     seen: set[tuple[str, str]] = set()
     errors: list[str] = []
@@ -128,7 +135,7 @@ async def fetch_site_models(
         channel = ChannelConfig(
             id="preview",
             name=preview["credential_name"] or "preview",
-            protocol=payload.protocol,
+            protocol=payload.protocol or ProtocolKind.OPENAI_CHAT,
             base_url=payload.base_url,
             api_key=credential.api_key,
             headers=payload.headers,
@@ -146,7 +153,9 @@ async def fetch_site_models(
             param_override=[],
         )
         try:
-            upstream_models = await fetch_upstream_models(channel)
+            upstream_models = (
+                await fetch_upstream_model_list(channel, listing_protocols)
+            ).models
         except HTTPException as exc:
             errors.append(format_channel_error(exc.detail))
             continue
@@ -170,6 +179,14 @@ async def fetch_site_models(
             detail="Model discovery failed: " + "; ".join(errors),
         )
     return items
+
+
+async def detect_site_model_protocols(
+    payload: SiteModelProtocolDetectionRequest,
+    _: Any = Depends(get_current_admin),
+) -> list[SiteModelProtocolDetectionResult]:
+    """Detect which upstream protocol serves each model."""
+    return await detect_model_protocols(payload)
 
 
 async def test_site_model(

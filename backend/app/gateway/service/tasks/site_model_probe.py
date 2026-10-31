@@ -98,14 +98,22 @@ def _site_model_probe_channel(payload: SiteModelTestRequest) -> ChannelConfig:
 
 async def run_site_model_probe(
     payload: SiteModelTestRequest,
-    request: Request,
+    request: Request | None,
     *,
     model_group_headers: Sequence[Any] = (),
     model_group_param_override: Sequence[Any] = (),
+    timeout_seconds: float | None = None,
 ) -> SiteModelTestResult:
-    """Run a model probe while honoring request disconnects."""
+    """Run a model probe, ending it early when `request` disconnects.
+
+    `timeout_seconds` caps the wait below the configured first-token timeout.
+    """
     channel = _site_model_probe_channel(payload)
     runtime = await app_state.settings_repo.get_runtime_settings()
+    if timeout_seconds is not None:
+        runtime["first_token_timeout_seconds"] = min(
+            float(runtime["first_token_timeout_seconds"]), timeout_seconds
+        )
     body = _site_model_probe_body(payload)
     prepared_body = _apply_site_model_probe_param_override(
         channel,
@@ -128,7 +136,7 @@ async def run_site_model_probe(
 
 
 async def _call_site_model_probe_for_request(
-    request: Request,
+    request: Request | None,
     *,
     channel: ChannelConfig,
     body: dict[str, Any],
@@ -137,16 +145,17 @@ async def _call_site_model_probe_for_request(
     runtime: Mapping[str, Any],
     model_group_headers: Sequence[Any],
 ) -> SiteModelTestResult:
-    probe_task = asyncio.create_task(
-        _call_site_model_probe_channel(
-            channel=channel,
-            body=body,
-            model_name=model_name,
-            credential_id=credential_id,
-            runtime=runtime,
-            model_group_headers=model_group_headers,
-        )
+    probe = _call_site_model_probe_channel(
+        channel=channel,
+        body=body,
+        model_name=model_name,
+        credential_id=credential_id,
+        runtime=runtime,
+        model_group_headers=model_group_headers,
     )
+    if request is None:
+        return await probe
+    probe_task = asyncio.create_task(probe)
     disconnect_task = asyncio.create_task(_wait_for_request_disconnect(request))
     try:
         done, _ = await asyncio.wait(
