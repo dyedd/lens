@@ -148,6 +148,8 @@ class SiteModel(StrictBaseModel):
     protocol: ProtocolKind | None = None
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
+    # Refreshed by the catalog sync so the UI can name the source of a size.
+    catalog_context_window: ContextWindow | None = None
 
 
 class SiteModelInput(StrictBaseModel):

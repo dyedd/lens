@@ -10,6 +10,7 @@ from packaging import version
 
 from ...core.config import settings
 from ...core.db import create_engine, create_session_factory
+from ...core.model_catalog import ModelCatalog
 from ...core.time_zone import load_time_zone
 from ...models.settings import SettingItem
 from ...persistence.backup_store import BackupStore
@@ -98,7 +99,10 @@ class AppState:
         self.admin_repo = AdminRepository(self.session_factory)
         self.settings_repo = SettingsRepository(self.session_factory)
         self.gateway_api_key_repo = GatewayApiKeyRepository(self.session_factory)
-        self.group_repo = ModelGroupRepository(self.session_factory)
+        self.model_catalog = ModelCatalog()
+        self.group_repo = ModelGroupRepository(
+            self.session_factory, model_catalog=self.model_catalog
+        )
         self.model_price_repo = ModelPriceRepository(self.session_factory)
         self.model_sync_run_repo = ModelSyncRunRepository(self.session_factory)
         self.site_credential_rate_repo = SiteCredentialRateRepository(
@@ -111,7 +115,9 @@ class AppState:
         )
 
         self.cronjob_store = CronjobStore(self.session_factory)
-        self.channel_store = ChannelStore(self.session_factory)
+        self.channel_store = ChannelStore(
+            self.session_factory, model_catalog=self.model_catalog
+        )
         self.backup_store = BackupStore(self.session_factory)
         self.router = GatewayRouter()
         self.cronjob_runner = CronjobRunner(
@@ -169,7 +175,20 @@ class AppState:
     async def _sync_model_prices(self) -> None:
         from .tasks.model_price_tasks import sync_group_prices
 
+        await self.refresh_model_catalog()
         await sync_group_prices(self)
+
+    async def refresh_model_catalog(self) -> None:
+        """Refresh the shared catalog snapshot; keep serving it when offline."""
+        from ...core.model_catalog import ModelCatalogError, refresh_model_catalog
+
+        runtime = await self.settings_repo.get_runtime_settings()
+        try:
+            await refresh_model_catalog(
+                self.model_catalog, str(runtime["proxy_url"]).strip()
+            )
+        except ModelCatalogError as exc:
+            logger.warning("Model catalog refresh skipped: %s", exc)
 
     async def _sync_channel_models(self) -> None:
         from .tasks.model_sync import sync_channel_models

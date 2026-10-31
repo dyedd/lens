@@ -234,6 +234,7 @@ export function useChannelModelPicker({
                 credential_id: item.credential_id,
                 model_name: item.model_name,
                 context_window: item.context_window,
+                catalog_context_window: item.catalog_context_window,
                 credentialName: credential
                   ? credentialLabel(credential, credentialIndex, locale)
                   : item.credential_name,
@@ -358,6 +359,7 @@ export function useChannelModelPicker({
               protocolIds: {},
               context_window: null,
               upstream_context_window: item.context_window,
+              catalog_context_window: item.catalog_context_window,
             },
           ];
         });

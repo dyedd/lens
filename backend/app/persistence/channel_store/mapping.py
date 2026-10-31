@@ -30,6 +30,7 @@ from app.persistence.entities import (
 )
 
 from ...core.context_windows import coerce_context_window
+from ...core.model_catalog import ModelCatalog
 from ...core.runtime_channel_ids import compose_runtime_channel_id
 from ..site_loader import fetch_site_rows
 from .endpoint_credentials import credential_ids_for_url
@@ -291,6 +292,7 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     sort_order=model.sort_order,
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,
+                    catalog_context_window=model.catalog_context_window,
                 )
             )
         return items
@@ -391,6 +393,9 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
 
 
 class SiteConfigLoadersMixin:
+    # Supplied by ChannelStore; None leaves catalog windows unresolved.
+    _catalog: ModelCatalog | None = None
+
     async def _load_sites(
         self, session: AsyncSession, site_ids: list[str] | None = None
     ) -> list[SiteConfig]:
@@ -410,6 +415,7 @@ class SiteConfigLoadersMixin:
             models_by_protocol_config,
             credentials_by_site,
         )
+        self._apply_catalog_context_windows(models_by_protocol_config)
 
         return [
             SiteConfig(
@@ -440,3 +446,25 @@ class SiteConfigLoadersMixin:
     async def _site_name_keys(self, session: AsyncSession) -> set[str]:
         rows = (await session.execute(select(SiteEntity.name))).scalars().all()
         return {row.strip().lower() for row in rows if row.strip()}
+
+    def _apply_catalog_context_windows(
+        self, models_by_protocol_config: dict[str, list[SiteModel]]
+    ) -> None:
+        """Fill in the window the shared catalog publishes for each model.
+
+        Resolved on every read so a refreshed catalog applies at once. The
+        catalog is the last resort: an admin setting and the upstream's own
+        report both describe the routed deployment more precisely.
+        """
+        catalog = self._catalog
+        if catalog is None:
+            return
+        for models in models_by_protocol_config.values():
+            for model in models:
+                if model.context_window is not None:
+                    continue
+                if model.upstream_context_window is not None:
+                    continue
+                model.catalog_context_window = catalog.find_context_window(
+                    model.model_name
+                )

@@ -10,6 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceConflictError, ResourceNotFoundError
+from app.core.model_catalog import ModelCatalog
 from app.core.model_group_matching import (
     compile_model_group_pattern,
     matches_model_group,
@@ -66,9 +67,14 @@ class ModelGroupRepository(
     GroupValidationMixin,
     GroupMappingMixin,
 ):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        *,
+        model_catalog: ModelCatalog | None = None,
+    ) -> None:
         self._session_factory = session_factory
-        self._channel_store = ChannelStore(session_factory)
+        self._channel_store = ChannelStore(session_factory, model_catalog=model_catalog)
 
     async def list_groups(
         self, *, channels: list[ChannelConfig] | None = None

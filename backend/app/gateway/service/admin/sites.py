@@ -171,6 +171,9 @@ async def fetch_site_models(
                     credential_name=preview["credential_name"],
                     model_name=upstream_model.name,
                     context_window=upstream_model.context_window,
+                    catalog_context_window=app_state.model_catalog.find_context_window(
+                        upstream_model.name
+                    ),
                 )
             )
     if not items and errors:
