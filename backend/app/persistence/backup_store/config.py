@@ -38,7 +38,7 @@ from .serialize import (
 
 
 async def load_gateway_api_keys(
-    self, session: AsyncSession
+    session: AsyncSession,
 ) -> list[ConfigBackupGatewayApiKey]:
     rows = (
         (
@@ -69,7 +69,7 @@ async def load_gateway_api_keys(
     ]
 
 
-async def load_cronjobs(self, session: AsyncSession) -> list[ConfigBackupCronjob]:
+async def load_cronjobs(session: AsyncSession) -> list[ConfigBackupCronjob]:
     rows = (
         (await session.execute(select(CronjobEntity).order_by(CronjobEntity.id.asc())))
         .scalars()
@@ -88,9 +88,7 @@ async def load_cronjobs(self, session: AsyncSession) -> list[ConfigBackupCronjob
     ]
 
 
-async def replace_settings(
-    self, session: AsyncSession, settings: list[SettingItem]
-) -> int:
+async def replace_settings(session: AsyncSession, settings: list[SettingItem]) -> int:
     await session.execute(
         delete(SettingEntity).where(SettingEntity.key.in_(EDITABLE_SETTING_KEYS))
     )
@@ -111,7 +109,7 @@ async def replace_settings(
 
 
 async def replace_cronjobs(
-    self, session: AsyncSession, cronjobs: list[ConfigBackupCronjob]
+    session: AsyncSession, cronjobs: list[ConfigBackupCronjob]
 ) -> None:
     task_ids: set[str] = set()
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -170,7 +168,7 @@ async def replace_cronjobs(
 
 
 async def replace_gateway_api_keys(
-    self, session: AsyncSession, gateway_api_keys: list[ConfigBackupGatewayApiKey]
+    session: AsyncSession, gateway_api_keys: list[ConfigBackupGatewayApiKey]
 ) -> None:
     await session.execute(delete(GatewayApiKeyEntity))
     seen_ids: set[str] = set()

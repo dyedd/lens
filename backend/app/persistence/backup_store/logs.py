@@ -16,9 +16,7 @@ from .serialize import (
 )
 
 
-async def load_request_logs(
-    self, session: AsyncSession
-) -> list[ConfigBackupRequestLog]:
+async def load_request_logs(session: AsyncSession) -> list[ConfigBackupRequestLog]:
     rows = (
         (
             await session.execute(
@@ -83,7 +81,7 @@ async def load_request_logs(
 
 
 async def replace_request_logs(
-    self, session: AsyncSession, request_logs: list[ConfigBackupRequestLog]
+    session: AsyncSession, request_logs: list[ConfigBackupRequestLog]
 ) -> None:
     await session.execute(delete(RequestLogEntity))
 

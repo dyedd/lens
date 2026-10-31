@@ -27,7 +27,7 @@ from app.persistence.stats_entities import (
 )
 
 
-async def load_model_prices(self, session: AsyncSession) -> list[ModelPriceItem]:
+async def load_model_prices(session: AsyncSession) -> list[ModelPriceItem]:
     rows = (
         (
             await session.execute(
@@ -58,7 +58,7 @@ async def load_model_prices(self, session: AsyncSession) -> list[ModelPriceItem]
     ]
 
 
-async def load_stats(self, session: AsyncSession) -> ConfigBackupStatsSnapshot:
+async def load_stats(session: AsyncSession) -> ConfigBackupStatsSnapshot:
     imported_total_row = await session.get(ImportedStatsTotalEntity, 1)
     imported_daily_rows = (
         (
@@ -154,7 +154,7 @@ async def load_stats(self, session: AsyncSession) -> ConfigBackupStatsSnapshot:
 
 
 async def replace_model_prices(
-    self, session: AsyncSession, model_prices: list[ModelPriceItem]
+    session: AsyncSession, model_prices: list[ModelPriceItem]
 ) -> None:
     await session.execute(delete(ModelPriceEntity))
     await session.execute(
@@ -195,7 +195,7 @@ async def replace_model_prices(
 
 
 async def replace_stats(
-    self, session: AsyncSession, stats: ConfigBackupStatsSnapshot
+    session: AsyncSession, stats: ConfigBackupStatsSnapshot
 ) -> None:
     await session.execute(delete(ImportedStatsDailyEntity))
     await session.execute(delete(ImportedStatsTotalEntity))

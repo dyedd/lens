@@ -8,11 +8,11 @@ from ....models.protocols import RequestLogLifecycleStatus
 from ....models.request_logs import RequestLogInput
 from ....persistence.repositories.model_price_repository import ModelCostEstimate
 from ..app_state import app_state, logger
+from ..proxy.routing_plan import elapsed_ms
 from ..request_logger import RequestLogger
-from ..routing_plan import elapsed_ms
-from ..runtime_types import (
+from ..runtime_types import UpstreamResult
+from .capture import (
     StreamCapture,
-    UpstreamResult,
     record_stream_parse_error,
 )
 from .events import join_stream_chunks, stream_capture_usage
