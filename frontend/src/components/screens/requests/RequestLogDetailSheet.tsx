@@ -21,6 +21,7 @@ import { titleForLocale } from "@/lib/I18nContext";
 import { formatJson } from "@/lib/jsonFormatting";
 import { protocolLabel } from "@/lib/protocols";
 import {
+  formatCacheHitRate,
   formatChannelCredentialLabel,
   formatCount,
   formatGatewayKeyLabel,
@@ -470,6 +471,14 @@ export function RequestLogDetailSheet({
                     <DetailRow
                       label={titleForLocale(locale, "缓存写入", "Cache write")}
                       value={formatCount(record.cache_write_input_tokens)}
+                    />
+                    <DetailRow
+                      label={titleForLocale(
+                        locale,
+                        "缓存命中率",
+                        "Cache hit rate",
+                      )}
+                      value={formatCacheHitRate(record)}
                     />
                     <DetailRow
                       label={titleForLocale(locale, "首字", "First token")}
