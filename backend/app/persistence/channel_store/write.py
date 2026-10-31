@@ -11,6 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.model_endpoints import build_model_endpoint_configs
 from app.models.sites import (
     SiteBaseUrl,
     SiteCreate,
@@ -53,14 +54,17 @@ class SiteProtocolConfigUpsertsMixin:
         site_id: str,
         protocol_configs: list[SiteProtocolConfigInput],
         credentials: list[SiteCredential],
-        base_url_ids: set[str],
-        base_url_kinds: dict[str, str] | None = None,
+        base_urls: list[SiteBaseUrl],
     ) -> set[str]:
+        base_url_ids = {url.id for url in base_urls}
+        base_url_kinds = {url.id: url.kind for url in base_urls}
         protocol_config_ids: set[str] = set()
+        configs_by_url: dict[str, str] = {}
         seen_base_url_ids: set[str] = set()
         for protocol_config in protocol_configs:
             protocol_config_id = protocol_config.id or str(uuid.uuid4())
             protocol_config_ids.add(protocol_config_id)
+            configs_by_url[protocol_config.base_url_id] = protocol_config_id
             if protocol_config.base_url_id not in base_url_ids:
                 raise ValueError(
                     "Base URL not found for protocol config "
@@ -119,12 +123,24 @@ class SiteProtocolConfigUpsertsMixin:
                 ensure_ascii=True,
             )
 
-            await self._upsert_protocol_config_models(
-                session,
-                protocol_config_id,
-                protocol_config,
-                selected_credential_ids,
-            )
+            seen_models: set[tuple[str, str, str]] = set()
+            for model in protocol_config.models:
+                model_name = model.model_name.strip()
+                if not model_name:
+                    raise ValueError(
+                        f"Model name is required in protocol config {protocol_config_id}"
+                    )
+                if model.credential_id not in selected_credential_ids:
+                    raise ValueError(
+                        "Model credential not found in protocol config "
+                        f"{protocol_config_id}: {model.credential_id}"
+                    )
+                model_key = (model.credential_id, model_name, model.protocol.value)
+                if model_key in seen_models:
+                    raise ValueError(
+                        f"Duplicate model in protocol config {protocol_config_id}: {model_name}"
+                    )
+                seen_models.add(model_key)
         required_base_url_ids = {
             base_url_id
             for base_url_id in base_url_ids
@@ -135,6 +151,19 @@ class SiteProtocolConfigUpsertsMixin:
             missing_label = ", ".join(sorted(missing_urls))
             raise ValueError(
                 f"Each base URL must have exactly one protocol config: {missing_label}"
+            )
+        for config in build_model_endpoint_configs(
+            base_urls, credentials, protocol_configs
+        ):
+            await self._upsert_protocol_config_models(
+                session,
+                configs_by_url[config.base_url_id],
+                config,
+                set(
+                    credential_ids_for_url(
+                        credential_pairs(credentials), config.base_url_id
+                    )
+                ),
             )
         return protocol_config_ids
 
@@ -276,8 +305,7 @@ class SiteConfigUpsertsMixin(
             site_id,
             payload.protocols,
             built_credentials,
-            base_url_ids,
-            {item.id: item.kind for item in built_base_urls},
+            built_base_urls,
         )
         await self._upsert_credential_rates(
             session,
