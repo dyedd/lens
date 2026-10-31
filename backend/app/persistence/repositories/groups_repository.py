@@ -39,8 +39,6 @@ from app.persistence.group_rule_codec import (
 )
 from app.persistence.regex_rule_references import (
     dump_rule_ids,
-    load_rule_patterns,
-    parse_rule_ids,
 )
 
 from ..channel_store import ChannelStore
@@ -160,8 +158,8 @@ class ModelGroupRepository(
             route_group = await self._validate_group_payload(
                 session,
                 payload.name,
-                payload.route_group_id,
-                payload.items,
+                route_group_id=payload.route_group_id,
+                items=payload.items,
                 fallback_group_ids=payload.fallback_group_ids,
                 channels=channels,
                 excluded_items=payload.excluded_items,
@@ -254,8 +252,8 @@ class ModelGroupRepository(
             route_group = await self._validate_group_payload(
                 session,
                 next_name,
-                next_route_group_id,
-                next_items if replaces_items else None,
+                route_group_id=next_route_group_id,
+                items=next_items if replaces_items else None,
                 exclude_group_id=group_id,
                 fallback_group_ids=next_fallback_group_ids,
                 channels=channels,
@@ -349,17 +347,7 @@ class ModelGroupRepository(
             model_group_item_key(item) for item in (*next_items, *next_excluded_items)
         }
         direct_pattern = compile_model_group_pattern(entity.match_regex)
-        patterns = (
-            (direct_pattern,)
-            if direct_pattern is not None
-            else tuple(
-                (
-                    await load_rule_patterns(
-                        session, parse_rule_ids(entity.match_rule_ids_json)
-                    )
-                ).values()
-            )
-        )
+        patterns = (direct_pattern,) if direct_pattern is not None else ()
         operator = (
             entity.match_regex_operator
             if entity.match_regex_operator in {"and", "or"}
@@ -367,8 +355,6 @@ class ModelGroupRepository(
         )
 
         def rejoins(item: ModelGroupItemView) -> bool:
-            if parse_rule_ids(entity.match_rule_ids_json):
-                return any(pattern.search(item.model_name) for pattern in patterns)
             return matches_model_group(entity.name, item.model_name, patterns, operator)
 
         # A member whose target is gone cannot rejoin, so it needs no exclusion.
@@ -509,16 +495,9 @@ class ModelGroupRepository(
                 )
                 target.match_rule_ids_json = dump_rule_ids([])
             elif not target_pattern:
-                target.match_rule_ids_json = dump_rule_ids(
-                    list(
-                        dict.fromkeys(
-                            [
-                                *parse_rule_ids(target.match_rule_ids_json),
-                                *parse_rule_ids(source.match_rule_ids_json),
-                            ]
-                        )
-                    )
-                )
+                target.match_regex = ""
+                target.match_regex_operator = "or"
+                target.match_rule_ids_json = dump_rule_ids([])
             await session.delete(source)
             await session.commit()
             hydrated = await self._hydrate_groups(session, [target], channels)

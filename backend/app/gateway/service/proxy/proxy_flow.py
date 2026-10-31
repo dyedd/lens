@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
 from math import ceil
 from time import perf_counter
 from typing import Any
@@ -11,41 +12,54 @@ from fastapi.responses import JSONResponse
 
 from app.models.request_logs import RequestLogInput
 
-from ...core.errors import RoutingError
-from ...core.model_name_parser import parse_model_name
-from ...models.channels import ChannelConfig
-from ...models.gateway_keys import GatewayApiKey
-from ...models.protocols import ProtocolKind
-from ..router import RouteSelection, RouteTarget, TargetKey, target_key
-from ..router.failover import RetryAction, next_candidate
-from .app_state import app_state
-from .auth import gateway_key_allows_model
-from .context_tokens import estimate_request_context_tokens
-from .error_responses import protocol_error_response
-from .http_handlers import apply_router_runtime_settings
-from .multimodal import body_has_multimodal_content
-from .payload_serialization import dump_log_json
+from ....core.errors import RoutingError
+from ....core.model_name_parser import ParsedModelName, parse_model_name
+from ....models.channels import ChannelConfig
+from ....models.gateway_keys import GatewayApiKey
+from ....models.protocols import ProtocolKind
+from ...router import RouteSelection, RouteTarget, TargetKey, target_key
+from ...router.failover import RetryAction, next_candidate
+from ..app_state import app_state
+from ..auth import gateway_key_allows_model
+from ..context_tokens import estimate_request_context_tokens
+from ..error_responses import protocol_error_response
+from ..http_handlers import apply_router_runtime_settings
+from ..multimodal import body_has_multimodal_content
+from ..payload_serialization import dump_log_json
+from ..request_logger import RequestLogger
+from ..runtime_types import (
+    RequestDeadline,
+    RouteResolution,
+    RoutingPlan,
+)
+from ..upstream_support import (
+    default_lens_user_agent,
+    is_generic_user_agent,
+    sanitize_user_agent,
+)
 from .proxy_attempt import (
     AttemptLog,
     AttemptRequest,
     FailureLedger,
     LogFailure,
-    run_attempt,
+    execute_target_attempt,
 )
-from .request_logger import RequestLogger
 from .routing_plan import (
     resolve_routing_plan,
 )
-from .runtime_types import (
-    RequestDeadline,
-    RouteResolution,
-    RoutingPlan,
-)
-from .upstream_support import (
-    default_lens_user_agent,
-    is_generic_user_agent,
-    sanitize_user_agent,
-)
+
+
+@dataclass(slots=True)
+class _ProxyRouteContext:
+    request: AttemptRequest
+    channels: list[ChannelConfig]
+    requested_model: str
+    parsed_model: ParsedModelName
+    requested_group_name: str
+    log_ctx: RequestLogger
+    failures: FailureLedger
+    required_context_tokens: int | None
+    deadline: RequestDeadline
 
 
 async def _create_pending_proxy_log_context(
@@ -93,7 +107,7 @@ async def _resolve_proxy_route(
     requested_model: str,
     log_ctx: RequestLogger,
     is_stream_body: bool,
-    parsed_model: object | None = None,
+    parsed_model: ParsedModelName | None = None,
     group_id: str | None = None,
     requested_group_name: str | None = None,
     failures: FailureLedger | None = None,
@@ -209,22 +223,14 @@ async def _routing_error_response(
 
 async def _iter_route_plans(
     *,
+    context: _ProxyRouteContext,
     initial_plan: RoutingPlan,
     initial_selection: RouteSelection,
-    channels: list[ChannelConfig],
-    protocol: ProtocolKind,
-    requested_model: str,
-    parsed_model: object,
-    requested_group_name: str,
-    body: dict[str, Any],
-    log_ctx: RequestLogger,
-    is_stream_body: bool,
-    failures: FailureLedger,
-    required_context_tokens: int | None,
 ) -> AsyncIterator[tuple[RoutingPlan, RouteSelection]]:
     """Resolve fallback groups only after the current group's attempts fail."""
+    request = context.request
     yield initial_plan, initial_selection
-    if not body_has_multimodal_content(body, protocol):
+    if not body_has_multimodal_content(request.body, request.protocol):
         return
 
     seen_group_ids = {
@@ -235,19 +241,19 @@ async def _iter_route_plans(
             continue
         seen_group_ids.add(fallback_group_id)
         fallback_resolution = await _resolve_proxy_route(
-            channels=channels,
-            protocol=protocol,
-            requested_model=requested_model,
-            log_ctx=log_ctx,
-            is_stream_body=is_stream_body,
-            parsed_model=parsed_model,
+            channels=context.channels,
+            protocol=request.protocol,
+            requested_model=context.requested_model,
+            log_ctx=context.log_ctx,
+            is_stream_body=bool(request.body.get("stream")),
+            parsed_model=context.parsed_model,
             group_id=fallback_group_id,
-            requested_group_name=requested_group_name,
-            failures=failures,
-            required_context_tokens=required_context_tokens,
+            requested_group_name=context.requested_group_name,
+            failures=context.failures,
+            required_context_tokens=context.required_context_tokens,
         )
         if fallback_resolution.error is not None:
-            failures.record(
+            context.failures.record(
                 fallback_resolution.error.body.decode(errors="replace"),
                 fallback_resolution.error.status_code,
             )
@@ -261,13 +267,14 @@ async def _iter_route_plans(
 async def _run_route_attempts(
     *,
     route_plans: AsyncIterator[tuple[RoutingPlan, RouteSelection]],
-    request: AttemptRequest,
-    deadline: RequestDeadline,
-    log_ctx: RequestLogger,
-    failures: FailureLedger,
-    is_stream_body: bool,
+    context: _ProxyRouteContext,
 ) -> Response | None:
     """Try each available target, returning the first successful response."""
+    request = context.request
+    deadline = context.deadline
+    log_ctx = context.log_ctx
+    failures = context.failures
+    is_stream_body = bool(request.body.get("stream"))
     async for current_plan, current_selection in route_plans:
         ordered = current_selection.ordered()
         tried: set[TargetKey] = set()
@@ -313,7 +320,7 @@ async def _run_route_attempts(
             tried.add(target_key(target))
             response: Response | None = None
             try:
-                response = await run_attempt(
+                response = await execute_target_attempt(
                     request=request,
                     plan=current_plan,
                     target=target,
@@ -652,30 +659,28 @@ async def proxy_protocol(
             path_suffix=path_suffix,
             multipart_files=multipart_files,
         )
+        route_context = _ProxyRouteContext(
+            request=request,
+            channels=channels,
+            requested_model=requested_model,
+            parsed_model=parsed_model,
+            requested_group_name=original_requested_model,
+            log_ctx=log_ctx,
+            failures=failures,
+            required_context_tokens=required_context_tokens,
+            deadline=deadline,
+        )
 
         async def attempt(
             current_plan: RoutingPlan, current_selection: RouteSelection
         ) -> Response | None:
             return await _run_route_attempts(
                 route_plans=_iter_route_plans(
+                    context=route_context,
                     initial_plan=current_plan,
                     initial_selection=current_selection,
-                    channels=channels,
-                    protocol=protocol,
-                    requested_model=requested_model,
-                    parsed_model=parsed_model,
-                    requested_group_name=original_requested_model,
-                    body=body,
-                    log_ctx=log_ctx,
-                    is_stream_body=is_stream_body,
-                    failures=failures,
-                    required_context_tokens=required_context_tokens,
                 ),
-                request=request,
-                deadline=deadline,
-                log_ctx=log_ctx,
-                failures=failures,
-                is_stream_body=is_stream_body,
+                context=route_context,
             )
 
         response = await attempt(plan, selection)

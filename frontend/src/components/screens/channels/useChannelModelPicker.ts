@@ -18,6 +18,7 @@ import {
 } from "./channelAdvancedJson";
 import { activeBaseUrlValue, formHeaders } from "./channelForm";
 import {
+  endpointPriority,
   protocolForEndpointKind,
   rebuildProtocolConfigs,
 } from "./channelFormConversion";
@@ -175,12 +176,16 @@ export function useChannelModelPicker({
   /** Fetches every base URL with each of its keys; failures only warn. */
   async function discoverRemoteCatalog(): Promise<RemoteModelCatalog | null> {
     if (fetching) return null;
-    const editor = acceptApiKeyDrafts(form);
-    if (editor !== form) setForm(editor);
+    const drafted = acceptApiKeyDrafts(form);
+    const editor = {
+      ...drafted,
+      protocolConfigs: rebuildProtocolConfigs(drafted),
+    };
+    setForm(editor);
     const headers = headerDraftToRules(
       headerDraftsFromJson(editor.headersJson) ?? [],
     );
-    const targets = rebuildProtocolConfigs(editor).flatMap((config) => {
+    const targets = editor.protocolConfigs.flatMap((config) => {
       const credentialIds = new Set(
         activeSelectedCredentialIds(editor, config),
       );
@@ -234,7 +239,6 @@ export function useChannelModelPicker({
                 credential_id: item.credential_id,
                 model_name: item.model_name,
                 context_window: item.context_window,
-                catalog_context_window: item.catalog_context_window,
                 credentialName: credential
                   ? credentialLabel(credential, credentialIndex, locale)
                   : item.credential_name,
@@ -282,9 +286,28 @@ export function useChannelModelPicker({
 
   /** 识别选中模型的上游协议后写入表格，并为对应 Key 追加精确规则。 */
   async function importRemoteModels(items: PickerModelItem[]) {
+    const editor = { ...form, protocolConfigs: rebuildProtocolConfigs(form) };
+    // 同一密钥只检测一次，避免专用地址把整个目录都判成自己的协议。
+    const sources = new Map<string, PickerModelItem>();
+    const sourcePriority = (item: PickerModelItem) => {
+      const config = editor.protocolConfigs.find(
+        (config) => config.id === item.protocol_config_id,
+      );
+      const kind = editor.base_urls.find(
+        (url) => url.id === config?.base_url_id,
+      )?.kind;
+      return kind ? endpointPriority(kind) : 0;
+    };
+    for (const item of items) {
+      const key = JSON.stringify([item.credential_id, item.model_name]);
+      const current = sources.get(key);
+      if (!current || sourcePriority(item) > sourcePriority(current))
+        sources.set(key, item);
+    }
+    items = [...sources.values()];
     setDetecting(true);
     const detection = await detectProtocols(
-      form,
+      editor,
       items.map((item) => ({
         protocolConfigId: item.protocol_config_id,
         credentialId: item.credential_id,
@@ -315,57 +338,59 @@ export function useChannelModelPicker({
       list.push(escapeModelName(item.model_name));
       additionsByCredential.set(item.credential_id, list);
     }
-    setForm((current) => ({
-      ...current,
-      credentials: current.credentials.map((credential) => {
-        const additions = additionsByCredential.get(credential.id);
-        if (!additions) return credential;
-        return {
-          ...credential,
-          model_pattern: mergeModelPatterns(
-            credential.model_pattern,
-            additions,
-          ),
-        };
-      }),
-      protocolConfigs: current.protocolConfigs.map((config) => {
-        const configItems = items.filter(
-          (item) => item.protocol_config_id === config.id,
-        );
-        if (!configItems.length) return config;
-        const fallbackProtocol = protocolForEndpointKind(
-          current.base_urls.find((item) => item.id === config.base_url_id)
-            ?.kind,
-        );
-        const existing = new Set(
-          config.models.map((model) =>
-            JSON.stringify([model.credential_id, model.model_name]),
-          ),
-        );
-        const models = configItems.flatMap((item) => {
-          const key = JSON.stringify([item.credential_id, item.model_name]);
-          if (existing.has(key)) return [];
-          existing.add(key);
-          return [
-            {
-              credential_id: item.credential_id,
-              model_name: item.model_name,
-              enabled: true,
-              protocols: [
-                detection.protocols.get(
-                  aggregateModelGroupKey(config, item.model_name),
-                ) ?? fallbackProtocol,
-              ],
-              protocolIds: {},
-              context_window: null,
-              upstream_context_window: item.context_window,
-              catalog_context_window: item.catalog_context_window,
-            },
-          ];
-        });
-        return { ...config, models: [...config.models, ...models] };
-      }),
-    }));
+    setForm((current) => {
+      const next = {
+        ...current,
+        credentials: current.credentials.map((credential) => {
+          const additions = additionsByCredential.get(credential.id);
+          if (!additions) return credential;
+          return {
+            ...credential,
+            model_pattern: mergeModelPatterns(
+              credential.model_pattern,
+              additions,
+            ),
+          };
+        }),
+        protocolConfigs: rebuildProtocolConfigs(current).map((config) => {
+          const configItems = items.filter(
+            (item) => item.protocol_config_id === config.id,
+          );
+          if (!configItems.length) return config;
+          const fallbackProtocol = protocolForEndpointKind(
+            current.base_urls.find((item) => item.id === config.base_url_id)
+              ?.kind,
+          );
+          const existing = new Set(
+            config.models.map((model) =>
+              JSON.stringify([model.credential_id, model.model_name]),
+            ),
+          );
+          const models = configItems.flatMap((item) => {
+            const key = JSON.stringify([item.credential_id, item.model_name]);
+            if (existing.has(key)) return [];
+            existing.add(key);
+            return [
+              {
+                credential_id: item.credential_id,
+                model_name: item.model_name,
+                enabled: true,
+                protocols: [
+                  detection.protocols.get(
+                    aggregateModelGroupKey(config, item.model_name),
+                  ) ?? fallbackProtocol,
+                ],
+                protocolIds: {},
+                context_window: null,
+                upstream_context_window: item.context_window,
+              },
+            ];
+          });
+          return { ...config, models: [...config.models, ...models] };
+        }),
+      };
+      return { ...next, protocolConfigs: rebuildProtocolConfigs(next) };
+    });
   }
 
   /** Re-detects the protocol of overview rows; undetected rows keep theirs. */
@@ -393,18 +418,21 @@ export function useChannelModelPicker({
     );
     const detected = detection.protocols.size;
     if (detected) {
-      setForm((current) => ({
-        ...current,
-        protocolConfigs: current.protocolConfigs.map((config) => ({
-          ...config,
-          models: config.models.map((model) => {
-            const protocol = detection.protocols.get(
-              aggregateModelGroupKey(config, model.model_name),
-            );
-            return protocol ? { ...model, protocols: [protocol] } : model;
-          }),
-        })),
-      }));
+      setForm((current) => {
+        const next = {
+          ...current,
+          protocolConfigs: current.protocolConfigs.map((config) => ({
+            ...config,
+            models: config.models.map((model) => {
+              const protocol = detection.protocols.get(
+                aggregateModelGroupKey(config, model.model_name),
+              );
+              return protocol ? { ...model, protocols: [protocol] } : model;
+            }),
+          })),
+        };
+        return { ...next, protocolConfigs: rebuildProtocolConfigs(next) };
+      });
       toast.success(
         locale === "zh-CN"
           ? `已识别 ${detected} 个模型的协议，保存后生效`

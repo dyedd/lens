@@ -8,6 +8,7 @@ import httpx
 from fastapi import HTTPException
 
 from ....core.context_windows import parse_upstream_model_context_window
+from ....core.errors import ModelDiscoveryError
 from ....core.model_protocols import parse_declared_protocols
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
@@ -26,8 +27,6 @@ from ..upstream_support import (
     resolve_http_client,
 )
 
-# Every OpenAI-compatible protocol shares the first list; only Anthropic and
-# Gemini list models with their own auth and query.
 LISTING_PROTOCOLS = (
     ProtocolKind.OPENAI_CHAT,
     ProtocolKind.ANTHROPIC,
@@ -56,13 +55,13 @@ async def fetch_upstream_model_list(
     channel: ChannelConfig, protocols: tuple[ProtocolKind, ...] = LISTING_PROTOCOLS
 ) -> UpstreamModelList:
     """List models with the first listing protocol the upstream accepts."""
-    errors: list[HTTPException] = []
+    errors: list[HTTPException | ModelDiscoveryError] = []
     for protocol in protocols:
         try:
             models = await fetch_upstream_models(
                 channel.model_copy(update={"protocol": protocol})
             )
-        except HTTPException as exc:
+        except (HTTPException, ModelDiscoveryError) as exc:
             errors.append(exc)
             continue
         return UpstreamModelList(protocol=protocol, models=models)
@@ -71,7 +70,7 @@ async def fetch_upstream_model_list(
     raise HTTPException(
         status_code=errors[0].status_code,
         detail="; ".join(
-            f"{protocol.value}: {exc.detail}"
+            f"{protocol.value}: {exc.public_message if isinstance(exc, ModelDiscoveryError) else exc.detail}"
             for protocol, exc in zip(protocols, errors, strict=True)
         ),
     )
@@ -91,13 +90,11 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
         return _parse_model_list(response.json())
     except httpx.HTTPStatusError as exc:
         detail = format_http_response_error(exc.response)
-        raise HTTPException(
-            status_code=exc.response.status_code, detail=detail
-        ) from exc
+        raise ModelDiscoveryError(detail, status_code=exc.response.status_code) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Transport error: {exc}") from exc
+        raise ModelDiscoveryError(f"Transport error: {exc}") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise ModelDiscoveryError(str(exc), status_code=400) from exc
 
 
 def _model_list_request(

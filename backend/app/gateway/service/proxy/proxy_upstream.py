@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from time import perf_counter
@@ -10,58 +11,81 @@ from typing import Any
 import httpx
 from fastapi import Response
 
-from ...core.context_windows import is_context_window_exceeded_error
-from ...models.channels import ChannelConfig
-from ...models.protocols import ProtocolKind
-from ..converters import (
+from ....core.context_windows import is_context_window_exceeded_error
+from ....models.channels import ChannelConfig
+from ....models.protocols import ProtocolKind
+from ...converters import (
     convert_response,
     convert_stream_iterator,
     needs_protocol_conversion,
     repair_chat_tool_call_stream,
 )
-from ..router.cooldown import (
+from ...router.cooldown import (
     ErrorCategory,
     classify_error,
 )
-from ..upstream_request import build_upstream_request, resolve_upstream_proxy_url
-from .app_state import app_state
-from .error_responses import stream_error_frame
-from .payload_serialization import (
+from ...upstream_request import (
+    UpstreamRequest,
+    build_upstream_request,
+    resolve_upstream_proxy_url,
+)
+from ..app_state import app_state
+from ..error_responses import stream_error_frame
+from ..payload_serialization import (
     decode_content_bytes,
     decode_log_content_bytes,
     dump_log_json,
     json_body_bytes,
 )
-from .routing_plan import (
-    _request_body_too_large_message,
-    elapsed_ms,
-    gateway_timeout_scope,
-)
-from .runtime_types import (
+from ..runtime_types import (
     GatewayTimeoutError,
     RequestDeadline,
-    StreamCapture,
     UpstreamRequestError,
     UpstreamResult,
-    record_stream_error,
 )
-from .streaming.logging import safe_estimate_cost
-from .streaming.restore import distill_stream_response_content
-from .streaming.transport import (
+from ..streaming.capture import StreamCapture, record_stream_error
+from ..streaming.logging import safe_estimate_cost
+from ..streaming.restore import distill_stream_response_content
+from ..streaming.transport import (
     FinalizingStreamingResponse,
     capture_converted_stream_iterator,
     stream_upstream_iterator,
 )
-from .streaming.usage import extract_response_usage, extract_stream_usage
-from .upstream_support import (
+from ..streaming.usage import extract_response_usage, extract_stream_usage
+from ..upstream_support import (
     format_http_response_error,
     format_transport_error,
     passthrough_headers,
     resolve_http_client,
     summarize_html_error_detail,
 )
+from .routing_plan import (
+    _request_body_too_large_message,
+    elapsed_ms,
+    gateway_timeout_scope,
+)
 
 _NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
+
+
+@dataclass(slots=True)
+class UpstreamResponseContext:
+    channel: ChannelConfig
+    body: dict[str, Any]
+    client_protocol: ProtocolKind | None
+    pricing_group_name: str | None
+    rate_multiplier: float | None
+    request_content: str | None
+    log_body_enabled: bool
+    deadline: RequestDeadline
+
+
+@dataclass(slots=True)
+class UpstreamExecutionRequest:
+    upstream: UpstreamRequest
+    body_bytes: bytes
+    response_context: UpstreamResponseContext
+    global_proxy_url: str | None
 
 
 def _image_count(body: dict[str, Any], payload: Any) -> int:
@@ -154,25 +178,23 @@ def _invalid_upstream(detail: str, exc: ValueError) -> UpstreamRequestError:
 async def _json_upstream_result(
     response: httpx.Response,
     *,
+    context: UpstreamResponseContext,
     content: bytes,
     media_type: str | None,
     headers: dict[str, str],
     parsed: dict[str, Any],
-    pricing_group_name: str | None,
-    rate_multiplier: float | None,
     image_count: int,
-    request_content: str | None,
     response_content: str | None,
 ) -> UpstreamResult:
     cost = await safe_estimate_cost(
-        pricing_group_name,
+        context.pricing_group_name,
         parsed["input_tokens"],
         parsed["output_tokens"],
         parsed["cache_read_input_tokens"],
         parsed["cache_write_input_tokens"],
         image_input_tokens=parsed["image_input_tokens"],
         image_count=image_count,
-        rate_multiplier=rate_multiplier,
+        rate_multiplier=context.rate_multiplier,
     )
     return UpstreamResult(
         response=Response(
@@ -195,25 +217,21 @@ async def _json_upstream_result(
         total_cost_usd=cost.total_cost_usd,
         billing_mode=cost.billing_mode,
         billing_units=cost.billing_units,
-        request_content=request_content,
+        request_content=context.request_content,
         response_content=response_content,
     )
 
 
 async def _build_anthropic_sse_to_json_result(
     response: httpx.Response,
-    channel: ChannelConfig,
-    client_protocol: ProtocolKind | None,
-    pricing_group_name: str | None,
-    rate_multiplier: float | None,
-    request_content: str | None,
-    log_body_enabled: bool,
+    context: UpstreamResponseContext,
     *,
     content: bytes | None = None,
-    deadline: RequestDeadline,
 ) -> UpstreamResult:
+    channel = context.channel
+    client_protocol = context.client_protocol
     if content is None:
-        content = await _read_response_body(response, deadline)
+        content = await _read_response_body(response, context.deadline)
     raw_content = decode_content_bytes(content)
     try:
         parsed = extract_stream_usage(channel.protocol, raw_content)
@@ -256,26 +274,20 @@ async def _build_anthropic_sse_to_json_result(
         media_type=media_type,
         headers=response_headers,
         parsed=parsed,
-        pricing_group_name=pricing_group_name,
-        rate_multiplier=rate_multiplier,
+        context=context,
         image_count=0,
-        request_content=request_content,
-        response_content=response_content if log_body_enabled else None,
+        response_content=(response_content if context.log_body_enabled else None),
     )
 
 
 async def _build_stream_result(
     response: httpx.Response,
-    channel: ChannelConfig,
-    client_protocol: ProtocolKind | None,
-    body: dict[str, Any],
-    include_stream_usage: bool,
-    request_content: str | None,
+    context: UpstreamResponseContext,
     stream_started_at: float,
-    log_body_enabled: bool,
-    *,
-    deadline: RequestDeadline,
 ) -> UpstreamResult:
+    channel = context.channel
+    client_protocol = context.client_protocol
+    body = context.body
     chat_expected_choices = body.get("n", 1)
     if (
         isinstance(chat_expected_choices, bool)
@@ -284,9 +296,9 @@ async def _build_stream_result(
     ):
         chat_expected_choices = 1
     capture = StreamCapture(
-        capture_body=log_body_enabled,
+        capture_body=context.log_body_enabled,
         chat_expected_choices=chat_expected_choices,
-        deadline=deadline,
+        deadline=context.deadline,
         event_format=(
             "ndjson" if _response_media_type(response) in _NDJSON_MEDIA_TYPES else None
         ),
@@ -314,7 +326,6 @@ async def _build_stream_result(
             channel.protocol,
             raw_iter,
             body.get("model", ""),
-            include_usage=include_stream_usage,
         )
         converted_iter = capture_converted_stream_iterator(converted_iter, capture)
         stream_media = "text/event-stream"
@@ -337,7 +348,7 @@ async def _build_stream_result(
         status_code=response.status_code,
         first_token_latency_ms=capture.first_token_latency_ms,
         upstream_model_name=body.get("model"),
-        request_content=request_content,
+        request_content=context.request_content,
         stream_capture=capture,
     )
 
@@ -378,14 +389,11 @@ async def _stream_client_iterator(
 async def _build_json_result(
     response: httpx.Response,
     content: bytes,
-    channel: ChannelConfig,
-    client_protocol: ProtocolKind | None,
-    body: dict[str, Any],
-    pricing_group_name: str | None,
-    rate_multiplier: float | None,
-    request_content: str | None,
-    log_body_enabled: bool,
+    context: UpstreamResponseContext,
 ) -> UpstreamResult:
+    channel = context.channel
+    client_protocol = context.client_protocol
+    body = context.body
     try:
         payload: Any = json.loads(content)
     except ValueError as exc:
@@ -419,16 +427,14 @@ async def _build_json_result(
         media_type=response.headers.get("content-type"),
         headers=passthrough_headers(response.headers),
         parsed=parsed,
-        pricing_group_name=pricing_group_name,
-        rate_multiplier=rate_multiplier,
+        context=context,
         image_count=(
             _image_count(body, payload)
             if channel.protocol == ProtocolKind.OPENAI_IMAGE
             else 0
         ),
-        request_content=request_content,
         response_content=(
-            decode_log_content_bytes(content) if log_body_enabled else None
+            decode_log_content_bytes(content) if context.log_body_enabled else None
         ),
     )
 
@@ -487,41 +493,31 @@ def prepare_upstream_request(
 
 async def _send_channel_request(
     client: httpx.AsyncClient,
-    upstream: Any,
-    *,
-    stream: bool,
-    body_bytes: bytes,
-    deadline: RequestDeadline,
+    request: UpstreamExecutionRequest,
 ) -> tuple[httpx.Response, float]:
+    context = request.response_context
     stream_started_at = perf_counter()
     async with gateway_timeout_scope(
-        deadline.first_token_remaining_seconds(),
-        timeout_message=deadline.timeout_message(kind="first_token"),
+        context.deadline.first_token_remaining_seconds(),
+        timeout_message=context.deadline.timeout_message(kind="first_token"),
     ):
         response = await _send_upstream(
             client,
-            upstream,
-            stream=stream,
-            body_bytes=body_bytes,
+            request.upstream,
+            stream=bool(context.body.get("stream")),
+            body_bytes=request.body_bytes,
         )
     return response, stream_started_at
 
 
 async def _build_channel_result(
     response: httpx.Response,
-    channel: ChannelConfig,
-    body: dict[str, Any],
-    client_protocol: ProtocolKind | None,
-    include_stream_usage: bool,
-    pricing_group_name: str | None,
-    rate_multiplier: float | None,
-    request_content: str | None,
+    context: UpstreamResponseContext,
     stream_started_at: float,
-    log_body_enabled: bool,
-    *,
-    deadline: RequestDeadline,
 ) -> tuple[UpstreamResult, httpx.Response | None]:
     """Build a response result and return the response still owned by the caller."""
+    channel = context.channel
+    body = context.body
     active_response = response
     try:
         is_stream_request = bool(body.get("stream"))
@@ -530,7 +526,7 @@ async def _build_channel_result(
         is_ndjson_stream = is_stream_request and media_type in _NDJSON_MEDIA_TYPES
         if is_stream_request and not is_event_stream and not is_ndjson_stream:
             # Proxies often default Content-Type to text/html; classify the body.
-            content = await _read_response_body(response, deadline)
+            content = await _read_response_body(response, context.deadline)
             if _looks_like_sse_body(content):
                 buffered = _response_with_buffered_body(
                     response, content, "text/event-stream"
@@ -543,13 +539,7 @@ async def _build_channel_result(
                 result = await _build_json_result(
                     response,
                     content,
-                    channel,
-                    client_protocol,
-                    body,
-                    pricing_group_name,
-                    rate_multiplier,
-                    request_content,
-                    log_body_enabled,
+                    context,
                 )
                 result.first_token_latency_ms = elapsed_ms(stream_started_at)
                 return result, response
@@ -560,47 +550,29 @@ async def _build_channel_result(
         buffered_content: bytes | None = None
         if wants_anthropic_json and not is_event_stream:
             # Some upstreams answer a non-stream request with SSE but label it JSON.
-            buffered_content = await _read_response_body(response, deadline)
+            buffered_content = await _read_response_body(response, context.deadline)
             is_event_stream = _looks_like_sse_body(buffered_content)
         if wants_anthropic_json and is_event_stream:
             result = await _build_anthropic_sse_to_json_result(
                 response,
-                channel,
-                client_protocol,
-                pricing_group_name,
-                rate_multiplier,
-                request_content,
-                log_body_enabled,
                 content=buffered_content,
-                deadline=deadline,
+                context=context,
             )
             result.first_token_latency_ms = elapsed_ms(stream_started_at)
             return result, response
         if is_event_stream or is_ndjson_stream:
             result = await _build_stream_result(
                 response,
-                channel,
-                client_protocol,
-                body,
-                include_stream_usage,
-                request_content,
+                context,
                 stream_started_at,
-                log_body_enabled,
-                deadline=deadline,
             )
             return result, None
         if buffered_content is None:
-            buffered_content = await _read_response_body(response, deadline)
+            buffered_content = await _read_response_body(response, context.deadline)
         result = await _build_json_result(
             response,
             buffered_content,
-            channel,
-            client_protocol,
-            body,
-            pricing_group_name,
-            rate_multiplier,
-            request_content,
-            log_body_enabled,
+            context,
         )
         result.first_token_latency_ms = elapsed_ms(stream_started_at)
         return result, response
@@ -611,45 +583,23 @@ async def _build_channel_result(
 
 
 async def execute_upstream_request(
-    channel: ChannelConfig,
-    body: dict[str, Any],
-    upstream: Any,
-    body_bytes: bytes,
-    request_content: str | None,
-    deadline: RequestDeadline,
-    *,
-    include_stream_usage: bool,
-    pricing_group_name: str | None = None,
-    rate_multiplier: float | None = None,
-    client_protocol: ProtocolKind | None = None,
-    log_body_enabled: bool = False,
-    global_proxy_url: str | None = None,
+    request: UpstreamExecutionRequest,
 ) -> UpstreamResult:
-    proxy_url = resolve_upstream_proxy_url(channel, global_proxy_url)
+    context = request.response_context
+    proxy_url = resolve_upstream_proxy_url(context.channel, request.global_proxy_url)
     client = resolve_http_client(proxy_url)
     response: httpx.Response | None = None
 
     try:
         response, stream_started_at = await _send_channel_request(
             client,
-            upstream,
-            stream=bool(body.get("stream")),
-            body_bytes=body_bytes,
-            deadline=deadline,
+            request,
         )
         response.raise_for_status()
         result, response = await _build_channel_result(
             response,
-            channel,
-            body,
-            client_protocol,
-            include_stream_usage,
-            pricing_group_name,
-            rate_multiplier,
-            request_content,
+            context,
             stream_started_at,
-            log_body_enabled,
-            deadline=deadline,
         )
         return result
     except httpx.HTTPStatusError as exc:
@@ -698,7 +648,7 @@ async def execute_upstream_request(
     except httpx.HTTPError as exc:
         raise UpstreamRequestError(
             status_code=502,
-            detail=format_transport_error(exc, upstream.url),
+            detail=format_transport_error(exc, request.upstream.url),
             router_status_code=None,
             router_error_category=ErrorCategory.NETWORK,
         ) from exc
@@ -735,16 +685,4 @@ async def _send_upstream(
         upstream.url,
         headers=upstream.headers,
         content=body_bytes,
-    )
-
-
-def request_includes_stream_usage(
-    protocol: ProtocolKind, body: Mapping[str, Any]
-) -> bool:
-    if protocol != ProtocolKind.OPENAI_CHAT:
-        return False
-    stream_options = body.get("stream_options")
-    return (
-        isinstance(stream_options, Mapping)
-        and stream_options.get("include_usage") is True
     )

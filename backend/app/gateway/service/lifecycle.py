@@ -11,7 +11,7 @@ from fastapi.security import HTTPBearer
 from ...core.auth import validate_auth_secret_key
 from ...core.config import settings
 from ...core.time_zone import load_time_zone
-from .app_state import AppState, app_state
+from .app_state import AppState, bind_app_state, reset_app_state
 from .tasks.model_group_reconcile import run_model_group_reconcile
 
 logger = logging.getLogger(__name__)
@@ -62,9 +62,17 @@ async def _managed_lifespan(state: AppState) -> AsyncIterator[None]:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with _managed_lifespan(app_state):
-        yield
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    state = getattr(app.state, "app_state", None)
+    if state is None:
+        state = AppState()
+        app.state.app_state = state
+    token = bind_app_state(state)
+    try:
+        async with _managed_lifespan(state):
+            yield
+    finally:
+        reset_app_state(token)
 
 
 auth_scheme = HTTPBearer(auto_error=False)

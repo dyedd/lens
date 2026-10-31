@@ -6,12 +6,9 @@ from datetime import UTC, datetime
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.context_windows import coerce_context_window
 from app.core.runtime_channel_ids import compose_runtime_channel_id
-from app.models.protocols import ProtocolKind
 from app.models.sites import SiteConfig, SiteCredentialInput
 from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
-from app.persistence.channel_store.mapping import load_header_rules, load_param_rules
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,
@@ -21,126 +18,16 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
 )
 
-from ..site_loader import fetch_site_rows
-from .serialize import format_optional_datetime, parse_optional_datetime
+from ..site_loader import build_site_configs, fetch_site_rows
+from .serialize import parse_optional_datetime
 
 
-async def load_sites(self, session: AsyncSession) -> list[SiteConfig]:
-    rows = await fetch_site_rows(session)
-    if not rows.sites:
-        return []
-
-    valid_protocol_values = {protocol_kind.value for protocol_kind in ProtocolKind}
-    base_urls_by_site: dict[str, list[dict[str, object]]] = {}
-    for row in rows.base_urls:
-        base_urls_by_site.setdefault(row.site_id, []).append(
-            {
-                "id": row.id,
-                "url": row.url,
-                "sort_order": row.sort_order,
-                "kind": row.kind or "default",
-            }
-        )
-
-    credentials_by_site: dict[str, list[dict[str, object]]] = {}
-    credentials_by_id: dict[str, dict[str, object]] = {}
-    rates_by_credential = {row.credential_id: row for row in rows.credential_rates}
-    for row in rows.credentials:
-        rate = rates_by_credential.get(row.id)
-        item = {
-            "id": row.id,
-            "name": row.name,
-            "api_key": row.api_key,
-            "sort_order": row.sort_order,
-            "base_url_id": row.base_url_id,
-            "model_pattern": row.model_pattern,
-            "rate_source": rate.source if rate is not None else "none",
-            "rate_protocol_config_id": (
-                rate.protocol_config_id if rate is not None else ""
-            ),
-            "rate_group": rate.group_name if rate is not None else "",
-        }
-        credentials_by_site.setdefault(row.site_id, []).append(item)
-        credentials_by_id[row.id] = item
-
-    models_by_protocol_config: dict[str, list[dict[str, object]]] = {}
-    for row in rows.discovered_models:
-        credential_name = str(
-            credentials_by_id.get(row.credential_id, {}).get("name", "")
-        )
-        models_by_protocol_config.setdefault(row.protocol_config_id, []).append(
-            {
-                "id": row.id,
-                "credential_id": row.credential_id,
-                "credential_name": credential_name,
-                "model_name": row.model_name,
-                "enabled": bool(row.enabled),
-                "sort_order": row.sort_order,
-                "protocol": (
-                    row.protocol if row.protocol in valid_protocol_values else None
-                ),
-                "context_window": coerce_context_window(row.context_window),
-                "upstream_context_window": coerce_context_window(
-                    row.upstream_context_window
-                ),
-            }
-        )
-
-    protocol_configs_by_site: dict[str, list[dict[str, object]]] = {}
-    for row in rows.protocol_configs:
-        models = models_by_protocol_config.get(row.id, [])
-        try:
-            configured_protocols = [
-                value
-                for value in json.loads(row.protocols_json)
-                if value in valid_protocol_values
-            ]
-        except (TypeError, ValueError, json.JSONDecodeError):
-            configured_protocols = []
-        protocol_configs_by_site.setdefault(row.site_id, []).append(
-            {
-                "id": row.id,
-                "base_url_id": row.base_url_id,
-                "protocols": configured_protocols
-                or [
-                    model["protocol"]
-                    for model in models
-                    if model["protocol"] in valid_protocol_values
-                ],
-                "credential_ids": credential_ids_for_url(
-                    [
-                        (str(item["id"]), str(item.get("base_url_id") or ""))
-                        for item in credentials_by_site.get(row.site_id, [])
-                    ],
-                    row.base_url_id,
-                ),
-                "models": models,
-            }
-        )
-
-    return [
-        SiteConfig.model_validate(
-            {
-                "id": row.id,
-                "name": row.name,
-                "enabled": bool(row.enabled),
-                "tags": json.loads(row.tags_json),
-                "updated_at": format_optional_datetime(row.updated_at),
-                "proxy_mode": row.proxy_mode,
-                "channel_proxy": row.channel_proxy,
-                "headers": load_header_rules(row.headers_json),
-                "param_override": load_param_rules(row.param_override),
-                "base_urls": base_urls_by_site.get(row.id, []),
-                "credentials": credentials_by_site.get(row.id, []),
-                "protocols": protocol_configs_by_site.get(row.id, []),
-            }
-        )
-        for row in rows.sites
-    ]
+async def load_sites(session: AsyncSession) -> list[SiteConfig]:
+    return build_site_configs(await fetch_site_rows(session))
 
 
 async def replace_sites(
-    self, session: AsyncSession, sites: list[SiteConfig]
+    session: AsyncSession, sites: list[SiteConfig]
 ) -> tuple[set[str], set[tuple[str, str, str]]]:
     await session.execute(delete(SiteCredentialRateEntity))
     await session.execute(delete(SiteDiscoveredModelEntity))
@@ -187,6 +74,7 @@ async def replace_sites(
         site_base_url_ids: set[str] = set()
         site_base_url_kinds: set[str] = set()
         site_credential_ids: set[str] = set()
+        rate_configs: dict[str, SiteCredentialInput] = {}
 
         for base_url in site.base_urls:
             if base_url.id in base_url_ids:
@@ -222,9 +110,7 @@ async def replace_sites(
                     "rate_group": credential.rate_group,
                 }
             )
-            credential.rate_source = rate_config.rate_source
-            credential.rate_protocol_config_id = rate_config.rate_protocol_config_id
-            credential.rate_group = rate_config.rate_group
+            rate_configs[credential.id] = rate_config
             if (
                 credential.base_url_id
                 and credential.base_url_id not in site_base_url_ids
@@ -324,13 +210,14 @@ async def replace_sites(
                 )
         protocol_by_id = {protocol.id: protocol for protocol in site.protocols}
         for credential in site.credentials:
-            if credential.rate_source == "none":
+            rate_config = rate_configs[credential.id]
+            if rate_config.rate_source == "none":
                 continue
-            protocol = protocol_by_id.get(credential.rate_protocol_config_id)
+            protocol = protocol_by_id.get(rate_config.rate_protocol_config_id)
             if protocol is None:
                 raise ValueError(
                     "Credential rate protocol config not found in backup site "
-                    f"{site.name}: {credential.rate_protocol_config_id}"
+                    f"{site.name}: {rate_config.rate_protocol_config_id}"
                 )
             bound_ids = set(
                 credential_ids_for_url(
@@ -341,14 +228,14 @@ async def replace_sites(
             if credential.id not in bound_ids:
                 raise ValueError(
                     "Credential rate protocol config not found in backup site "
-                    f"{site.name}: {credential.rate_protocol_config_id}"
+                    f"{site.name}: {rate_config.rate_protocol_config_id}"
                 )
             session.add(
                 SiteCredentialRateEntity(
                     credential_id=credential.id,
-                    protocol_config_id=credential.rate_protocol_config_id,
-                    source=credential.rate_source,
-                    group_name=credential.rate_group,
+                    protocol_config_id=rate_config.rate_protocol_config_id,
+                    source=rate_config.rate_source,
+                    group_name=rate_config.rate_group,
                     multiplier=None,
                     observed_at=None,
                     last_synced_at=None,

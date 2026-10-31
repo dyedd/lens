@@ -8,55 +8,56 @@ from typing import Any
 from fastapi import HTTPException, Response
 from starlette.background import BackgroundTask
 
-from ...core.upstream_rules import (
+from ....core.upstream_rules import (
     RuleEvaluationError,
     apply_param_rules,
     param_rule_layers,
 )
-from ...models.channels import ChannelConfig
-from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
-from ..converters import (
+from ....models.channels import ChannelConfig
+from ....models.protocols import ProtocolKind, RequestLogLifecycleStatus
+from ...converters import (
     convert_request,
     needs_protocol_conversion,
     strip_foreign_reasoning,
 )
-from ..converters.responses_common import lift_additional_tools
-from ..router import RouteTarget, TargetKey
-from ..router.cooldown import ErrorCategory, classify_error, default_scope
-from ..router.failover import FailurePolicy, RetryAction, policy_for
-from .app_state import app_state
-from .compat import (
+from ...converters.responses_common import lift_additional_tools
+from ...router import RouteTarget, TargetKey
+from ...router.cooldown import ErrorCategory, classify_error, default_scope
+from ...router.failover import FailurePolicy, RetryAction, policy_for
+from ..app_state import app_state
+from ..compat import (
     apply_deepseek_thinking_compat,
     apply_glm_chat_reasoning_compat,
     is_deepseek_thinking_target,
 )
-from .error_responses import protocol_error_response
-from .payload_serialization import dump_log_json
-from .proxy_upstream import (
-    execute_upstream_request,
-    prepare_upstream_request,
-    request_includes_stream_usage,
-)
-from .request_logger import RequestLogger
-from .routing_plan import elapsed_ms
-from .routing_request import apply_reasoning_intent, extract_request_reasoning_effort
-from .runtime_types import (
+from ..error_responses import protocol_error_response
+from ..payload_serialization import dump_log_json
+from ..request_logger import RequestLogger
+from ..runtime_types import (
     AttemptLog,
     RequestDeadline,
     RoutingPlan,
-    StreamCapture,
     UpstreamRequestError,
     UpstreamResult,
     attempt_logs_to_dicts,
 )
-from .streaming.logging import (
+from ..streaming.capture import StreamCapture
+from ..streaming.logging import (
     record_stream_request_log,
     stream_log_outcome,
 )
-from .upstream_support import (
+from ..upstream_support import (
     effective_user_agent_from_headers,
     format_channel_error,
 )
+from .proxy_upstream import (
+    UpstreamExecutionRequest,
+    UpstreamResponseContext,
+    execute_upstream_request,
+    prepare_upstream_request,
+)
+from .routing_plan import elapsed_ms
+from .routing_request import apply_reasoning_intent, extract_request_reasoning_effort
 
 
 @dataclass(slots=True)
@@ -312,21 +313,23 @@ async def _send_attempt(
         request_content=prepared.request_content,
     )
     try:
-        return await execute_upstream_request(
-            channel,
-            prepared.upstream_body,
-            prepared.upstream,
-            prepared.body_bytes,
-            prepared.request_content,
+        response_context = UpstreamResponseContext(
+            channel=channel,
+            body=prepared.upstream_body,
+            client_protocol=request.protocol,
             pricing_group_name=plan.resolved_group_name,
             rate_multiplier=target.rate_multiplier,
-            client_protocol=request.protocol,
-            include_stream_usage=request_includes_stream_usage(
-                request.protocol, request.body
-            ),
+            request_content=prepared.request_content,
             log_body_enabled=run.log_body_enabled,
             deadline=run.deadline,
-            global_proxy_url=str(request.runtime["proxy_url"]),
+        )
+        return await execute_upstream_request(
+            UpstreamExecutionRequest(
+                upstream=prepared.upstream,
+                body_bytes=prepared.body_bytes,
+                response_context=response_context,
+                global_proxy_url=str(request.runtime["proxy_url"]),
+            ),
         )
     except UpstreamRequestError as exc:
         return await _record_target_failure(
@@ -408,7 +411,7 @@ async def _finish_attempt(
     return result.response
 
 
-async def run_attempt(
+async def execute_target_attempt(
     *,
     request: AttemptRequest,
     plan: RoutingPlan,
@@ -474,7 +477,7 @@ async def _finalize_stream_request(
             capture=result.stream_capture,
             capture_issue=outcome.capture_issue,
             lifecycle_status=outcome.lifecycle_status,
-            attempts=attempts,
+            target=target,
         )
         if outcome.capture_issue is None:
             app_state.router.note_success(
@@ -517,16 +520,15 @@ async def _record_stream_route_health(
     capture: StreamCapture | None,
     capture_issue: str | None,
     lifecycle_status: RequestLogLifecycleStatus,
-    attempts: list[dict[str, Any]],
+    target: RouteTarget,
 ) -> None:
-    credential_id, model_name = _last_attempt_target(attempts)
     if lifecycle_status == RequestLogLifecycleStatus.CANCELLED:
         return
     if capture_issue is None:
         app_state.router.record_success(
             channel.id,
-            credential_id=credential_id,
-            model_name=model_name,
+            credential_id=target.credential_id,
+            model_name=target.model_name,
             fault_protocol=fault_protocol,
             started_revision=(
                 capture.route_started_revision
@@ -558,8 +560,8 @@ async def _record_stream_route_health(
         category=category,
         scope=scope or default_scope(category),
         cooldown_seconds=cooldown_seconds,
-        credential_id=credential_id,
-        model_name=model_name,
+        credential_id=target.credential_id,
+        model_name=target.model_name,
         fault_protocol=fault_protocol,
         was_probe=capture.route_was_probe if capture is not None else False,
         retry_action=(
@@ -567,20 +569,6 @@ async def _record_stream_route_health(
             if capture is not None and capture.error_retry_action is not None
             else classified_action
         ),
-    )
-
-
-def _last_attempt_target(
-    attempts: list[dict[str, Any]],
-) -> tuple[str | None, str | None]:
-    if not attempts:
-        return None, None
-    attempt = attempts[-1]
-    credential_id = attempt.get("credential_id")
-    model_name = attempt.get("model_name")
-    return (
-        credential_id if isinstance(credential_id, str) and credential_id else None,
-        model_name if isinstance(model_name, str) and model_name else None,
     )
 
 

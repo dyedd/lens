@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import json
 import uuid
 from collections import defaultdict
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.channels import ChannelConfig, ChannelDiscoveredModel, ChannelKeyItem
-from app.models.protocols import ChannelProxyMode, ChannelStatus, ProtocolKind
+from app.models.protocols import ChannelStatus, ProtocolKind
 from app.models.sites import (
     SiteBaseUrl,
     SiteBaseUrlInput,
@@ -19,165 +17,20 @@ from app.models.sites import (
     SiteModel,
     SiteProtocolConfig,
 )
-from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
-    SiteBaseUrlEntity,
     SiteCredentialEntity,
-    SiteCredentialRateEntity,
-    SiteDiscoveredModelEntity,
     SiteEntity,
     SiteProtocolConfigEntity,
 )
 
-from ...core.context_windows import coerce_context_window
-from ...core.model_catalog import ModelCatalog
 from ...core.runtime_channel_ids import compose_runtime_channel_id
-from ..site_loader import fetch_site_rows
-from .endpoint_credentials import credential_ids_for_url
+from ..site_loader import (
+    build_site_configs,
+    fetch_site_rows,
+)
 
 
-def format_site_updated_at(value: datetime | None) -> str | None:
-    """Format a site timestamp as UTC ISO-8601."""
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC).isoformat()
-    return value.astimezone(UTC).isoformat()
-
-
-def load_header_rules(raw: str | None) -> list[HeaderRule]:
-    return [HeaderRule.model_validate(item) for item in json.loads(raw or "[]")]
-
-
-def load_param_rules(raw: str | None) -> list[ParamOverrideRule]:
-    return [ParamOverrideRule.model_validate(item) for item in json.loads(raw or "[]")]
-
-
-def protocols_from_bindings(
-    models: list[SiteModel],
-    configured_protocols: list[ProtocolKind] | None = None,
-) -> list[ProtocolKind]:
-    protocols: list[ProtocolKind] = list(configured_protocols or [])
-    for model in models:
-        if model.protocol is not None and model.protocol not in protocols:
-            protocols.append(model.protocol)
-    return protocols
-
-
-def credential_pairs(
-    credentials: list[SiteCredential],
-) -> list[tuple[str, str]]:
-    return [(item.id, item.base_url_id) for item in credentials]
-
-
-class ChannelRowMappingMixin:
-    def _group_base_urls(
-        self, rows: list[SiteBaseUrlEntity]
-    ) -> dict[str, list[SiteBaseUrl]]:
-        result: dict[str, list[SiteBaseUrl]] = defaultdict(list)
-        for row in rows:
-            result[row.site_id].append(
-                SiteBaseUrl(
-                    id=row.id,
-                    url=row.url,
-                    sort_order=row.sort_order,
-                    kind=row.kind or "default",
-                )
-            )
-        return result
-
-    def _group_credentials(
-        self,
-        rows: list[SiteCredentialEntity],
-        rate_rows: list[SiteCredentialRateEntity],
-    ) -> tuple[dict[str, list[SiteCredential]], dict[str, SiteCredential]]:
-        by_site: dict[str, list[SiteCredential]] = defaultdict(list)
-        by_id: dict[str, SiteCredential] = {}
-        rates_by_credential = {row.credential_id: row for row in rate_rows}
-        for row in rows:
-            rate = rates_by_credential.get(row.id)
-            item = SiteCredential(
-                id=row.id,
-                name=row.name,
-                api_key=row.api_key,
-                sort_order=row.sort_order,
-                base_url_id=row.base_url_id,
-                model_pattern=row.model_pattern,
-                rate_source=rate.source if rate is not None else "none",
-                rate_protocol_config_id=(
-                    rate.protocol_config_id if rate is not None else ""
-                ),
-                rate_group=rate.group_name if rate is not None else "",
-                rate_multiplier=rate.multiplier if rate is not None else None,
-                rate_observed_at=rate.observed_at if rate is not None else None,
-                rate_last_synced_at=(rate.last_synced_at if rate is not None else None),
-                rate_last_error=rate.last_error if rate is not None else "",
-            )
-            by_site[row.site_id].append(item)
-            by_id[row.id] = item
-        return by_site, by_id
-
-    def _group_models(
-        self,
-        rows: list[SiteDiscoveredModelEntity],
-        credentials_by_id: dict[str, SiteCredential],
-    ) -> dict[str, list[SiteModel]]:
-        result: dict[str, list[SiteModel]] = defaultdict(list)
-        valid_protocol_values = {protocol_kind.value for protocol_kind in ProtocolKind}
-        for row in rows:
-            credential = credentials_by_id.get(row.credential_id)
-            result[row.protocol_config_id].append(
-                SiteModel(
-                    id=row.id,
-                    credential_id=row.credential_id,
-                    credential_name=credential.name if credential else "",
-                    model_name=row.model_name,
-                    enabled=bool(row.enabled),
-                    sort_order=row.sort_order,
-                    protocol=(
-                        ProtocolKind(row.protocol)
-                        if row.protocol in valid_protocol_values
-                        else None
-                    ),
-                    context_window=coerce_context_window(row.context_window),
-                    upstream_context_window=coerce_context_window(
-                        row.upstream_context_window
-                    ),
-                )
-            )
-        return result
-
-    def _group_protocols(
-        self,
-        rows: list[SiteProtocolConfigEntity],
-        models_by_protocol_config: dict[str, list[SiteModel]],
-        credentials_by_site: dict[str, list[SiteCredential]],
-    ) -> dict[str, list[SiteProtocolConfig]]:
-        result: dict[str, list[SiteProtocolConfig]] = defaultdict(list)
-        for row in rows:
-            models = models_by_protocol_config.get(row.id, [])
-            try:
-                configured_protocols = [
-                    ProtocolKind(value) for value in json.loads(row.protocols_json)
-                ]
-            except (TypeError, ValueError, json.JSONDecodeError):
-                configured_protocols = []
-            result[row.site_id].append(
-                SiteProtocolConfig(
-                    id=row.id,
-                    base_url_id=row.base_url_id,
-                    protocols=protocols_from_bindings(models, configured_protocols),
-                    credential_ids=credential_ids_for_url(
-                        credential_pairs(credentials_by_site.get(row.site_id, [])),
-                        row.base_url_id,
-                    ),
-                    models=models,
-                )
-            )
-        return result
-
-
-class SiteChannelProjectionMixin(ChannelRowMappingMixin):
+class SiteChannelProjectionMixin:
     def flatten_site(self, site: SiteConfig) -> list[ChannelConfig]:
         credentials_by_id = {item.id: item for item in site.credentials}
         base_urls_by_id = {item.id: item for item in site.base_urls}
@@ -292,7 +145,6 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
                     sort_order=model.sort_order,
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,
-                    catalog_context_window=model.catalog_context_window,
                 )
             )
         return items
@@ -393,47 +245,12 @@ class SiteChannelProjectionMixin(ChannelRowMappingMixin):
 
 
 class SiteConfigLoadersMixin:
-    # Supplied by ChannelStore; None leaves catalog windows unresolved.
-    _catalog: ModelCatalog | None = None
-
     async def _load_sites(
         self, session: AsyncSession, site_ids: list[str] | None = None
     ) -> list[SiteConfig]:
         rows = await fetch_site_rows(session, site_ids=site_ids)
-        if not rows.sites:
-            return []
-
-        base_urls_by_site = self._group_base_urls(rows.base_urls)
-        credentials_by_site, credentials_by_id = self._group_credentials(
-            rows.credentials, rows.credential_rates
-        )
-        models_by_protocol_config = self._group_models(
-            rows.discovered_models, credentials_by_id
-        )
-        protocols_by_site = self._group_protocols(
-            rows.protocol_configs,
-            models_by_protocol_config,
-            credentials_by_site,
-        )
-        self._apply_catalog_context_windows(models_by_protocol_config)
-
-        return [
-            SiteConfig(
-                id=row.id,
-                name=row.name,
-                enabled=bool(row.enabled),
-                tags=json.loads(row.tags_json),
-                updated_at=format_site_updated_at(row.updated_at),
-                proxy_mode=ChannelProxyMode(row.proxy_mode),
-                channel_proxy=row.channel_proxy,
-                headers=load_header_rules(row.headers_json),
-                param_override=load_param_rules(row.param_override),
-                base_urls=base_urls_by_site.get(row.id, []),
-                credentials=credentials_by_site.get(row.id, []),
-                protocols=protocols_by_site.get(row.id, []),
-            )
-            for row in rows.sites
-        ]
+        sites = build_site_configs(rows)
+        return sites
 
     async def _load_sites_by_ids(self, site_ids: list[str]) -> list[SiteConfig]:
         if not site_ids:
@@ -446,21 +263,3 @@ class SiteConfigLoadersMixin:
     async def _site_name_keys(self, session: AsyncSession) -> set[str]:
         rows = (await session.execute(select(SiteEntity.name))).scalars().all()
         return {row.strip().lower() for row in rows if row.strip()}
-
-    def _apply_catalog_context_windows(
-        self, models_by_protocol_config: dict[str, list[SiteModel]]
-    ) -> None:
-        """Fill in the window the shared catalog publishes for each model.
-
-        Resolved on every read so a refreshed catalog applies at once. The
-        catalog is the last resort: an admin setting and the upstream's own
-        report both describe the routed deployment more precisely.
-        """
-        catalog = self._catalog
-        if catalog is None:
-            return
-        for models in models_by_protocol_config.values():
-            for model in models:
-                model.catalog_context_window = catalog.find_context_window(
-                    model.model_name
-                )

@@ -1,9 +1,17 @@
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
+from datetime import UTC, datetime
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models.backups import ConfigBackupDump, ConfigImportResult
+from app.models.settings import SettingItem
+from app.persistence.editable_settings import (
+    EDITABLE_SETTING_KEYS,
+    effective_editable_setting_items,
 )
+from app.persistence.entities import SettingEntity
 
 from .config import (
     load_cronjobs,
@@ -12,7 +20,7 @@ from .config import (
     replace_gateway_api_keys,
     replace_settings,
 )
-from .export_import import BackupExportImportMixin
+from .export_import import parse_dump
 from .groups import load_groups, replace_groups
 from .logs import load_request_logs, replace_request_logs
 from .prices_stats import (
@@ -24,22 +32,118 @@ from .prices_stats import (
 from .sites import load_sites, replace_sites
 
 
-class BackupStore(BackupExportImportMixin):
-    load_sites = load_sites
-    load_groups = load_groups
-    load_model_prices = load_model_prices
-    load_stats = load_stats
-    load_gateway_api_keys = load_gateway_api_keys
-    load_cronjobs = load_cronjobs
-    load_request_logs = load_request_logs
-    replace_sites = replace_sites
-    replace_groups = replace_groups
-    replace_model_prices = replace_model_prices
-    replace_stats = replace_stats
-    replace_settings = replace_settings
-    replace_cronjobs = replace_cronjobs
-    replace_gateway_api_keys = replace_gateway_api_keys
-    replace_request_logs = replace_request_logs
+class BackupStore:
+    parse_dump = staticmethod(parse_dump)
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+
+    async def export_dump(
+        self,
+        *,
+        lens_version: str,
+        include_request_logs: bool,
+        include_gateway_api_keys: bool,
+    ) -> ConfigBackupDump:
+        """Export the selected persisted configuration to a backup model."""
+        async with self._session_factory() as session:
+            settings_rows = (
+                (
+                    await session.execute(
+                        select(SettingEntity)
+                        .where(SettingEntity.key.in_(EDITABLE_SETTING_KEYS))
+                        .order_by(SettingEntity.key.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            sites = await load_sites(session)
+            groups = await load_groups(session)
+            model_prices = await load_model_prices(session)
+            cronjobs = await load_cronjobs(session)
+            stats = await load_stats(session)
+            gateway_api_keys = (
+                await load_gateway_api_keys(session) if include_gateway_api_keys else []
+            )
+            request_logs = (
+                await load_request_logs(session) if include_request_logs else []
+            )
+
+        return ConfigBackupDump(
+            exported_at=datetime.now(UTC).isoformat(),
+            lens_version=lens_version,
+            include_request_logs=include_request_logs,
+            include_gateway_api_keys=include_gateway_api_keys,
+            settings=effective_editable_setting_items(
+                [SettingItem(key=item.key, value=item.value) for item in settings_rows]
+            ),
+            sites=sites,
+            groups=groups,
+            model_prices=model_prices,
+            cronjobs=cronjobs,
+            stats=stats,
+            gateway_api_keys=gateway_api_keys,
+            request_logs=request_logs,
+        )
+
+    async def import_dump(self, dump: ConfigBackupDump) -> ConfigImportResult:
+        """Replace persisted configuration with a validated backup."""
+        async with self._session_factory() as session:
+            rows_affected: dict[str, int] = {}
+
+            protocol_config_ids, model_keys = await replace_sites(session, dump.sites)
+            rows_affected["sites"] = len(dump.sites)
+            rows_affected["site_base_urls"] = sum(
+                len(site.base_urls) for site in dump.sites
+            )
+            rows_affected["site_credentials"] = sum(
+                len(site.credentials) for site in dump.sites
+            )
+            rows_affected["site_protocol_configs"] = sum(
+                len(site.protocols) for site in dump.sites
+            )
+            rows_affected["site_models"] = sum(
+                len(protocol.models)
+                for site in dump.sites
+                for protocol in site.protocols
+            )
+
+            await replace_groups(
+                session,
+                dump.groups,
+                available_protocol_config_ids=protocol_config_ids,
+                model_keys=model_keys,
+            )
+            rows_affected["model_groups"] = len(dump.groups)
+            rows_affected["model_group_items"] = sum(
+                len(group.items) for group in dump.groups
+            )
+
+            await replace_model_prices(session, dump.model_prices)
+            rows_affected["model_prices"] = len(dump.model_prices)
+
+            rows_affected["settings"] = await replace_settings(session, dump.settings)
+
+            await replace_cronjobs(session, dump.cronjobs)
+            rows_affected["cronjobs"] = len(dump.cronjobs)
+
+            await replace_stats(session, dump.stats)
+            rows_affected["imported_stats_total"] = (
+                1 if dump.stats.imported_total is not None else 0
+            )
+            rows_affected["imported_stats_daily"] = len(dump.stats.imported_daily)
+            rows_affected["request_log_daily_stats"] = len(dump.stats.request_daily)
+            rows_affected["overview_model_daily_stats"] = len(dump.stats.model_daily)
+
+            if dump.include_gateway_api_keys:
+                await replace_gateway_api_keys(session, dump.gateway_api_keys)
+                rows_affected["gateway_api_keys"] = len(dump.gateway_api_keys)
+
+            if dump.include_request_logs:
+                await replace_request_logs(session, dump.request_logs)
+                rows_affected["request_logs"] = len(dump.request_logs)
+
+            await session.commit()
+
+        return ConfigImportResult(rows_affected=rows_affected)
