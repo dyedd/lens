@@ -1,4 +1,3 @@
-import { ChevronUp, CircleHelp } from "lucide-react";
 import {
   type Dispatch,
   type ReactNode,
@@ -190,10 +189,6 @@ export function ModelGroupSettings({
                 <h3 className="text-sm font-semibold text-foreground">
                   {isZh ? "模型能力" : "Model capabilities"}
                 </h3>
-                <ChevronUp
-                  aria-hidden="true"
-                  className="size-3.5 text-muted-foreground"
-                />
               </div>
               <p className="text-xs leading-5 text-muted-foreground">
                 {isZh
@@ -208,10 +203,6 @@ export function ModelGroupSettings({
                   >
                     {isZh ? "上下文窗口" : "Context window"}
                   </label>
-                  <CircleHelp
-                    aria-hidden="true"
-                    className="size-3 shrink-0 text-muted-foreground"
-                  />
                 </div>
                 <Input
                   id="group-context-window"
@@ -231,11 +222,21 @@ export function ModelGroupSettings({
                   value={contextWindowMode}
                   onValueChange={(value) => {
                     if (value === "auto") {
-                      setContextWindowMode("auto");
+                      if (
+                        form.context_window.trim() &&
+                        !window.confirm(
+                          isZh
+                            ? "切换为自动识别将清除当前默认值，是否继续？"
+                            : "Switching to automatic detection clears the current default. Continue?",
+                        )
+                      ) {
+                        return;
+                      }
                       setForm((current) => ({
                         ...current,
                         context_window: "",
                       }));
+                      setContextWindowMode("auto");
                     } else if (value === "custom") {
                       setContextWindowMode("custom");
                     }

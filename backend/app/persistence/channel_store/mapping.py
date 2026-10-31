@@ -461,10 +461,6 @@ class SiteConfigLoadersMixin:
             return
         for models in models_by_protocol_config.values():
             for model in models:
-                if model.context_window is not None:
-                    continue
-                if model.upstream_context_window is not None:
-                    continue
                 model.catalog_context_window = catalog.find_context_window(
                     model.model_name
                 )

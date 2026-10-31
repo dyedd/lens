@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -33,13 +33,18 @@ type Props = {
  */
 export function ModelCapabilityPopover({ model, locale, onCommit }: Props) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [customMode, setCustomMode] = useState(false);
+  const [draft, setDraft] = useState(
+    model.contextWindow === null ? "" : String(model.contextWindow),
+  );
   const isZh = locale === "zh-CN";
   const fieldId = `context-window-${model.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   const override = model.contextWindow;
   const detected = model.autoContextWindow;
+
+  useEffect(() => {
+    if (!open) setDraft(override === null ? "" : String(override));
+  }, [open, override]);
 
   function select(value: number | null) {
     onCommit(value);
@@ -47,6 +52,7 @@ export function ModelCapabilityPopover({ model, locale, onCommit }: Props) {
   }
 
   function applyDraft() {
+    if (!draft.trim()) return;
     const parsed = parseContextWindowInput(draft);
     if (parsed === undefined) {
       toast.error(
@@ -75,11 +81,7 @@ export function ModelCapabilityPopover({ model, locale, onCommit }: Props) {
         : isZh
           ? "未识别"
           : "Unknown";
-  const selectedMode = customMode
-    ? "custom"
-    : override === null
-      ? "auto"
-      : "custom";
+  const selectedMode = override === null ? "auto" : "custom";
 
   return (
     <Popover
@@ -87,8 +89,7 @@ export function ModelCapabilityPopover({ model, locale, onCommit }: Props) {
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) {
-          setDraft("");
-          setCustomMode(false);
+          setDraft(override === null ? "" : String(override));
         }
       }}
     >
@@ -127,18 +128,13 @@ export function ModelCapabilityPopover({ model, locale, onCommit }: Props) {
             value={selectedMode}
             onValueChange={(value) => {
               if (value === "auto") {
-                setCustomMode(false);
                 select(null);
                 return;
               }
               if (value === "custom") {
-                setCustomMode(true);
                 setDraft(override === null ? "" : String(override));
                 return;
               }
-              setCustomMode(false);
-              const parsed = Number(value);
-              if (Number.isInteger(parsed)) select(parsed);
             }}
           >
             <SelectTrigger id={`${fieldId}-mode`} className="h-8 w-full">
@@ -191,6 +187,18 @@ export function ModelCapabilityPopover({ model, locale, onCommit }: Props) {
               </Button>
             </div>
           </div>
+        ) : null}
+        {detected !== null ? (
+          <p className="text-xs text-muted-foreground">
+            {isZh ? "自动识别来源：" : "Detected from "}
+            {model.autoContextWindowSource === "catalog"
+              ? isZh
+                ? "模型目录"
+                : "model catalog"
+              : isZh
+                ? "上游模型列表"
+                : "upstream model list"}
+          </p>
         ) : null}
       </PopoverContent>
     </Popover>

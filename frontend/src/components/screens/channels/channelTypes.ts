@@ -29,7 +29,7 @@ export type FormModel = Omit<SiteModelInput, "id" | "protocol"> & {
   protocols: ProtocolKind[];
   protocolIds: Partial<Record<ProtocolKind, string>>;
   /** Server-resolved catalog size; read-only and never sent back. */
-  catalog_context_window: number | null;
+  catalog_context_window?: number | null;
 };
 
 export type FormProtocolConfig = {

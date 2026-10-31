@@ -99,7 +99,7 @@ export function useAggregatedModels(
         group.enabled = group.enabled || model.enabled;
         group.contextWindow ??= model.context_window;
         group.upstreamContextWindow ??= model.upstream_context_window;
-        group.catalogContextWindow ??= model.catalog_context_window;
+        group.catalogContextWindow ??= model.catalog_context_window ?? null;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
         if (group.members.has(memberKey)) continue;
         const names = credentialNames(model.credential_id);

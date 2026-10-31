@@ -35,6 +35,7 @@ export type FormItem = {
   /** The channel model's own context window; null uses the group default. */
   context_window: number | null;
   context_window_source: ContextWindowSource | null;
+  catalog_context_window: number | null;
 };
 
 export type EvaluatedFormItem = FormItem;
@@ -79,6 +80,7 @@ export type FoldedMember = {
   rate_source: "none" | "sub2api" | "newapi";
   context_window: number | null;
   context_window_source: ContextWindowSource | null;
+  catalog_context_window: number | null;
   subItems: EvaluatedFormItem[];
   /** Shared source of every sub item; mixed sources count as manual. */
   source: ModelGroupMemberSource;

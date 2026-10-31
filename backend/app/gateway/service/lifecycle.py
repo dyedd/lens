@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -26,8 +25,8 @@ async def _prime_model_catalog(state: AppState) -> None:
     """
     try:
         await state.refresh_model_catalog()
-    except Exception:
-        logger.exception("Model catalog warm-up failed")
+    except Exception as exc:
+        logger.warning("Model catalog warm-up skipped: %s", exc)
 
 
 async def _startup_app_state(state: AppState) -> None:
@@ -47,17 +46,17 @@ async def _close_app_state(state: AppState) -> None:
 @asynccontextmanager
 async def _managed_lifespan(state: AppState) -> AsyncIterator[None]:
     await _startup_app_state(state)
+    try:
+        await asyncio.wait_for(_prime_model_catalog(state), timeout=5)
+    except TimeoutError:
+        logger.warning("Model catalog warm-up timed out")
     await state.cronjob_runner.start()
-    warm_up = asyncio.create_task(_prime_model_catalog(state))
     try:
         yield
     except asyncio.CancelledError:
         # Uvicorn on Windows cancels the lifespan receive loop during Ctrl+C; treat as normal shutdown.
         pass
     finally:
-        warm_up.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await warm_up
         await state.cronjob_runner.stop()
         await _close_app_state(state)
 

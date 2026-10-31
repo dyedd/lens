@@ -14,15 +14,6 @@ export type DetectedContextWindowSource = Exclude<
 const CONTEXT_INPUT_RE = /^(\d+(?:\.\d+)?)\s*([km])?$/i;
 const UNIT_TOKENS: Record<string, number> = { k: 1_000, m: 1_000_000 };
 
-/** Sizes offered in the context window menu, mirroring common model specs. */
-export const CONTEXT_WINDOW_PRESETS = [
-  { label: "32K", value: 32_000 },
-  { label: "128K", value: 128_000 },
-  { label: "200K", value: 200_000 },
-  { label: "256K", value: 256_000 },
-  { label: "1M", value: 1_000_000 },
-] as const;
-
 function isSupportedContextWindow(value: number) {
   return (
     Number.isInteger(value) &&

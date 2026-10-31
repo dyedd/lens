@@ -178,19 +178,23 @@ export function FoldedMemberRow({
               {locale === "zh-CN" ? "倍率" : "Rate"} {member.rate_multiplier}x
             </Badge>
           ) : null}
-          {member.context_window !== null ? (
+          {(member.context_window ?? member.catalog_context_window) !== null ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Badge variant="secondary" tabIndex={0}>
                   {locale === "zh-CN" ? "上下文" : "Context"}{" "}
-                  {formatContextWindow(member.context_window)}
+                  {formatContextWindow(
+                    member.context_window ?? member.catalog_context_window!,
+                  )}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
                 {member.context_window_source
                   ? `${contextWindowSourceLabel(member.context_window_source, locale)} · `
                   : ""}
-                {member.context_window.toLocaleString()} tokens
+                {(member.context_window ??
+                  member.catalog_context_window)!.toLocaleString()}{" "}
+                tokens
               </TooltipContent>
             </Tooltip>
           ) : null}

@@ -106,9 +106,6 @@ def _build_item_view(
         upstream_context_window=(
             channel_model.upstream_context_window if channel_model is not None else None
         ),
-        catalog_context_window=(
-            channel_model.catalog_context_window if channel_model is not None else None
-        ),
     )
     return ModelGroupItemView(
         channel_id=item.channel_id,
@@ -133,6 +130,9 @@ def _build_item_view(
         reasons=list(evaluation.reasons),
         context_window=context.context_window,
         context_window_source=context.source,
+        catalog_context_window=(
+            channel_model.catalog_context_window if channel_model is not None else None
+        ),
     )
 
 

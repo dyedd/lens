@@ -11,17 +11,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-import httpx
-
 from .context_windows import coerce_context_window
+from .litellm_document import LiteLLMDocumentError, fetch_litellm_document
 
-CATALOG_URL = (
-    "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/"
-    "model_prices_and_context_window.json"
-)
-
-# Catalog entries carry the window under these keys, in priority order.
-_CONTEXT_FIELDS = ("max_input_tokens", "max_tokens")
+# Catalog entries carry the input window under this key.
+_CONTEXT_FIELDS = ("max_input_tokens",)
 
 
 class ModelCatalogError(Exception):
@@ -60,6 +54,11 @@ def build_catalog_context_index(payload: Mapping[str, Any]) -> dict[str, int]:
     for model_key, entry in payload.items():
         if not isinstance(entry, Mapping):
             continue
+        mode = str(entry.get("mode") or "").strip().lower()
+        if any(
+            kind in mode for kind in ("image", "video", "audio", "embedding", "rerank")
+        ):
+            continue
         window = _entry_context_window(entry)
         name = str(model_key).strip().lower()
         if window is None or not name:
@@ -94,34 +93,20 @@ def _tail_alias(name: str) -> str | None:
 
 async def refresh_model_catalog(catalog: ModelCatalog, proxy_url: str) -> None:
     """Replace the catalog snapshot with a freshly fetched one."""
-    catalog.replace(await _fetch_catalog_context_index(proxy_url))
-
-
-async def _fetch_catalog_context_index(proxy_url: str) -> dict[str, int]:
     try:
-        async with httpx.AsyncClient(
-            proxy=proxy_url or None,
-            timeout=30,
-            trust_env=not proxy_url,
-            headers={"Accept": "application/json"},
-        ) as client:
-            response = await client.get(CATALOG_URL)
-            response.raise_for_status()
-            payload: Any = response.json()
-    except httpx.HTTPStatusError as exc:
-        raise ModelCatalogError(
-            f"Model catalog returned HTTP {exc.response.status_code}"
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise ModelCatalogError(
-            f"Model catalog request failed: {type(exc).__name__}"
-        ) from exc
-    except ValueError as exc:
-        raise ModelCatalogError("Model catalog returned invalid data") from exc
+        payload = await fetch_litellm_document(proxy_url)
+    except LiteLLMDocumentError as exc:
+        raise ModelCatalogError(str(exc)) from exc
+    refresh_model_catalog_from_payload(catalog, payload)
 
+
+def refresh_model_catalog_from_payload(
+    catalog: ModelCatalog, payload: Mapping[str, Any]
+) -> dict[str, int]:
     if not isinstance(payload, Mapping):
         raise ModelCatalogError("Model catalog payload must be an object")
     windows = build_catalog_context_index(payload)
     if not windows:
         raise ModelCatalogError("Model catalog has no context windows")
+    catalog.replace(windows)
     return windows

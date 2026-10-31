@@ -1103,8 +1103,8 @@ def test_model_sync_fills_context_window_from_the_shared_catalog(
 
     group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
     item = group["items"][0]
-    assert item["context_window"] == 262_144
-    assert item["context_window_source"] == "catalog"
+    assert item["context_window"] is None
+    assert item["context_window_source"] is None
 
 
 def _app_state() -> Any:

@@ -173,10 +173,26 @@ class AppState:
         return load_time_zone(str(runtime["time_zone"]))
 
     async def _sync_model_prices(self) -> None:
-        from .tasks.model_price_tasks import sync_group_prices
+        from ...core.litellm_document import (
+            LiteLLMDocumentError,
+            fetch_litellm_document,
+        )
+        from ...core.model_catalog import (
+            ModelCatalogError,
+            refresh_model_catalog_from_payload,
+        )
+        from .tasks.model_price_tasks import ModelPriceSyncError, sync_group_prices
 
-        await self.refresh_model_catalog()
-        await sync_group_prices(self)
+        runtime = await self.settings_repo.get_runtime_settings()
+        proxy_url = str(runtime["proxy_url"]).strip()
+        try:
+            document = await fetch_litellm_document(proxy_url)
+            refresh_model_catalog_from_payload(self.model_catalog, document)
+        except (LiteLLMDocumentError, ModelCatalogError) as exc:
+            logger.warning("LiteLLM document refresh skipped: %s", exc)
+            if isinstance(exc, LiteLLMDocumentError):
+                raise ModelPriceSyncError(str(exc)) from exc
+        await sync_group_prices(self, document=document)
 
     async def refresh_model_catalog(self) -> None:
         """Refresh the shared catalog snapshot; keep serving it when offline."""
@@ -187,7 +203,7 @@ class AppState:
             await refresh_model_catalog(
                 self.model_catalog, str(runtime["proxy_url"]).strip()
             )
-        except ModelCatalogError as exc:
+        except (ModelCatalogError, ValueError) as exc:
             logger.warning("Model catalog refresh skipped: %s", exc)
 
     async def _sync_channel_models(self) -> None:
