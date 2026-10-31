@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ....models.protocols import ProtocolKind
-from ..runtime_types import StreamCapture
+from .capture import StreamCapture
 from .types import (
     OPENAI_RESPONSES_TERMINAL_EVENTS,
     parse_sse_payloads,

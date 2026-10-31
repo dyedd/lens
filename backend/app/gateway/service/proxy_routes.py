@@ -14,7 +14,7 @@ from .model_list_payloads import (
     build_gemini_models_payload,
     build_openai_models_payload,
 )
-from .proxy_flow import proxy_protocol
+from .proxy.proxy_flow import proxy_protocol
 from .upstream_support import forward_anthropic_headers
 
 

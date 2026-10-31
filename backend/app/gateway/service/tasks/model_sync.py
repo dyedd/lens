@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 
-from ....core.errors import ResourceNotFoundError
+from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
 from ....core.model_endpoints import resolve_model_base_url_id
 from ....core.model_names import ModelPatternKind, classify_model_pattern
 from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS, resolve_onboard_protocol
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 class _ModelCatalog:
     models: list[UpstreamModel]
     protocols: dict[str, ProtocolKind]
+    existing_protocols: dict[str, frozenset[ProtocolKind]]
 
 
 def channel_for_credential(
@@ -104,11 +105,7 @@ async def sync_channel_models(
 async def _reconcile_synced_groups(
     state: AppState, items: list[ChannelModelSyncResultItem]
 ) -> ModelGroupReconcileReport:
-    try:
-        report = await state.group_repo.reconcile_group_members()
-    except Exception:
-        logger.exception("Model group reconcile after model sync failed")
-        return ModelGroupReconcileReport()
+    report = await state.group_repo.reconcile_group_members()
     logger.info(
         "Model sync groups: added=%s created=%s pending=%s removed=%s",
         len(report.added),
@@ -177,10 +174,19 @@ async def _sync_site_models(
                     protocol_config.base_url_id
                 ].kind in {"default", "china", "protocol"}:
                     catalogs[credential_id] = catalog
-            except (HTTPException, ResourceNotFoundError, ValueError) as exc:
+            except (
+                HTTPException,
+                ModelDiscoveryError,
+                ResourceNotFoundError,
+                ValueError,
+            ) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
-                item.error = (
-                    str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
+                item.error = str(
+                    exc.detail
+                    if isinstance(exc, HTTPException)
+                    else exc.public_message
+                    if isinstance(exc, ModelDiscoveryError)
+                    else exc
                 )
     return items
 
@@ -234,14 +240,20 @@ async def _sync_credential_models(
             if fetch_channel.protocol in NATIVE_LISTING_PROTOCOLS
             else None
         )
-        existing = {
-            model.model_name: model.protocol
-            for config in site.protocols
-            for model in config.models
-            if model.credential_id == item.credential_id and model.protocol is not None
+        existing_protocols: dict[str, set[ProtocolKind]] = defaultdict(set)
+        for config in site.protocols:
+            for model in config.models:
+                if (
+                    model.credential_id == item.credential_id
+                    and model.protocol is not None
+                ):
+                    existing_protocols[model.model_name].add(model.protocol)
+        preferred_protocols = {
+            name: sorted(protocols, key=lambda protocol: protocol.value)[0]
+            for name, protocols in existing_protocols.items()
         }
         protocols = {
-            model.name: existing.get(model.name)
+            model.name: preferred_protocols.get(model.name)
             or resolve_onboard_protocol(
                 model.name,
                 pinned=pinned,
@@ -250,16 +262,41 @@ async def _sync_credential_models(
             )
             for model in upstream_models
         }
-        catalog = _ModelCatalog(models=upstream_models, protocols=protocols)
-    upstream_models, protocols = catalog.models, catalog.protocols
-    upstream_names = {
-        model.name
-        for model in upstream_models
-        if resolve_model_base_url_id(
-            site.base_urls, site.credentials, item.credential_id, protocols[model.name]
+        catalog = _ModelCatalog(
+            models=upstream_models,
+            protocols=protocols,
+            existing_protocols={
+                name: frozenset(protocols)
+                for name, protocols in existing_protocols.items()
+            },
         )
-        == protocol_config.base_url_id
-    }
+    upstream_models, protocols = catalog.models, catalog.protocols
+    upstream_names: set[str] = set()
+    for model in upstream_models:
+        existing_protocols = catalog.existing_protocols.get(model.name)
+        if existing_protocols:
+            matches_endpoint = any(
+                resolve_model_base_url_id(
+                    site.base_urls,
+                    site.credentials,
+                    item.credential_id,
+                    protocol,
+                )
+                == protocol_config.base_url_id
+                for protocol in existing_protocols
+            )
+        else:
+            matches_endpoint = (
+                resolve_model_base_url_id(
+                    site.base_urls,
+                    site.credentials,
+                    item.credential_id,
+                    protocols[model.name],
+                )
+                == protocol_config.base_url_id
+            )
+        if matches_endpoint:
+            upstream_names.add(model.name)
     changes = await state.channel_store.sync_upstream_models(
         protocol_config.id,
         item.credential_id,

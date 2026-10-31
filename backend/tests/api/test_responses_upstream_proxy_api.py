@@ -55,7 +55,7 @@ def _stub_upstream(
     json_body: dict[str, Any] | None = None,
     sse_frames: list[dict[str, Any]] | None = None,
 ) -> None:
-    import app.gateway.service.proxy_upstream as proxy_upstream
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
 
     async def fake_send_upstream(
         _client: httpx.AsyncClient,
@@ -85,7 +85,7 @@ def _stub_upstream(
 
 
 def _enable_body_logging(monkeypatch: Any, app_state: Any) -> None:
-    import app.gateway.service.proxy_upstream as proxy_upstream
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
     import app.gateway.service.streaming.logging as stream_logging
 
     monkeypatch.setattr(proxy_upstream, "safe_estimate_cost", _no_cost)
@@ -202,6 +202,54 @@ def test_responses_channel_preserves_responses_stream_and_logs_usage(
     assert request_log["cache_write_input_tokens"] == 2
 
 
+def test_chat_client_converts_responses_stream_and_logs_usage(
+    client,
+    admin_headers,
+    monkeypatch,
+    app_state,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    captured: dict[str, Any] = {}
+    _stub_upstream(monkeypatch, captured, sse_frames=_completed_frames())
+    _enable_body_logging(monkeypatch, app_state)
+    _responses_channel(
+        create_site,
+        create_model_group,
+        client_protocol=ProtocolKind.OPENAI_CHAT,
+        group_name="chat-stream-model",
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "chat-stream-model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured == {
+        "url": "https://upstream.example/v1/responses",
+        "body": {
+            "model": "responses-model",
+            "input": [{"role": "user", "content": "hello"}],
+            "stream": True,
+        },
+    }
+    assert '"object": "chat.completion.chunk"' in response.text
+    assert '"content": "Hello"' in response.text
+    assert response.text.endswith("data: [DONE]\n\n")
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()
+    request_log = logs["items"][0]
+    assert request_log["protocol"] == "openai_chat"
+    assert request_log["input_tokens"] == 5
+    assert request_log["output_tokens"] == 2
+
+
 def test_chat_proxy_uses_responses_channel_and_converts_response(
     client,
     monkeypatch,
@@ -273,6 +321,74 @@ def test_chat_proxy_uses_responses_channel_and_converts_response(
         "total_tokens": 4,
         "prompt_tokens_details": {"cached_tokens": 1, "cache_write_tokens": 1},
     }
+
+
+def test_chat_client_converts_gemini_response(
+    client,
+    monkeypatch,
+    app_state,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+) -> None:
+    captured: dict[str, Any] = {}
+    _stub_upstream(
+        monkeypatch,
+        captured,
+        json_body={
+            "object": "interaction",
+            "id": "interaction-1",
+            "model": "gemini-model",
+            "status": "completed",
+            "steps": [
+                {
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": "Hello from Gemini"}],
+                }
+            ],
+            "usage": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+        },
+    )
+    monkeypatch.setattr(app_state.model_price_repo, "estimate_model_cost", _no_cost)
+    create_site(valid_site_payload(protocols=["gemini"], model_name="gemini-model"))
+    create_model_group(
+        name="gemini-chat-model",
+        items=[
+            {
+                "channel_id": compose_runtime_channel_id("pc-1", ProtocolKind.GEMINI),
+                "credential_id": "cred-1",
+                "model_name": "gemini-model",
+                "enabled": True,
+            }
+        ],
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(create_gateway_key()),
+        json={
+            "model": "gemini-chat-model",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured == {
+        "url": "https://upstream.example/v1beta/interactions",
+        "body": {
+            "model": "gemini-model",
+            "store": False,
+            "input": [
+                {
+                    "type": "user_input",
+                    "content": [{"type": "text", "text": "hello"}],
+                }
+            ],
+        },
+    }
+    payload = response.json()
+    assert payload["object"] == "chat.completion"
+    assert payload["choices"][0]["message"]["content"] == "Hello from Gemini"
 
 
 def test_anthropic_proxy_uses_responses_channel_and_converts_response(

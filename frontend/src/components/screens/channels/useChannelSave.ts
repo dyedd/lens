@@ -55,11 +55,13 @@ export function useChannelSave({
   queryClient,
   invalidateChannelData,
   editor,
+  onCreated,
 }: {
   locale: Locale;
   queryClient: QueryClient;
   invalidateChannelData: () => Promise<void>;
   editor: ChannelEditor;
+  onCreated?: (site: Site) => void;
 }) {
   const [isSaving, setIsSaving] = useState(false);
 
@@ -162,8 +164,12 @@ export function useChannelSave({
     setIsSaving(true);
     try {
       const site = await persistSite();
-      editor.setIsDialogOpen(false);
-      editor.setEditingSiteId(null);
+      if (!editing && onCreated) {
+        onCreated(site);
+      } else {
+        editor.setIsDialogOpen(false);
+        editor.setEditingSiteId(null);
+      }
       toast.success(
         editing
           ? locale === "zh-CN"

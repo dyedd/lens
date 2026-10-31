@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { lazyComponent } from "@/lib/lazyComponent";
 import { formatCredentialTitle } from "./channelModels";
 import type {
@@ -49,6 +48,8 @@ type Props = {
   editorMode: "channel" | "models";
   modelsStatusFilter: ModelStatusFilter;
   onCloseModels: () => void;
+  remoteModelsOpen: boolean;
+  onRemoteModelsOpenChange: (open: boolean) => void;
 };
 
 /** Renders channel dialogs while keeping the screen component declarative. */
@@ -65,9 +66,9 @@ export function ChannelsDialogs({
   editorMode,
   modelsStatusFilter,
   onCloseModels,
+  remoteModelsOpen,
+  onRemoteModelsOpenChange,
 }: Props) {
-  const [remoteOpen, setRemoteOpen] = useState(false);
-
   return (
     <>
       {editor.isDialogOpen && editorMode === "channel" ? (
@@ -121,18 +122,18 @@ export function ChannelsDialogs({
                   ]
                 : [],
           )}
-          onOpenRemote={() => setRemoteOpen(true)}
+          onOpenRemote={() => onRemoteModelsOpenChange(true)}
           initialStatusFilter={modelsStatusFilter}
         />
       ) : null}
       {editor.isDialogOpen ? (
         <ChannelRemoteModelsDialog
-          open={remoteOpen}
+          open={remoteModelsOpen}
           locale={locale}
           channelName={editor.form.name}
           loading={picker.fetching}
           importing={picker.detecting}
-          onOpenChange={setRemoteOpen}
+          onOpenChange={onRemoteModelsOpenChange}
           onLoad={picker.discoverRemoteCatalog}
           onImport={picker.importRemoteModels}
         />

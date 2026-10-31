@@ -23,13 +23,33 @@ export function ChannelsScreen() {
   const [editorMode, setEditorMode] = useState<"channel" | "models">("channel");
   const [modelsStatusFilter, setModelsStatusFilter] =
     useState<ModelStatusFilter>("all");
+  const [remoteModelsOpen, setRemoteModelsOpen] = useState(false);
   const queries = useChannelQueries(locale);
   const editor = useChannelForm(locale);
+
+  function openEditor(
+    site: Site | null,
+    mode: "channel" | "models",
+    options: { statusFilter?: ModelStatusFilter } = {},
+  ) {
+    setRemoteModelsOpen(false);
+    setEditorMode(mode);
+    setModelsStatusFilter(options.statusFilter ?? "all");
+    if (site) editor.openEdit(site);
+    else editor.openCreate();
+  }
+
+  function handleCreated(site: Site) {
+    openEditor(site, "models");
+    setRemoteModelsOpen(true);
+  }
+
   const save = useChannelSave({
     locale,
     queryClient: queries.queryClient,
     invalidateChannelData: queries.invalidateChannelData,
     editor,
+    onCreated: handleCreated,
   });
   const persistence = useChannelPersistence({
     locale,
@@ -65,17 +85,6 @@ export function ChannelsScreen() {
       },
     );
   }, [locale, queries.sitesError, queries.sitesIsError]);
-
-  function openEditor(
-    site: Site | null,
-    mode: "channel" | "models",
-    options: { statusFilter?: ModelStatusFilter } = {},
-  ) {
-    setEditorMode(mode);
-    setModelsStatusFilter(options.statusFilter ?? "all");
-    if (site) editor.openEdit(site);
-    else editor.openCreate();
-  }
 
   return (
     <TooltipProvider>
@@ -121,8 +130,11 @@ export function ChannelsScreen() {
           editorMode={editorMode}
           modelsStatusFilter={modelsStatusFilter}
           onCloseModels={() => {
+            setRemoteModelsOpen(false);
             editor.closeEditor();
           }}
+          remoteModelsOpen={remoteModelsOpen}
+          onRemoteModelsOpenChange={setRemoteModelsOpen}
         />
       </section>
     </TooltipProvider>

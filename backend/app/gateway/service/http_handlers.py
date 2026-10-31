@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from ...core.errors import LensError
 from ..cronjob_runner import CronjobAlreadyRunningError
 from ..router.cooldown import CooldownPolicy
-from .app_state import app_state, logger
+from .app_state import app_state, bind_app_state, logger, reset_app_state
 from .error_responses import (
     build_database_error_response,
     build_error_response,
@@ -198,31 +198,35 @@ async def dynamic_cors_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
     """Apply runtime CORS settings and router health configuration."""
-    if request.method == "OPTIONS":
-        # Answered here rather than through a catch-all `/{path:path}` route: such
-        # a route partially matches every path, which pre-empts the low-priority
-        # frontend fallback and turns unmatched paths into 405s.
+    token = bind_app_state(request.app.state.app_state)
+    try:
+        if request.method == "OPTIONS":
+            # Answered here rather than through a catch-all `/{path:path}` route: such
+            # a route partially matches every path, which pre-empts the low-priority
+            # frontend fallback and turns unmatched paths into 405s.
+            try:
+                return await _cors_preflight_response(request)
+            except OperationalError as exc:
+                return build_database_error_response(exc, request)
+        response = await call_next(request)
         try:
-            return await _cors_preflight_response(request)
+            runtime = await app_state.settings_repo.get_runtime_settings()
+            apply_router_runtime_settings(runtime)
         except OperationalError as exc:
             return build_database_error_response(exc, request)
-    response = await call_next(request)
-    try:
-        runtime = await app_state.settings_repo.get_runtime_settings()
-        apply_router_runtime_settings(runtime)
-    except OperationalError as exc:
-        return build_database_error_response(exc, request)
-    allow_origins = runtime["cors_allow_origins"]
-    origin = request.headers.get("origin", "")
-    if allow_origins == ["*"]:
-        response.headers["access-control-allow-origin"] = "*"
-    elif origin and origin in allow_origins:
-        response.headers["access-control-allow-origin"] = origin
-        response.headers["vary"] = "Origin"
-    response.headers.setdefault("access-control-allow-credentials", "true")
-    response.headers.setdefault("access-control-allow-methods", "*")
-    response.headers.setdefault("access-control-allow-headers", "*")
-    return response
+        allow_origins = runtime["cors_allow_origins"]
+        origin = request.headers.get("origin", "")
+        if allow_origins == ["*"]:
+            response.headers["access-control-allow-origin"] = "*"
+        elif origin and origin in allow_origins:
+            response.headers["access-control-allow-origin"] = origin
+            response.headers["vary"] = "Origin"
+        response.headers.setdefault("access-control-allow-credentials", "true")
+        response.headers.setdefault("access-control-allow-methods", "*")
+        response.headers.setdefault("access-control-allow-headers", "*")
+        return response
+    finally:
+        reset_app_state(token)
 
 
 async def _cors_preflight_response(request: Request) -> Response:
