@@ -9,6 +9,7 @@ import {
   ChevronDown,
   CircleCheck,
   Database,
+  DatabaseZap,
   DollarSign,
   HardDrive,
   Timer,
@@ -71,6 +72,9 @@ export function OverviewStats(props: Props) {
     TIME_RANGE_OPTIONS.find((option) => option.value === timeRange)?.[
       isChineseLocale ? "zhLabel" : "enLabel"
     ] ?? (isChineseLocale ? "近 30 天" : "Last 30 days");
+  const cacheHitRate = inputTokens
+    ? Math.round((cacheReadTokens / inputTokens) * 100)
+    : 0;
   const metricGroups = [
     [
       {
@@ -124,6 +128,11 @@ export function OverviewStats(props: Props) {
       },
     ],
     [
+      {
+        icon: DatabaseZap,
+        title: isChineseLocale ? "缓存命中率" : "Cache hit rate",
+        value: `${cacheHitRate}%`,
+      },
       {
         icon: Database,
         title: isChineseLocale ? "缓存 Tokens" : "Cache tokens",
