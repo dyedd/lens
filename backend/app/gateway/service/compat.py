@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
-from .routing_request import clean_reasoning_effort
+from .proxy.routing_request import clean_reasoning_effort
 
 
 def apply_deepseek_thinking_compat(

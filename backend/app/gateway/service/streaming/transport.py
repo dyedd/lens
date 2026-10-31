@@ -10,10 +10,12 @@ from starlette.types import Receive, Scope, Send
 from ....models.protocols import ProtocolKind
 from ...router.cooldown import ErrorCategory
 from ..app_state import logger
-from ..routing_plan import gateway_timeout_scope
+from ..proxy.routing_plan import gateway_timeout_scope
 from ..runtime_types import (
     GatewayTimeoutError,
     RequestDeadline,
+)
+from .capture import (
     StreamCapture,
     capture_stream_content,
     record_stream_error,

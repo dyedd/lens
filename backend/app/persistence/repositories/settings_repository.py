@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.cooldown_rules import compile_detection_rules
 from app.core.time_zone import validate_time_zone_name
 from app.models.settings import SettingItem
 from app.persistence.entities import SettingEntity
@@ -49,7 +50,6 @@ from app.persistence.settings_keys import (
     SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
 )
 
-from ...gateway.router.cooldown import compile_detection_rules
 from ...models.cooldown_rules import CooldownDetectionRulesConfig
 from ...models.upstream_rules import (
     UpstreamHeadersConfig,

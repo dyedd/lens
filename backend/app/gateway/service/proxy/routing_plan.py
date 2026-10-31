@@ -5,14 +5,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import perf_counter
 
-from ...core.errors import ResourceNotFoundError, RoutingError
-from ...models.channels import ChannelConfig
-from ...models.model_groups import ModelGroupItemState
-from ...models.protocols import ProtocolKind
-from ..converters import can_reach_protocol
-from ..router import RouteTarget
-from .app_state import app_state
-from .runtime_types import GatewayTimeoutError, RoutingPlan
+from ....core.errors import ResourceNotFoundError, RoutingError
+from ....core.model_name_parser import ParsedModelName
+from ....models.channels import ChannelConfig
+from ....models.model_groups import ModelGroupItemState
+from ....models.protocols import ProtocolKind
+from ...converters import can_reach_protocol
+from ...router import RouteTarget
+from ..app_state import app_state
+from ..runtime_types import GatewayTimeoutError, RoutingPlan
 
 
 async def resolve_routing_plan(
@@ -20,7 +21,7 @@ async def resolve_routing_plan(
     requested_model: str,
     channels: list[ChannelConfig],
     *,
-    parsed_model: object | None = None,
+    parsed_model: ParsedModelName | None = None,
     group_id: str | None = None,
     requested_group_name: str | None = None,
 ) -> RoutingPlan:

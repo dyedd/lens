@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from ..runtime_types import append_error_sample
+from .capture import append_error_sample
 
 OPENAI_RESPONSES_TERMINAL_EVENTS = frozenset(
     {"response.completed", "response.incomplete"}
