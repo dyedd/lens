@@ -63,10 +63,12 @@ export type SiteModel = {
   model_name: string;
   enabled: boolean;
   sort_order: number;
-  /** Admin override; null falls back to the upstream-reported value. */
+  /** Admin override; null falls back to the detected value. */
   context_window: number | null;
   /** Context window the upstream model list reports. */
   upstream_context_window: number | null;
+  /** Context window resolved from the shared model catalog. */
+  catalog_context_window: number | null;
 };
 export type SiteModelInput = {
   id?: string | null;
@@ -263,7 +265,10 @@ export type SiteModelFetchItem = {
   credential_id: string;
   credential_name: string;
   model_name: string;
+  /** Size this upstream reports for the deployment being discovered. */
   context_window: number | null;
+  /** Size the shared catalog publishes for the model name. */
+  catalog_context_window: number | null;
 };
 export type SiteModelTestPayload = {
   protocol: ProtocolKind;

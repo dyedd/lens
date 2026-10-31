@@ -1,4 +1,11 @@
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { ChevronUp, CircleHelp } from "lucide-react";
+import {
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+  useEffect,
+  useState,
+} from "react";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
@@ -63,6 +70,12 @@ export function ModelGroupSettings({
   const groupMode = form.route_group_id ? "alias" : "direct";
   const isContextWindowInvalid =
     parseContextWindowInput(form.context_window) === undefined;
+  const [contextWindowMode, setContextWindowMode] = useState<"auto" | "custom">(
+    form.context_window.trim() ? "custom" : "auto",
+  );
+  useEffect(() => {
+    setContextWindowMode(form.context_window.trim() ? "custom" : "auto");
+  }, [form.context_window]);
   const matchRegex = form.match_regex.trim();
   const isMatchRegexInvalid =
     Boolean(matchRegex) && !compileRegexRulePattern(matchRegex);
@@ -172,34 +185,93 @@ export function ModelGroupSettings({
               </Select>
             </SettingsRow>
 
-            <SettingsRow
-              htmlFor="group-context-window"
-              label={isZh ? "默认上下文" : "Default context"}
-            >
-              <Input
-                id="group-context-window"
-                className="font-mono placeholder:font-sans"
-                inputMode="numeric"
-                aria-invalid={isContextWindowInvalid || undefined}
-                placeholder={isZh ? "如 200K、1M" : "e.g. 200K, 1M"}
-                value={form.context_window}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    context_window: event.target.value,
-                  }))
+            <section className="flex flex-col gap-1.5 border-t border-border/60 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {isZh ? "模型能力" : "Model capabilities"}
+                </h3>
+                <ChevronUp
+                  aria-hidden="true"
+                  className="size-3.5 text-muted-foreground"
+                />
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {isZh
+                  ? "定义当前模型的上下文上限。"
+                  : "Define the context limit for this model."}
+              </p>
+              <div className="flex min-h-10 items-center gap-1.5 rounded-md bg-muted/35 px-2 py-1.5">
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <label
+                    htmlFor="group-context-window"
+                    className="truncate text-xs font-medium text-foreground"
+                  >
+                    {isZh ? "上下文窗口" : "Context window"}
+                  </label>
+                  <CircleHelp
+                    aria-hidden="true"
+                    className="size-3 shrink-0 text-muted-foreground"
+                  />
+                </div>
+                <Input
+                  id="group-context-window"
+                  className="h-8 min-w-0 flex-1 border-0 bg-transparent px-2 text-right font-mono text-xs shadow-none placeholder:font-sans focus-visible:border-0 focus-visible:ring-0"
+                  inputMode="numeric"
+                  aria-invalid={isContextWindowInvalid || undefined}
+                  placeholder={isZh ? "如 200K、1M" : "e.g. 200K, 1M"}
+                  value={form.context_window}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      context_window: event.target.value,
+                    }))
+                  }
+                />
+                <Select
+                  value={contextWindowMode}
+                  onValueChange={(value) => {
+                    if (value === "auto") {
+                      setContextWindowMode("auto");
+                      setForm((current) => ({
+                        ...current,
+                        context_window: "",
+                      }));
+                    } else if (value === "custom") {
+                      setContextWindowMode("custom");
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[104px] shrink-0 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-transparent focus-visible:border-0 focus-visible:ring-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="auto">
+                        {isZh ? "自动识别" : "Detect automatically"}
+                      </SelectItem>
+                      <SelectItem value="custom">
+                        {isZh ? "自定义" : "Custom"}
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p
+                className={
+                  isContextWindowInvalid
+                    ? "text-xs text-destructive"
+                    : "text-xs text-muted-foreground"
                 }
-              />
-              <p className="text-xs text-muted-foreground">
+              >
                 {isContextWindowInvalid
                   ? isZh
                     ? "格式无效，示例：200K、1M、128000"
                     : "Invalid format. Examples: 200K, 1M, 128000"
                   : isZh
-                    ? "仅用于未单独设置上下文的成员；超出时跳过，均未设置则不筛选。"
-                    : "Applies to members without their own window; skip when exceeded, and ignore filtering if none is set."}
+                    ? "自定义值仅用于未单独设置上下文的成员；自动识别时使用成员窗口。"
+                    : "Custom values apply to members without their own window; automatic mode uses each member's window."}
               </p>
-            </SettingsRow>
+            </section>
 
             <SettingsRow
               htmlFor="group-match-regex"

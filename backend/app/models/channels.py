@@ -32,6 +32,7 @@ class ChannelDiscoveredModel(StrictBaseModel):
     sort_order: int = Field(default=0, ge=0)
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
+    catalog_context_window: ContextWindow | None = None
 
 
 class ChannelConfig(StrictBaseModel):

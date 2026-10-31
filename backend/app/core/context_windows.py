@@ -51,6 +51,7 @@ class ContextWindowSource(str, Enum):
 
     MANUAL = "manual"
     UPSTREAM = "upstream"
+    CATALOG = "catalog"
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +101,13 @@ def resolve_channel_model_context_window(
     *,
     context_window: int | None,
     upstream_context_window: int | None,
+    catalog_context_window: int | None = None,
 ) -> ContextWindowResolution:
-    """Pick a channel model's context window: the manual setting, then upstream.
+    """Pick a channel model's context window from the most specific source.
+
+    The admin setting wins, then the size this upstream reports, then the
+    shared catalog: a number published by the very deployment being routed
+    describes it better than a catalog entry for the same model name.
 
     Models with no value anywhere stay unknown, so routing never drops them.
     """
@@ -110,6 +116,10 @@ def resolve_channel_model_context_window(
     if upstream_context_window is not None:
         return ContextWindowResolution(
             upstream_context_window, ContextWindowSource.UPSTREAM
+        )
+    if catalog_context_window is not None:
+        return ContextWindowResolution(
+            catalog_context_window, ContextWindowSource.CATALOG
         )
     return ContextWindowResolution(None, None)
 

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.errors import ResourceNotFoundError
+from app.core.model_catalog import ModelCatalog
 from app.core.model_names import (
     ModelPatternKind,
     classify_model_pattern,
@@ -249,8 +250,14 @@ class ChannelStore(
     SiteConfigUpsertsMixin,
     SiteOperationsMixin,
 ):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        *,
+        model_catalog: ModelCatalog | None = None,
+    ) -> None:
         self._session_factory = session_factory
+        self._catalog = model_catalog
 
     async def list_channels(self) -> list[ChannelConfig]:
         """Return all runtime channels flattened from configured sites."""

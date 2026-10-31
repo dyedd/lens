@@ -23,9 +23,24 @@ type ModelGroupSeed = {
   enabled: boolean;
   contextWindow: number | null;
   upstreamContextWindow: number | null;
+  catalogContextWindow: number | null;
   members: Map<string, AggregatedModelMember>;
   testKey: string | null;
 };
+
+/** Picks the detected size for a model: this upstream's, then the catalog's. */
+function detectedContextWindow(group: ModelGroupSeed) {
+  if (group.upstreamContextWindow !== null) {
+    return {
+      value: group.upstreamContextWindow,
+      source: "upstream" as const,
+    };
+  }
+  if (group.catalogContextWindow !== null) {
+    return { value: group.catalogContextWindow, source: "catalog" as const };
+  }
+  return { value: null, source: null };
+}
 
 /**
  * Builds the channel overview rows, collapsing models that share a name
@@ -68,6 +83,7 @@ export function useAggregatedModels(
           enabled: false,
           contextWindow: null,
           upstreamContextWindow: null,
+          catalogContextWindow: null,
           members: new Map(),
           testKey: null,
         };
@@ -83,6 +99,7 @@ export function useAggregatedModels(
         group.enabled = group.enabled || model.enabled;
         group.contextWindow ??= model.context_window;
         group.upstreamContextWindow ??= model.upstream_context_window;
+        group.catalogContextWindow ??= model.catalog_context_window;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
         if (group.members.has(memberKey)) continue;
         const names = credentialNames(model.credential_id);
@@ -95,20 +112,22 @@ export function useAggregatedModels(
         group.testKey ??= memberKey;
       }
 
-      return Array.from(groups.values()).map((group) => ({
-        key: aggregateModelGroupKey(protocolConfig, group.modelName),
-        modelName: group.modelName,
-        baseUrl,
-        credentialCount,
-        protocols: Array.from(group.protocols),
-        enabled: group.enabled,
-        contextWindow: group.contextWindow,
-        autoContextWindow: group.upstreamContextWindow,
-        autoContextWindowSource:
-          group.upstreamContextWindow === null ? null : "upstream",
-        members: Array.from(group.members.values()),
-        testKey: group.testKey,
-      }));
+      return Array.from(groups.values()).map((group) => {
+        const detected = detectedContextWindow(group);
+        return {
+          key: aggregateModelGroupKey(protocolConfig, group.modelName),
+          modelName: group.modelName,
+          baseUrl,
+          credentialCount,
+          protocols: Array.from(group.protocols),
+          enabled: group.enabled,
+          contextWindow: group.contextWindow,
+          autoContextWindow: detected.value,
+          autoContextWindowSource: detected.source,
+          members: Array.from(group.members.values()),
+          testKey: group.testKey,
+        };
+      });
     });
   }, [baseUrls, credentials, protocolConfigs, locale]);
 }

@@ -1,9 +1,6 @@
 import { Activity, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
-import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import {
   Table,
@@ -19,14 +16,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import {
-  contextWindowSourceLabel,
-  formatContextWindow,
-  parseContextWindowInput,
-} from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelModels";
 import type { AggregatedModel, Locale } from "./channelTypes";
+import { ModelCapabilityPopover } from "./ModelCapabilityPopover";
 import { ProtocolDropdown } from "./ProtocolDropdown";
 
 type Props = {
@@ -92,7 +85,7 @@ export function ChannelModelsTable({
           <TableHead className="w-[180px]">
             {locale === "zh-CN" ? "上游协议" : "Upstream protocol"}
           </TableHead>
-          <TableHead className="w-[92px]">
+          <TableHead className="w-[92px] min-w-[92px]">
             {locale === "zh-CN" ? "上下文" : "Context"}
           </TableHead>
           <TableHead className="w-[72px]" />
@@ -187,16 +180,16 @@ export function ChannelModelsTable({
                   }
                 />
               </TableCell>
-              <TableCell className="w-[92px] py-1.5">
-                <ContextWindowInput
-                  // Remount when the saved value changes so the draft resets.
-                  key={model.contextWindow ?? "auto"}
-                  model={model}
-                  locale={locale}
-                  onCommit={(contextWindow) =>
-                    onUpdateContextWindow(model.key, contextWindow)
-                  }
-                />
+              <TableCell className="w-[92px] min-w-[92px] py-1.5">
+                <div className="flex h-7 items-center">
+                  <ModelCapabilityPopover
+                    model={model}
+                    locale={locale}
+                    onCommit={(contextWindow) =>
+                      onUpdateContextWindow(model.key, contextWindow)
+                    }
+                  />
+                </div>
               </TableCell>
               <TableCell className="w-[72px] py-1.5">
                 <div className="flex h-7 items-center justify-end gap-0.5">
@@ -249,93 +242,6 @@ export function ChannelModelsTable({
         )}
       </TableBody>
     </Table>
-  );
-}
-
-/**
- * Edits a model's context window override inline. Empty falls back to the
- * upstream-reported value shown as the placeholder.
- */
-function ContextWindowInput({
-  model,
-  locale,
-  onCommit,
-}: {
-  model: AggregatedModel;
-  locale: Locale;
-  onCommit: (contextWindow: number | null) => void;
-}) {
-  const savedText =
-    model.contextWindow === null
-      ? ""
-      : formatContextWindow(model.contextWindow);
-  const [draft, setDraft] = useState(savedText);
-  const isZh = locale === "zh-CN";
-  const autoText =
-    model.autoContextWindow === null
-      ? ""
-      : formatContextWindow(model.autoContextWindow);
-
-  function commit() {
-    if (draft.trim() === savedText) {
-      setDraft(savedText);
-      return;
-    }
-    const parsed = parseContextWindowInput(draft);
-    if (parsed === undefined) {
-      toast.error(
-        isZh
-          ? "上下文格式无效，示例：200K、1M、128000"
-          : "Invalid context window. Examples: 200K, 1M, 128000",
-      );
-      setDraft(savedText);
-      return;
-    }
-    if (parsed === model.contextWindow) {
-      setDraft(savedText);
-      return;
-    }
-    onCommit(parsed);
-  }
-
-  const hint =
-    model.contextWindow !== null
-      ? `${contextWindowSourceLabel("manual", locale)} · ${model.contextWindow.toLocaleString()} tokens`
-      : model.autoContextWindowSource !== null &&
-          model.autoContextWindow !== null
-        ? `${contextWindowSourceLabel(model.autoContextWindowSource, locale)} · ${model.autoContextWindow.toLocaleString()} tokens`
-        : isZh
-          ? "未配置：模型组内用组默认上下文，其余按请求和上游判断"
-          : "Unset: the group default applies in model groups, elsewhere routing is unfiltered";
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Input
-          value={draft}
-          placeholder={autoText || (isZh ? "默认" : "Default")}
-          inputMode="numeric"
-          aria-label={
-            isZh
-              ? `${model.modelName} 上下文窗口`
-              : `${model.modelName} context window`
-          }
-          className="h-7 px-2 font-mono text-xs placeholder:font-sans"
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              event.currentTarget.blur();
-            } else if (event.key === "Escape") {
-              event.stopPropagation();
-              setDraft(savedText);
-            }
-          }}
-        />
-      </TooltipTrigger>
-      <TooltipContent side="top">{hint}</TooltipContent>
-    </Tooltip>
   );
 }
 

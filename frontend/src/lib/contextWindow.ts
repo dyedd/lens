@@ -3,9 +3,25 @@
 export const MIN_CONTEXT_WINDOW = 1_000;
 export const MAX_CONTEXT_WINDOW = 100_000_000;
 
-export type ContextWindowSource = "manual" | "upstream";
+export type ContextWindowSource = "manual" | "upstream" | "catalog";
+
+/** Detected sizes only; a manual value always wins over these. */
+export type DetectedContextWindowSource = Exclude<
+  ContextWindowSource,
+  "manual"
+>;
+
 const CONTEXT_INPUT_RE = /^(\d+(?:\.\d+)?)\s*([km])?$/i;
 const UNIT_TOKENS: Record<string, number> = { k: 1_000, m: 1_000_000 };
+
+/** Sizes offered in the context window menu, mirroring common model specs. */
+export const CONTEXT_WINDOW_PRESETS = [
+  { label: "32K", value: 32_000 },
+  { label: "128K", value: 128_000 },
+  { label: "200K", value: 200_000 },
+  { label: "256K", value: 256_000 },
+  { label: "1M", value: 1_000_000 },
+] as const;
 
 function isSupportedContextWindow(value: number) {
   return (
@@ -48,5 +64,6 @@ export function contextWindowSourceLabel(
 ): string {
   const isZh = locale === "zh-CN";
   if (source === "manual") return isZh ? "手动设置" : "Set manually";
+  if (source === "catalog") return isZh ? "模型目录" : "Model catalog";
   return isZh ? "上游模型列表" : "Upstream model list";
 }
