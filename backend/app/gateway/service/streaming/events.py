@@ -8,7 +8,7 @@ from ...router.cooldown import (
     ErrorCategory,
     parse_cooldown_seconds,
 )
-from ..runtime_types import (
+from .capture import (
     StreamCapture,
     record_stream_error,
     record_stream_parse_error,

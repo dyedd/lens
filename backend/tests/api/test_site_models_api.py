@@ -939,6 +939,7 @@ def test_model_sync_fills_context_window_from_the_shared_catalog(
     client,
     admin_headers,
     monkeypatch,
+    app_state,
 ) -> None:
     _create_sync_site(
         client,
@@ -951,7 +952,7 @@ def test_model_sync_fills_context_window_from_the_shared_catalog(
         return ["catalog-only"]
 
     _patch_upstream_models(monkeypatch, fake_fetch)
-    _app_state().model_catalog.replace({"catalog-only": 262_144})
+    app_state.model_catalog.replace({"catalog-only": 262_144})
     _run_model_sync(client, admin_headers)
 
     site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
@@ -963,9 +964,3 @@ def test_model_sync_fills_context_window_from_the_shared_catalog(
     item = group["items"][0]
     assert item["context_window"] == 262_144
     assert item["context_window_source"] == "catalog"
-
-
-def _app_state() -> Any:
-    import app.gateway.service.app_state as state_mod
-
-    return state_mod.app_state

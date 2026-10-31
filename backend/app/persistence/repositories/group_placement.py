@@ -26,9 +26,6 @@ from app.persistence.entities import (
     ModelGroupEntity,
     SiteDiscoveredModelEntity,
 )
-from app.persistence.regex_rule_references import (
-    load_rule_patterns,
-)
 
 from .group_read import list_ready_channel_items
 
@@ -53,14 +50,12 @@ class GroupCoverage:
     match_regex_operator: MatchRegexOperator
     # Members and exclusions both count: an exclusion is a placement decision.
     model_names: frozenset[str]
-    legacy_rule_override: bool = False
 
 
 def build_group_coverage(
     group: ModelGroupView,
     patterns: tuple[re.Pattern[str], ...],
     match_regex_operator: MatchRegexOperator = "or",
-    legacy_rule_override: bool = False,
 ) -> GroupCoverage:
     return GroupCoverage(
         id=group.id,
@@ -71,7 +66,6 @@ def build_group_coverage(
         model_names=frozenset(
             item.model_name for item in (*group.items, *group.excluded_items)
         ),
-        legacy_rule_override=legacy_rule_override,
     )
 
 
@@ -89,15 +83,11 @@ def build_unplaced_models(
     def is_covered(model_name: str) -> bool:
         return model_name.casefold() in covered_keys or any(
             not group.is_route_group
-            and (
-                any(pattern.search(model_name) for pattern in group.patterns)
-                if group.legacy_rule_override
-                else matches_model_group(
-                    group.name,
-                    model_name,
-                    group.patterns,
-                    group.match_regex_operator,
-                )
+            and matches_model_group(
+                group.name,
+                model_name,
+                group.patterns,
+                group.match_regex_operator,
             )
             for group in groups
         )
@@ -166,11 +156,6 @@ class GroupPlacementMixin:
         """Return channel models not covered by any execution group."""
         channels = await self._channel_store.list_channels()
         groups = await self.list_groups(channels=channels)
-        async with self._session_factory() as session:
-            patterns = await load_rule_patterns(
-                session,
-                [rule_id for group in groups for rule_id in group.match_rule_ids],
-            )
         return build_unplaced_models(
             [
                 build_group_coverage(
@@ -182,16 +167,11 @@ class GroupPlacementMixin:
                                 group.match_regex
                             )
                         )
-                        else tuple(
-                            patterns[rule_id]
-                            for rule_id in group.match_rule_ids
-                            if rule_id in patterns
-                        )
+                        else ()
                     ),
                     group.match_regex_operator
                     if group.match_regex_operator in {"and", "or"}
                     else "or",
-                    legacy_rule_override=bool(group.match_rule_ids),
                 )
                 for group in groups
             ],

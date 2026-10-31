@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from fastapi import Depends, HTTPException, Query, Request, Response
 
+from ....core.errors import ModelDiscoveryError
 from ....models.channels import (
     ChannelConfig,
     ChannelModelSyncRequest,
@@ -147,8 +148,13 @@ async def fetch_site_models(
         )
         try:
             upstream_models = await fetch_upstream_models(channel)
-        except HTTPException as exc:
-            errors.append(format_channel_error(exc.detail))
+        except (ModelDiscoveryError, HTTPException) as exc:
+            detail = (
+                exc.public_message
+                if isinstance(exc, ModelDiscoveryError)
+                else exc.detail
+            )
+            errors.append(format_channel_error(detail))
             continue
 
         for upstream_model in upstream_models:

@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from fastapi import HTTPException
 
 from ....core.context_windows import parse_upstream_model_context_window
+from ....core.errors import ModelDiscoveryError
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
 from ...upstream_request import (
@@ -45,13 +45,11 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
         return _parse_model_list(response.json())
     except httpx.HTTPStatusError as exc:
         detail = format_http_response_error(exc.response)
-        raise HTTPException(
-            status_code=exc.response.status_code, detail=detail
-        ) from exc
+        raise ModelDiscoveryError(detail, status_code=exc.response.status_code) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Transport error: {exc}") from exc
+        raise ModelDiscoveryError(f"Transport error: {exc}") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise ModelDiscoveryError(str(exc), status_code=400) from exc
 
 
 def _model_list_request(

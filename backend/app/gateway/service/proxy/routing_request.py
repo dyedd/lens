@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ...core.model_name_parser import ParsedModelName
-from ...models.channels import ChannelConfig
-from ...models.protocols import ProtocolKind
+from ....core.model_name_parser import ParsedModelName
+from ....models.channels import ChannelConfig
+from ....models.protocols import ProtocolKind
 
 _REASONING_BUDGET_TOKENS = {
     "minimal": 1024,

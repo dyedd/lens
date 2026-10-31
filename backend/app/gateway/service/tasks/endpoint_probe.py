@@ -7,7 +7,7 @@ import httpx
 from ....models.endpoint_probe import EndpointProbeRequest, EndpointProbeResult
 from ...upstream_request import resolve_proxy_url
 from ..app_state import app_state
-from ..routing_plan import elapsed_ms
+from ..proxy.routing_plan import elapsed_ms
 from ..upstream_support import (
     default_lens_user_agent,
     format_transport_error,
