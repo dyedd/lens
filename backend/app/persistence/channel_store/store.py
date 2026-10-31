@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -57,19 +56,6 @@ class UpstreamModelChanges:
     added: list[str]
     missing: list[str]
     restored: list[str]
-
-
-def _onboard_protocol(raw: str) -> ProtocolKind:
-    """Pick a protocol for a model the sync onboards from the catalog."""
-    try:
-        protocols = {ProtocolKind(value) for value in json.loads(raw)}
-    except (TypeError, ValueError, json.JSONDecodeError):
-        protocols = set()
-    if ProtocolKind.ANTHROPIC in protocols:
-        return ProtocolKind.ANTHROPIC
-    if ProtocolKind.GEMINI in protocols:
-        return ProtocolKind.GEMINI
-    return ProtocolKind.OPENAI_CHAT
 
 
 class SiteOperationsMixin:
@@ -146,19 +132,22 @@ class SiteOperationsMixin:
         upstream_names: set[str],
         upstream_pattern: str = "",
         upstream_context_windows: Mapping[str, int] | None = None,
+        upstream_protocols: Mapping[str, ProtocolKind] | None = None,
     ) -> UpstreamModelChanges:
         """Make one credential's rows equal the models its filter keeps.
 
         The credential's pattern selects whole names from the upstream catalog,
         so a sync adds what is newly matched and deletes what the filter or the
         catalog no longer offers. Rows keep any admin settings they already
-        carry; only the upstream-reported context window is refreshed.
+        carry; only the upstream-reported context window is refreshed. New rows
+        take their protocol from `upstream_protocols`, else OpenAI Chat.
         """
         if not upstream_pattern.strip() or (
             classify_model_pattern(upstream_pattern) is ModelPatternKind.INVALID
         ):
             return UpstreamModelChanges(added=[], missing=[], restored=[])
         reported_context_windows = upstream_context_windows or {}
+        onboard_protocols = upstream_protocols or {}
         kept_names = filter_model_names(upstream_names, upstream_pattern)
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
@@ -209,8 +198,6 @@ class SiteOperationsMixin:
             next_sort_order = (
                 max((row.sort_order for row in config_rows), default=-1) + 1
             )
-            onboard_protocol = _onboard_protocol(entity.protocols_json)
-
             for row in credential_models:
                 if row.model_name not in kept_names:
                     await session.delete(row)
@@ -230,7 +217,9 @@ class SiteOperationsMixin:
                         model_name=name,
                         enabled=1,
                         sort_order=next_sort_order,
-                        protocol=onboard_protocol.value,
+                        protocol=onboard_protocols.get(
+                            name, ProtocolKind.OPENAI_CHAT
+                        ).value,
                         upstream_context_window=reported_context_windows.get(name),
                     )
                 )

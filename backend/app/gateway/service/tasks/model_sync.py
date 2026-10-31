@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
 from ....core.model_names import ModelPatternKind, classify_model_pattern
+from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS, resolve_onboard_protocol
 from ....core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ....models.channels import (
     ChannelConfig,
@@ -18,7 +19,7 @@ from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus
 from ....models.sites import SiteConfig, SiteProtocolConfig
 from ..app_state import logger
-from .model_discovery import fetch_upstream_models
+from .model_discovery import NATIVE_LISTING_PROTOCOLS, fetch_upstream_models
 
 if TYPE_CHECKING:
     from ..app_state import AppState
@@ -175,17 +176,17 @@ async def _sync_credential_models(
         return
     if classify_model_pattern(pattern) is ModelPatternKind.INVALID:
         raise ValueError("invalid model pattern")
-    fetch_channel = next(
-        (
-            credential_channel
-            for channel in channels
-            if (
-                credential_channel := channel_for_credential(
-                    channel, item.credential_id
-                )
-            )
-        ),
-        None,
+    credential_channels = [
+        credential_channel
+        for channel in channels
+        if (credential_channel := channel_for_credential(channel, item.credential_id))
+    ]
+    # Per-model protocols mix channels on one URL; the OpenAI-compatible list
+    # suits every relay, so native Anthropic or Gemini lists only go last.
+    fetch_channel = min(
+        credential_channels,
+        key=lambda channel: channel.protocol in NATIVE_LISTING_PROTOCOLS,
+        default=None,
     )
     if fetch_channel is None:
         raise ValueError("no usable credential for model discovery")
@@ -193,6 +194,12 @@ async def _sync_credential_models(
     if not upstream_models:
         # An empty catalog is a failed fetch, not proof every model vanished.
         raise ValueError("upstream returned no models")
+    # A native Anthropic or Gemini list serves every model on its own protocol.
+    pinned = ENDPOINT_KIND_PROTOCOLS.get(fetch_channel.endpoint_kind) or (
+        fetch_channel.protocol
+        if fetch_channel.protocol in NATIVE_LISTING_PROTOCOLS
+        else None
+    )
     upstream_names = {model.name for model in upstream_models}
     changes = await state.channel_store.sync_upstream_models(
         protocol_config.id,
@@ -203,6 +210,15 @@ async def _sync_credential_models(
             model.name: model.context_window
             for model in upstream_models
             if model.context_window is not None
+        },
+        upstream_protocols={
+            model.name: resolve_onboard_protocol(
+                model.name,
+                pinned=pinned,
+                declared=model.protocols,
+                configured=protocol_config.protocols,
+            )
+            for model in upstream_models
         },
     )
     item.added = changes.added
