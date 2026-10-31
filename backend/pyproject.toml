@@ -23,6 +23,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.0.0",
     "prek>=0.4.11",
     "pytest>=8.3.0",
     "pytest-asyncio>=1.3.0",
