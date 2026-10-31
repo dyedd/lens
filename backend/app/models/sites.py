@@ -111,7 +111,7 @@ class SiteCredentialInput(StrictBaseModel):
     name: str
     api_key: str = Field(min_length=1)
     base_url_id: str = ""
-    model_pattern: str = Field(default="", max_length=500)
+    model_pattern: str = Field(default="")
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
     rate_group: str = ""
