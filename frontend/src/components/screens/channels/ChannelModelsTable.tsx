@@ -21,6 +21,7 @@ import {
 import type { ProtocolKind } from "@/lib/api/protocols";
 import {
   contextWindowSourceLabel,
+  estimateContextWindow,
   formatContextWindow,
   parseContextWindowInput,
 } from "@/lib/contextWindow";
@@ -271,10 +272,16 @@ function ContextWindowInput({
       : formatContextWindow(model.contextWindow);
   const [draft, setDraft] = useState(savedText);
   const isZh = locale === "zh-CN";
+  const estimated =
+    model.contextWindow === null && model.autoContextWindow === null
+      ? estimateContextWindow(model.modelName)
+      : null;
   const autoText =
-    model.autoContextWindow === null
-      ? ""
-      : formatContextWindow(model.autoContextWindow);
+    model.autoContextWindow !== null
+      ? formatContextWindow(model.autoContextWindow)
+      : estimated !== null
+        ? `~${formatContextWindow(estimated)}`
+        : "";
 
   function commit() {
     if (draft.trim() === savedText) {
@@ -304,9 +311,13 @@ function ContextWindowInput({
       : model.autoContextWindowSource !== null &&
           model.autoContextWindow !== null
         ? `${contextWindowSourceLabel(model.autoContextWindowSource, locale)} · ${model.autoContextWindow.toLocaleString()} tokens`
-        : isZh
-          ? "未配置：模型组内用组默认上下文，其余按请求和上游判断"
-          : "Unset: the group default applies in model groups, elsewhere routing is unfiltered";
+        : estimated !== null
+          ? isZh
+            ? `未配置 · 常见预估 ~${formatContextWindow(estimated)}（留空由上游判断）`
+            : `Unset · Estimated ~${formatContextWindow(estimated)} (upstream decides when empty)`
+          : isZh
+            ? "未配置：模型组内用组默认上下文，其余按请求和上游判断"
+            : "Unset: the group default applies in model groups, elsewhere routing is unfiltered";
 
   return (
     <Tooltip>
