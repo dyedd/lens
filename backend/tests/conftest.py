@@ -17,8 +17,6 @@ from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from app.models.request_logs import RequestLogInput
 
-_INITIAL_SERVICE_STATE_CLOSED = False
-
 
 def run_async(awaitable: Any) -> Any:
     """Run an awaitable to completion in a fresh event loop."""
@@ -183,47 +181,8 @@ async def _create_schema(state: Any) -> None:
         await connection.run_sync(Base.metadata.create_all)
 
 
-def _patch_app_state(monkeypatch: pytest.MonkeyPatch, state: Any) -> None:
-    import app.gateway.service.admin.model_groups as model_groups_mod
-    import app.gateway.service.admin.ops as ops_mod
-    import app.gateway.service.admin.sites as sites_mod
-    import app.gateway.service.app_state as state_mod
-    import app.gateway.service.auth as auth_mod
-    import app.gateway.service.http_handlers as handlers_mod
-    import app.gateway.service.lifecycle as lifecycle_mod
-    import app.gateway.service.proxy_attempt as proxy_attempt_mod
-    import app.gateway.service.proxy_flow as proxy_flow_mod
-    import app.gateway.service.proxy_routes as proxy_routes_mod
-    import app.gateway.service.request_logger as request_logger_mod
-    import app.gateway.service.routing_plan as routing_plan_mod
-    import app.gateway.service.streaming.logging as stream_logging_mod
-    import app.gateway.service.tasks.model_discovery as model_discovery_mod
-    import app.gateway.service.tasks.site_model_probe as site_model_probe_mod
-
-    for module in (
-        model_groups_mod,
-        ops_mod,
-        sites_mod,
-        auth_mod,
-        handlers_mod,
-        lifecycle_mod,
-        proxy_attempt_mod,
-        proxy_flow_mod,
-        proxy_routes_mod,
-        request_logger_mod,
-        routing_plan_mod,
-        stream_logging_mod,
-        model_discovery_mod,
-        site_model_probe_mod,
-        state_mod,
-    ):
-        monkeypatch.setattr(module, "app_state", state)
-
-
 @pytest.fixture
 def app_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Iterator[Any]:
-    global _INITIAL_SERVICE_STATE_CLOSED
-
     db_path = tmp_path / "lens-test.db"
     monkeypatch.setattr(settings, "auth_secret_key", "x" * 32)
     monkeypatch.setattr(
@@ -232,12 +191,7 @@ def app_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Iterator[Any]:
     import app.api.app as api_app
     import app.gateway.service.app_state as state_mod
 
-    if not _INITIAL_SERVICE_STATE_CLOSED:
-        run_async(_close_state(state_mod.app_state))
-        _INITIAL_SERVICE_STATE_CLOSED = True
-
     state = state_mod.AppState()
-    _patch_app_state(monkeypatch, state)
     monkeypatch.setattr(api_app, "lifespan", _noop_lifespan)
 
     run_async(_create_schema(state))
@@ -252,7 +206,9 @@ def app_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Iterator[Any]:
 
 @pytest.fixture
 def client(app_state: Any) -> Iterator[TestClient]:
-    with TestClient(create_app(), raise_server_exceptions=False) as test_client:
+    with TestClient(
+        create_app(state=app_state), raise_server_exceptions=False
+    ) as test_client:
         yield test_client
 
 

@@ -24,7 +24,7 @@ from ...upstream_request import (
 )
 from ..app_state import app_state
 from ..payload_serialization import decode_content_bytes, decode_log_content_bytes
-from ..routing_plan import elapsed_ms, gateway_timeout_scope
+from ..proxy.routing_plan import elapsed_ms, gateway_timeout_scope
 from ..runtime_types import GatewayTimeoutError, RequestDeadline
 from ..upstream_support import (
     default_lens_user_agent,

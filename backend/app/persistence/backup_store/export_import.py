@@ -1,20 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import (
-    UTC,
-    datetime,
-)
 
-from sqlalchemy import select
-
-from app.models.backups import ConfigBackupDump, ConfigImportResult
-from app.models.settings import SettingItem
-from app.persistence.editable_settings import (
-    EDITABLE_SETTING_KEYS,
-    effective_editable_setting_items,
-)
-from app.persistence.entities import SettingEntity
+from app.models.backups import ConfigBackupDump
 
 # Group fields older backups still carry but current groups no longer use.
 _LEGACY_GROUP_KEYS = ("match_models", "source_tags", "new_member_position", "origin")
@@ -96,129 +84,11 @@ def _drop_legacy_site_fields(data: object) -> object:
     return data
 
 
-class BackupExportImportMixin:
-    @staticmethod
-    def parse_dump(payload: bytes) -> ConfigBackupDump:
-        """Parse and validate a serialized configuration backup."""
-        try:
-            data = _drop_legacy_group_fields(json.loads(payload))
-            data = _drop_legacy_site_fields(data)
-            return ConfigBackupDump.model_validate(data)
-        except ValueError as exc:
-            raise ValueError("Invalid backup file") from exc
-
-    async def export_dump(
-        self,
-        *,
-        lens_version: str,
-        include_request_logs: bool,
-        include_gateway_api_keys: bool,
-    ) -> ConfigBackupDump:
-        """Export the selected persisted configuration to a backup model."""
-        async with self._session_factory() as session:
-            settings_rows = (
-                (
-                    await session.execute(
-                        select(SettingEntity)
-                        .where(SettingEntity.key.in_(EDITABLE_SETTING_KEYS))
-                        .order_by(SettingEntity.key.asc())
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            sites = await self.load_sites(session)
-            groups = await self.load_groups(session)
-            model_prices = await self.load_model_prices(session)
-            cronjobs = await self.load_cronjobs(session)
-            stats = await self.load_stats(session)
-            gateway_api_keys = (
-                await self.load_gateway_api_keys(session)
-                if include_gateway_api_keys
-                else []
-            )
-            request_logs = (
-                await self.load_request_logs(session) if include_request_logs else []
-            )
-
-        return ConfigBackupDump(
-            exported_at=datetime.now(UTC).isoformat(),
-            lens_version=lens_version,
-            include_request_logs=include_request_logs,
-            include_gateway_api_keys=include_gateway_api_keys,
-            settings=effective_editable_setting_items(
-                [SettingItem(key=item.key, value=item.value) for item in settings_rows]
-            ),
-            sites=sites,
-            groups=groups,
-            model_prices=model_prices,
-            cronjobs=cronjobs,
-            stats=stats,
-            gateway_api_keys=gateway_api_keys,
-            request_logs=request_logs,
-        )
-
-    async def import_dump(self, dump: ConfigBackupDump) -> ConfigImportResult:
-        """Replace persisted configuration with a validated backup."""
-        async with self._session_factory() as session:
-            rows_affected: dict[str, int] = {}
-
-            protocol_config_ids, model_keys = await self.replace_sites(
-                session, dump.sites
-            )
-            rows_affected["sites"] = len(dump.sites)
-            rows_affected["site_base_urls"] = sum(
-                len(site.base_urls) for site in dump.sites
-            )
-            rows_affected["site_credentials"] = sum(
-                len(site.credentials) for site in dump.sites
-            )
-            rows_affected["site_protocol_configs"] = sum(
-                len(site.protocols) for site in dump.sites
-            )
-            rows_affected["site_models"] = sum(
-                len(protocol.models)
-                for site in dump.sites
-                for protocol in site.protocols
-            )
-
-            await self.replace_groups(
-                session,
-                dump.groups,
-                available_protocol_config_ids=protocol_config_ids,
-                model_keys=model_keys,
-            )
-            rows_affected["model_groups"] = len(dump.groups)
-            rows_affected["model_group_items"] = sum(
-                len(group.items) for group in dump.groups
-            )
-
-            await self.replace_model_prices(session, dump.model_prices)
-            rows_affected["model_prices"] = len(dump.model_prices)
-
-            rows_affected["settings"] = await self.replace_settings(
-                session, dump.settings
-            )
-
-            await self.replace_cronjobs(session, dump.cronjobs)
-            rows_affected["cronjobs"] = len(dump.cronjobs)
-
-            await self.replace_stats(session, dump.stats)
-            rows_affected["imported_stats_total"] = (
-                1 if dump.stats.imported_total is not None else 0
-            )
-            rows_affected["imported_stats_daily"] = len(dump.stats.imported_daily)
-            rows_affected["request_log_daily_stats"] = len(dump.stats.request_daily)
-            rows_affected["overview_model_daily_stats"] = len(dump.stats.model_daily)
-
-            if dump.include_gateway_api_keys:
-                await self.replace_gateway_api_keys(session, dump.gateway_api_keys)
-                rows_affected["gateway_api_keys"] = len(dump.gateway_api_keys)
-
-            if dump.include_request_logs:
-                await self.replace_request_logs(session, dump.request_logs)
-                rows_affected["request_logs"] = len(dump.request_logs)
-
-            await session.commit()
-
-        return ConfigImportResult(rows_affected=rows_affected)
+def parse_dump(payload: bytes) -> ConfigBackupDump:
+    """Parse and validate a serialized configuration backup."""
+    try:
+        data = _drop_legacy_group_fields(json.loads(payload))
+        data = _drop_legacy_site_fields(data)
+        return ConfigBackupDump.model_validate(data)
+    except ValueError as exc:
+        raise ValueError("Invalid backup file") from exc
