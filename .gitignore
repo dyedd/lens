@@ -13,3 +13,4 @@ backend/app/frontend/
 .zcode/
 .ruff_cache/
 .uv-cache/
+.desloppify/

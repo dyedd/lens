@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 
-from ....core.errors import ResourceNotFoundError
+from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
 from ....core.model_names import ModelPatternKind, classify_model_pattern
 from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS, resolve_onboard_protocol
 from ....core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
@@ -92,11 +92,7 @@ async def sync_channel_models(
 async def _reconcile_synced_groups(
     state: AppState, items: list[ChannelModelSyncResultItem]
 ) -> ModelGroupReconcileReport:
-    try:
-        report = await state.group_repo.reconcile_group_members()
-    except Exception:
-        logger.exception("Model group reconcile after model sync failed")
-        return ModelGroupReconcileReport()
+    report = await state.group_repo.reconcile_group_members()
     logger.info(
         "Model sync groups: added=%s created=%s pending=%s removed=%s",
         len(report.added),
@@ -150,10 +146,19 @@ async def _sync_site_models(
                     item,
                     credential_patterns,
                 )
-            except (HTTPException, ResourceNotFoundError, ValueError) as exc:
+            except (
+                HTTPException,
+                ModelDiscoveryError,
+                ResourceNotFoundError,
+                ValueError,
+            ) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
-                item.error = (
-                    str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
+                item.error = str(
+                    exc.detail
+                    if isinstance(exc, HTTPException)
+                    else exc.public_message
+                    if isinstance(exc, ModelDiscoveryError)
+                    else exc
                 )
     return items
 

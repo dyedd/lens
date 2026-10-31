@@ -44,3 +44,14 @@ class ResourceConflictError(LensError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, status_code=409, error_type="conflict")
+
+
+class ModelDiscoveryError(LensError):
+    """An upstream model catalog could not be fetched or parsed."""
+
+    def __init__(self, message: str, *, status_code: int = 502) -> None:
+        super().__init__(
+            message,
+            status_code=status_code,
+            error_type="model_discovery_error",
+        )

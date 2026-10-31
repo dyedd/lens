@@ -13,7 +13,7 @@ from conftest import (
 
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.protocols import ProtocolKind
-from app.persistence.backup_store.export_import import BackupExportImportMixin
+from app.persistence.backup_store import BackupStore
 
 
 def _member(
@@ -613,7 +613,7 @@ def test_group_rejects_invalid_local_regex(client, admin_headers) -> None:
 
 
 def test_old_backup_rules_become_local_group_regex() -> None:
-    dump = BackupExportImportMixin.parse_dump(
+    dump = BackupStore.parse_dump(
         json.dumps(
             {
                 "exported_at": "now",
@@ -644,7 +644,7 @@ def test_old_backup_rules_keep_long_combined_patterns() -> None:
         {"id": str(index), "name": f"Rule {index}", "pattern": "a" * 500}
         for index in range(20)
     ]
-    dump = BackupExportImportMixin.parse_dump(
+    dump = BackupStore.parse_dump(
         json.dumps(
             {
                 "exported_at": "now",
@@ -668,7 +668,7 @@ def test_old_backup_rules_keep_long_combined_patterns() -> None:
 
 
 def test_old_backup_model_status_fields_are_ignored() -> None:
-    dump = BackupExportImportMixin.parse_dump(
+    dump = BackupStore.parse_dump(
         json.dumps(
             {
                 "exported_at": "now",
