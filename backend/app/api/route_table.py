@@ -42,6 +42,7 @@ from ..gateway.service.admin.ops import (
 from ..gateway.service.admin.sites import (
     create_site,
     delete_site,
+    detect_site_model_protocols,
     fetch_site_models,
     import_sites,
     list_model_health,
@@ -106,7 +107,11 @@ from ..models.overview import (
 from ..models.request_logs import RequestLogDetail, RequestLogPage
 from ..models.settings import SettingItem
 from ..models.site_import import SiteBatchImportResult
-from ..models.site_model_test import SiteModelFetchItem, SiteModelTestResult
+from ..models.site_model_test import (
+    SiteModelFetchItem,
+    SiteModelProtocolDetectionResult,
+    SiteModelTestResult,
+)
 from ..models.sites import SiteCredential
 from . import ui_static
 
@@ -196,6 +201,12 @@ def register_sites(app: FastAPI) -> None:
         fetch_site_models,
         methods=["POST"],
         response_model=list[SiteModelFetchItem],
+    )
+    app.add_api_route(
+        "/api/admin/site-model-protocol-detections",
+        detect_site_model_protocols,
+        methods=["POST"],
+        response_model=list[SiteModelProtocolDetectionResult],
     )
     app.add_api_route(
         "/api/admin/site-model-tests",
