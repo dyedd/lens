@@ -142,7 +142,6 @@ class ModelGroupItemView(ModelGroupItem):
     # Channel-specific context window; the group default covers None.
     context_window: int | None = None
     context_window_source: ContextWindowSource | None = None
-    catalog_context_window: int | None = None
 
 
 class ModelGroupView(ModelGroup):

@@ -31,10 +31,7 @@ class SiteModelFetchItem(StrictBaseModel):
     credential_id: str
     credential_name: str = ""
     model_name: str
-    # Size this upstream reports for the deployment being discovered.
     context_window: ContextWindow | None = None
-    # Size the shared catalog publishes for the model name; display-only.
-    catalog_context_window: ContextWindow | None = None
 
 
 class SiteModelTestCredential(StrictBaseModel):

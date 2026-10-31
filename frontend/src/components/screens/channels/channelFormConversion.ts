@@ -213,7 +213,6 @@ export function toForm(site: Site): FormState {
         enabled: model.enabled,
         context_window: model.context_window,
         upstream_context_window: model.upstream_context_window,
-        catalog_context_window: model.catalog_context_window ?? null,
       })),
     );
     const credentialIds = canonicalizeCredentialIds(

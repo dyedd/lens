@@ -1325,39 +1325,3 @@ def test_sync_removes_group_members_when_a_rule_stops_matching(
     assert _stored_models(client, admin_headers) == set()
     group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
     assert (group["name"], group["items"]) == ("gpt-4o", [])
-
-
-def test_model_sync_fills_context_window_from_the_shared_catalog(
-    client,
-    admin_headers,
-    monkeypatch,
-) -> None:
-    _create_sync_site(
-        client,
-        admin_headers,
-        _sync_site_payload(patterns={"cred-a": "^catalog-only$", "cred-b": "^none$"}),
-    )
-
-    async def fake_fetch(_channel: Any) -> list[str]:
-        # The upstream list omits the window; only the catalog publishes it.
-        return ["catalog-only"]
-
-    _patch_upstream_models(monkeypatch, fake_fetch)
-    _app_state().model_catalog.replace({"catalog-only": 262_144})
-    _run_model_sync(client, admin_headers)
-
-    site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
-    model = site["protocols"][0]["models"][0]
-    assert model["upstream_context_window"] is None
-    assert model["catalog_context_window"] == 262_144
-
-    group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
-    item = group["items"][0]
-    assert item["context_window"] is None
-    assert item["context_window_source"] is None
-
-
-def _app_state() -> Any:
-    import app.gateway.service.app_state as state_mod
-
-    return state_mod.app_state

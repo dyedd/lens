@@ -7,7 +7,7 @@ import type {
   SiteCredential,
   SiteModelInput,
 } from "@/lib/api/sites";
-import type { DetectedContextWindowSource } from "@/lib/contextWindow";
+import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { Locale } from "@/lib/I18nContext";
 
 export type FormCredential = Omit<
@@ -28,8 +28,6 @@ export type { Locale };
 export type FormModel = Omit<SiteModelInput, "id" | "protocol"> & {
   protocols: ProtocolKind[];
   protocolIds: Partial<Record<ProtocolKind, string>>;
-  /** Server-resolved catalog size; read-only and never sent back. */
-  catalog_context_window?: number | null;
 };
 
 export type FormProtocolConfig = {
@@ -59,8 +57,6 @@ export type PickerModelItem = {
   model_name: string;
   /** Context window the upstream model list reports. */
   context_window: number | null;
-  /** Context window resolved from the shared model catalog. */
-  catalog_context_window: number | null;
 };
 
 export type ModelTestTarget = {
@@ -99,9 +95,9 @@ export type AggregatedModel = {
   enabled: boolean;
   /** Admin override shared by every key's copy of this model. */
   contextWindow: number | null;
-  /** Detected value used without an override: the upstream's, then the catalog's. */
+  /** Upstream-reported value used without an override. */
   autoContextWindow: number | null;
-  autoContextWindowSource: DetectedContextWindowSource | null;
+  autoContextWindowSource: Exclude<ContextWindowSource, "manual"> | null;
   /** Per-credential rows for expanding the collapsed overview row. */
   members: AggregatedModelMember[];
   /** Per-credential key used to open the single-model test dialog. */

@@ -130,9 +130,6 @@ def _build_item_view(
         reasons=list(evaluation.reasons),
         context_window=context.context_window,
         context_window_source=context.source,
-        catalog_context_window=(
-            channel_model.catalog_context_window if channel_model is not None else None
-        ),
     )
 
 

@@ -60,7 +60,6 @@ export type ModelGroupItem = ModelGroupItemPayload & {
   /** The channel model's own context window; null uses the group default. */
   context_window: number | null;
   context_window_source: ContextWindowSource | null;
-  catalog_context_window: number | null;
 };
 export type ModelGroup = {
   id: string;

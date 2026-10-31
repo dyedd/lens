@@ -56,7 +56,6 @@ export function candidatePayloadToFormItems(
     reasons: [],
     context_window: null,
     context_window_source: null,
-    catalog_context_window: null,
   }));
 }
 
@@ -81,7 +80,6 @@ function modelGroupItemToFormItem(item: ModelGroup["items"][number]): FormItem {
     reasons: item.reasons,
     context_window: item.context_window,
     context_window_source: item.context_window_source,
-    catalog_context_window: item.catalog_context_window,
   };
 }
 
@@ -290,7 +288,6 @@ export function foldGroupMembers(
           rate_source: evaluation.rate_source,
           context_window: evaluation.context_window,
           context_window_source: evaluation.context_window_source,
-          catalog_context_window: evaluation.catalog_context_window,
           state: evaluationMatchesForm ? evaluation.state : item.state,
           reasons: evaluationMatchesForm ? evaluation.reasons : item.reasons,
         }
@@ -318,7 +315,6 @@ export function foldGroupMembers(
         rate_source: evaluatedItem.rate_source,
         context_window: evaluatedItem.context_window,
         context_window_source: evaluatedItem.context_window_source,
-        catalog_context_window: evaluatedItem.catalog_context_window,
         subItems: [],
         source: evaluatedItem.source,
         enabled_item_count: 0,
