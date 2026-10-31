@@ -1,42 +1,19 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from enum import Enum
 from math import ceil
-from re import Pattern
 from time import monotonic
-from typing import Literal, NamedTuple
+from typing import NamedTuple
 
-
-class ErrorCategory(Enum):
-    """Identify the fault domain and cooldown policy for an upstream error."""
-
-    AUTH = "auth"
-    NOT_FOUND = "not_found"
-    RATE_LIMIT = "rate_limit"
-    SERVER = "server"
-    TIMEOUT = "timeout"
-    NETWORK = "network"
-
-
-CooldownScope = Literal["key", "model", "channel"]
-
-
-@dataclass(frozen=True, slots=True)
-class CompiledCooldownDetectionRule:
-    name: str
-    status_code: int | None
-    body_pattern: Pattern[str] | None
-    scope: CooldownScope
-    action: str | None
-    category: ErrorCategory
-    cooldown_seconds: int
-    priority: int
-    order: int
+from ...core.cooldown_rules import (
+    CompiledCooldownDetectionRule,
+    CooldownScope,
+    ErrorCategory,
+    compile_detection_rules,
+)
 
 
 class ErrorClassification(NamedTuple):
@@ -190,30 +167,6 @@ def classify_error(
     if category is None:
         return None
     return ErrorClassification(category, default_scope(category), header_cooldown)
-
-
-def compile_detection_rules(
-    rules: tuple[object, ...] | list[object],
-) -> tuple[CompiledCooldownDetectionRule, ...]:
-    """Compile validated detection rule patterns once while loading settings."""
-    compiled: list[CompiledCooldownDetectionRule] = []
-    for order, rule in enumerate(rules):
-        status_code = rule.status_code
-        body_regex = rule.body_regex
-        compiled.append(
-            CompiledCooldownDetectionRule(
-                name=rule.name,
-                status_code=status_code,
-                body_pattern=re.compile(body_regex) if body_regex else None,
-                scope=rule.scope,
-                action=rule.action,
-                category=ErrorCategory(rule.category),
-                cooldown_seconds=rule.cooldown_seconds,
-                priority=rule.priority,
-                order=order,
-            )
-        )
-    return tuple(compiled)
 
 
 def calculate_exponential_cooldown(

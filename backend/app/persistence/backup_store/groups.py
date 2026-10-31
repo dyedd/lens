@@ -30,7 +30,7 @@ from app.persistence.group_rule_codec import (
 from app.persistence.regex_rule_references import dump_rule_ids
 
 
-async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
+async def load_groups(session: AsyncSession) -> list[ModelGroup]:
     group_rows = (
         (
             await session.execute(
@@ -140,7 +140,6 @@ async def load_groups(self, session: AsyncSession) -> list[ModelGroup]:
 
 
 async def replace_groups(
-    self,
     session: AsyncSession,
     groups: list[ModelGroup],
     *,

@@ -2,7 +2,22 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from ..gateway.service.admin.backups import (
+    export_settings_bundle,
+    import_settings_bundle,
+)
+from ..gateway.service.admin.cronjobs import (
+    list_cronjobs,
+    run_cronjob,
+    update_cronjob,
+)
 from ..gateway.service.admin.foreign_imports import preview_foreign_site_import
+from ..gateway.service.admin.gateway_keys import (
+    create_gateway_api_key,
+    delete_gateway_api_key,
+    list_gateway_api_keys,
+    update_gateway_api_key,
+)
 from ..gateway.service.admin.model_groups import (
     create_model_group,
     delete_model_group,
@@ -16,27 +31,24 @@ from ..gateway.service.admin.model_groups import (
     test_model_group_model,
     update_model_group,
 )
-from ..gateway.service.admin.ops import (
-    clear_request_logs,
-    create_gateway_api_key,
-    delete_gateway_api_key,
-    export_settings_bundle,
+from ..gateway.service.admin.model_prices import (
+    restore_model_price,
+    sync_model_prices,
+    update_model_price,
+)
+from ..gateway.service.admin.overview import (
     get_overview_model_analytics,
     get_overview_summary,
-    get_request_log_detail,
-    get_router_snapshot,
-    import_settings_bundle,
-    list_cronjobs,
-    list_gateway_api_keys,
     list_overview_daily,
+)
+from ..gateway.service.admin.request_logs import (
+    clear_request_logs,
+    get_request_log_detail,
     list_request_logs,
+)
+from ..gateway.service.admin.routing import get_router_snapshot
+from ..gateway.service.admin.settings import (
     list_settings,
-    restore_model_price,
-    run_cronjob,
-    sync_model_prices,
-    update_cronjob,
-    update_gateway_api_key,
-    update_model_price,
     update_settings,
 )
 from ..gateway.service.admin.sites import (

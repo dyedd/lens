@@ -52,7 +52,7 @@ class Spoke:
 
 
 def _spokes() -> dict[ProtocolKind, Spoke]:
-    """Import spokes lazily so protocol modules stay independently testable."""
+    """Build the protocol registry at import time as the converter composition root."""
     from .spoke_anthropic import (
         build_anthropic_request,
         build_anthropic_response,
@@ -281,12 +281,9 @@ async def convert_stream_iterator(
     channel_protocol: ProtocolKind,
     raw_iterator: AsyncIterator[bytes],
     original_model: str = "",
-    *,
-    include_usage: bool = False,
 ) -> AsyncIterator[bytes]:
     """Convert an upstream byte stream into the client protocol stream."""
     _check_reachable(client_protocol, channel_protocol)
-    del include_usage
     events = _parse_upstream_stream(channel_protocol, raw_iterator)
     stream = spoke_for(client_protocol).build_stream(events, original_model)
     async for chunk in stream:

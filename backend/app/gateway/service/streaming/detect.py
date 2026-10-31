@@ -6,8 +6,8 @@ from typing import Any
 from ....models.protocols import ProtocolKind
 from ..app_state import app_state, logger
 from ..payload_serialization import stringify_text_content
-from ..routing_plan import elapsed_ms
-from ..runtime_types import StreamCapture
+from ..proxy.routing_plan import elapsed_ms
+from .capture import StreamCapture
 from .types import (
     OPENAI_RESPONSES_TERMINAL_EVENTS,
     parse_anthropic_stream_payload,
