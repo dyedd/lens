@@ -941,6 +941,111 @@ def test_multi_url_models_use_one_matching_endpoint_through_save_and_sync(
         run_async(upstream.aclose())
 
 
+def test_protocol_endpoint_wins_shared_model_placement_through_save_and_sync(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    payload = _sync_site_payload(patterns={"cred-a": "*"})
+    payload["credentials"] = payload["credentials"][:1]
+    payload["base_urls"] = [
+        {"id": "main", "kind": "default", "url": "https://main.example/v1"},
+        {
+            "id": "protocol",
+            "kind": "protocol",
+            "url": "https://protocol.example/v1",
+        },
+    ]
+    payload["protocols"] = [
+        {
+            "id": "pc-main",
+            "base_url_id": "main",
+            "protocols": ["openai_chat"],
+            "models": [_model("shared-model")],
+        },
+        {
+            "id": "pc-protocol",
+            "base_url_id": "protocol",
+            "protocols": ["openai_chat"],
+            "models": [_model("shared-model")],
+        },
+    ]
+    site_id = _create_sync_site(client, admin_headers, payload)
+
+    def stored() -> dict[str, set[tuple[str, str]]]:
+        site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+        return {
+            config["base_url_id"]: {
+                (model["model_name"], model["protocol"]) for model in config["models"]
+            }
+            for config in site["protocols"]
+        }
+
+    assert stored() == {"main": set(), "protocol": {("shared-model", "openai_chat")}}
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return ["shared-model"]
+
+    _patch_upstream_models(monkeypatch, fake_fetch)
+
+    result = _run_model_sync(client, admin_headers, site_ids=[site_id])
+
+    assert {item["status"] for item in result["items"]} <= {"updated", "unchanged"}
+    assert stored() == {"main": set(), "protocol": {("shared-model", "openai_chat")}}
+
+
+def test_channel_model_sync_keeps_same_name_targets_for_distinct_protocols(
+    client,
+    admin_headers,
+    monkeypatch,
+) -> None:
+    payload = _sync_site_payload(patterns={"cred-a": "*"})
+    payload["credentials"] = payload["credentials"][:1]
+    payload["base_urls"] = [
+        {"id": "main", "kind": "default", "url": "https://main.example/v1"},
+        {
+            "id": "anthropic",
+            "kind": "anthropic",
+            "url": "https://anthropic.example/v1",
+        },
+    ]
+    payload["protocols"] = [
+        {
+            "id": "pc-main",
+            "base_url_id": "main",
+            "protocols": ["openai_chat"],
+            "models": [_model("shared-model")],
+        },
+        {
+            "id": "pc-anthropic",
+            "base_url_id": "anthropic",
+            "protocols": ["anthropic"],
+            "models": [_model("shared-model", protocol="anthropic")],
+        },
+    ]
+    site_id = _create_sync_site(client, admin_headers, payload)
+
+    async def fake_fetch(_channel: Any) -> list[str]:
+        return ["shared-model"]
+
+    _patch_upstream_models(monkeypatch, fake_fetch)
+
+    result = _run_model_sync(client, admin_headers, site_ids=[site_id])
+    site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    stored = {
+        config["base_url_id"]: {
+            (model["model_name"], model["protocol"]) for model in config["models"]
+        }
+        for config in site["protocols"]
+    }
+
+    assert all(not item["missing"] for item in result["items"])
+    assert stored == {
+        "main": {("shared-model", "openai_chat")},
+        "anthropic": {("shared-model", "anthropic")},
+    }
+
+
 def test_channel_model_sync_deletes_models_that_leave_the_catalog(
     client,
     admin_headers,

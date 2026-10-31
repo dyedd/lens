@@ -86,8 +86,9 @@ function resolveModelBaseUrlId(
     )[0]?.id;
 }
 
-function endpointPriority(kind: FormBaseUrl["kind"]) {
-  return endpointProtocolByKind[kind] ? 2 : kind === "china" ? 1 : 0;
+export function endpointPriority(kind: FormBaseUrl["kind"]) {
+  if (endpointProtocolByKind[kind] || kind === "protocol") return 2;
+  return kind === "china" ? 1 : 0;
 }
 
 /** Rebuilds one protocol config per base URL with the keys it can use. */

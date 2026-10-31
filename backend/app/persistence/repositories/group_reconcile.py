@@ -39,7 +39,6 @@ from app.models.model_groups import (
 )
 from app.models.protocols import RoutingStrategy
 from app.persistence.entities import ModelGroupEntity, ModelGroupItemEntity
-from app.persistence.regex_rule_references import load_rule_patterns, parse_rule_ids
 
 from .group_placement import (
     GroupCoverage,
@@ -59,9 +58,7 @@ type ExclusionKey = tuple[str, str, str]
 
 
 def _matches_group(state: _GroupMemberState, model_name: str) -> bool:
-    """Whether the group's rules, or its name, accept a model name."""
-    if state.legacy_rule_override:
-        return any(pattern.search(model_name) for pattern in state.patterns)
+    """Whether the group's name and current inline rules accept a model name."""
     return matches_model_group(
         state.entity.name, model_name, state.patterns, state.match_regex_operator
     )
@@ -90,7 +87,6 @@ class _GroupMemberState:
     members: list[ModelGroupItemEntity]
     excluded: list[ModelGroupItemEntity]
     match_regex_operator: MatchRegexOperator = "or"
-    legacy_rule_override: bool = False
     is_reordered: bool = False
 
     def keys(self) -> set[MemberKey]:
@@ -257,14 +253,6 @@ class GroupReconcileMixin:
             .scalars()
             .all()
         )
-        rule_patterns = await load_rule_patterns(
-            session,
-            (
-                rule_id
-                for entity in entities
-                for rule_id in parse_rule_ids(entity.match_rule_ids_json)
-            ),
-        )
         groups = {
             entity.id: _GroupMemberState(
                 entity=entity,
@@ -275,11 +263,7 @@ class GroupReconcileMixin:
                             entity.match_regex
                         )
                     )
-                    else tuple(
-                        rule_patterns[rule_id]
-                        for rule_id in parse_rule_ids(entity.match_rule_ids_json)
-                        if rule_id in rule_patterns
-                    )
+                    else ()
                 ),
                 match_regex_operator=(
                     entity.match_regex_operator
@@ -288,7 +272,6 @@ class GroupReconcileMixin:
                 ),
                 members=[],
                 excluded=[],
-                legacy_rule_override=bool(parse_rule_ids(entity.match_rule_ids_json)),
             )
             for entity in entities
         }
@@ -360,7 +343,6 @@ class GroupReconcileMixin:
                 patterns=state.patterns,
                 match_regex_operator=state.match_regex_operator,
                 model_names=state.model_names(),
-                legacy_rule_override=state.legacy_rule_override,
             )
             for state in run.groups.values()
         ] + [

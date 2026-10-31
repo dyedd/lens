@@ -18,6 +18,7 @@ import {
 } from "./channelAdvancedJson";
 import { activeBaseUrlValue, formHeaders } from "./channelForm";
 import {
+  endpointPriority,
   protocolForEndpointKind,
   rebuildProtocolConfigs,
 } from "./channelFormConversion";
@@ -295,18 +296,13 @@ export function useChannelModelPicker({
       const kind = editor.base_urls.find(
         (url) => url.id === config?.base_url_id,
       )?.kind;
-      return kind === "china" ? 2 : kind === "default" ? 1 : 0;
+      return kind ? endpointPriority(kind) : 0;
     };
     for (const item of items) {
-      const generic = editor.protocolConfigs
-        .filter((config) => config.credential_ids.includes(item.credential_id))
-        .map((config) => ({ ...item, protocol_config_id: config.id }))
-        .sort((left, right) => sourcePriority(right) - sourcePriority(left))[0];
-      const source = generic && sourcePriority(generic) > 0 ? generic : item;
       const key = JSON.stringify([item.credential_id, item.model_name]);
       const current = sources.get(key);
-      if (!current || sourcePriority(source) > sourcePriority(current))
-        sources.set(key, source);
+      if (!current || sourcePriority(item) > sourcePriority(current))
+        sources.set(key, item);
     }
     items = [...sources.values()];
     setDetecting(true);

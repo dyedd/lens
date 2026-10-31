@@ -28,9 +28,9 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
 )
 
+from ..site_loader import credential_pairs
 from .cleanup import SiteConfigurationCleanupMixin
 from .endpoint_credentials import credential_ids_for_url
-from .mapping import credential_pairs
 
 
 def _naive_utc_now() -> datetime:

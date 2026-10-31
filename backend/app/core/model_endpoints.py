@@ -16,8 +16,8 @@ def resolve_model_base_url_id(
     credential_id: str,
     protocol: ProtocolKind,
 ) -> str | None:
-    candidates: list[tuple[int, str]] = []
-    for url in base_urls:
+    candidates: list[tuple[int, int, str]] = []
+    for index, url in enumerate(base_urls):
         if url.kind == "models":
             continue
         owned = [item for item in credentials if item.base_url_id == url.id]
@@ -27,9 +27,15 @@ def resolve_model_base_url_id(
         pinned = ENDPOINT_KIND_PROTOCOLS.get(url.kind)
         if pinned is not None and pinned != protocol:
             continue
-        priority = 2 if pinned is not None else int(url.kind == "china")
-        candidates.append((priority, url.id))
-    return max(candidates, key=lambda item: item[0])[1] if candidates else None
+        priority = (
+            2
+            if pinned is not None or url.kind == "protocol"
+            else int(url.kind == "china")
+        )
+        candidates.append((priority, index, url.id))
+    return (
+        max(candidates, key=lambda item: (item[0], -item[1]))[2] if candidates else None
+    )
 
 
 def build_model_endpoint_configs(

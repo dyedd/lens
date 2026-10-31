@@ -246,17 +246,8 @@ async def serialize_gemini_interaction_stream(
                     "step": step,
                 },
             )
-        elif isinstance(event, TextDelta):
-            yield format_sse_event(
-                "step.delta",
-                {
-                    "event_type": "step.delta",
-                    "index": event.index,
-                    "delta": {"type": "text", "text": event.text},
-                },
-            )
-        elif isinstance(event, RefusalDelta):
-            # Interactions has no refusal channel, so the refusal streams as text.
+        elif isinstance(event, (TextDelta, RefusalDelta)):
+            # Interactions has no refusal channel, so refusal text uses the text shape.
             yield format_sse_event(
                 "step.delta",
                 {
