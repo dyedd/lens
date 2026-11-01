@@ -54,6 +54,7 @@ from ..gateway.service.admin.settings import (
 from ..gateway.service.admin.sites import (
     create_site,
     delete_site,
+    detect_model_contexts,
     detect_site_model_protocols,
     fetch_site_models,
     import_sites,
@@ -219,6 +220,12 @@ def register_sites(app: FastAPI) -> None:
         detect_site_model_protocols,
         methods=["POST"],
         response_model=list[SiteModelProtocolDetectionResult],
+    )
+    app.add_api_route(
+        "/api/admin/model-context-detections",
+        detect_model_contexts,
+        methods=["POST"],
+        response_model=dict[str, int | None],
     )
     app.add_api_route(
         "/api/admin/site-model-tests",

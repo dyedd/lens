@@ -11,7 +11,6 @@ type ChannelEditor = {
   editingSiteId: string | null;
   setEditingSiteId: (value: string | null) => void;
   setIsDialogOpen: (value: boolean) => void;
-  applyPreparedForm: (form: FormState) => void;
   validateSiteForm: () => boolean;
 };
 

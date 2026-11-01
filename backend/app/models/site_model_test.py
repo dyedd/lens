@@ -34,6 +34,12 @@ class SiteModelFetchItem(StrictBaseModel):
     context_window: ContextWindow | None = None
 
 
+class ModelContextDetectionRequest(StrictBaseModel):
+    model_names: list[str] = Field(min_length=1, max_length=1000)
+
+    _canonicalize_model_names = field_validator("model_names")(canonicalize_text_list)
+
+
 class SiteModelTestCredential(StrictBaseModel):
     id: str = Field(min_length=1)
     name: str = ""
