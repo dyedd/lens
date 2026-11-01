@@ -9,10 +9,23 @@ import pytest
 from conftest import assert_error, run_async
 from fastapi import HTTPException
 
+from app.gateway.service.tasks.litellm_sync_tasks import (
+    _fetch_litellm_payload as _original_fetch_litellm_payload,
+)
 from app.models.protocols import ProtocolKind
 from app.models.settings import SettingItem
 from app.models.site_model_test import SiteModelTestResult
 from app.persistence.settings_keys import SETTING_FIRST_TOKEN_TIMEOUT_SECONDS
+
+
+@pytest.fixture(autouse=True)
+def offline_model_metadata(monkeypatch):
+    import app.gateway.service.tasks.litellm_sync_tasks as metadata
+
+    async def fetch(_proxy):
+        return {}
+
+    monkeypatch.setattr(metadata, "_fetch_litellm_payload", fetch)
 
 
 def _model_test_payload(protocol: ProtocolKind) -> dict[str, Any]:
@@ -67,7 +80,7 @@ def test_fetch_site_models_uses_selected_credentials(
     assert response.status_code == 200
     assert [
         (item["model_name"], item["context_window"]) for item in response.json()
-    ] == [("gpt-4o", 128_000), ("gpt-4o-mini", None)]
+    ] == [("gpt-4o", None), ("gpt-4o-mini", None)]
 
 
 @pytest.mark.parametrize(
@@ -139,7 +152,7 @@ def test_fetch_site_models_uses_protocol_native_model_list(
 
     assert response.status_code == 200, response.text
     assert {item["model_name"]: item["context_window"] for item in response.json()} == {
-        "model-a": 200_000,
+        "model-a": None,
         "model-b": None,
     }
     request = captured[0]
@@ -625,6 +638,127 @@ def _stored_models(client, admin_headers) -> set[tuple[str, str]]:
         (model["credential_id"], model["model_name"])
         for model in site["protocols"][0]["models"]
     }
+
+
+def test_model_context_defaults_and_manual_detection(
+    client, admin_headers, monkeypatch
+) -> None:
+    import app.gateway.service.tasks.litellm_sync_tasks as metadata
+    import app.gateway.service.tasks.model_discovery as discovery
+
+    catalog = {
+        "gpt-4o": {
+            "mode": "chat",
+            "max_input_tokens": 128_000,
+            "input_cost_per_token": 0.000001,
+        }
+    }
+    upstream = {
+        "data": [
+            {"id": "gpt-4o", "context_length": 200_000},
+            {"id": "unknown-128k", "context_length": 32_000},
+        ]
+    }
+    client_type = httpx.AsyncClient
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            json=catalog
+            if str(request.url) == metadata.LITELLM_PRICE_URL
+            else upstream,
+        )
+    )
+    monkeypatch.setattr(
+        metadata.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_type(transport=transport),
+    )
+    upstream_client = client_type(transport=transport)
+    monkeypatch.setattr(
+        discovery, "resolve_http_client", lambda _proxy: upstream_client
+    )
+    # 覆盖本模块的默认离线目录，以真实 HTTP 客户端经过网络桩。
+    monkeypatch.setattr(
+        metadata, "_fetch_litellm_payload", _original_fetch_litellm_payload
+    )
+    site_id = _create_sync_site(
+        client, admin_headers, _sync_site_payload(patterns={"cred-a": "*"})
+    )
+
+    def models():
+        site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+        return {model["model_name"]: model for model in site["protocols"][0]["models"]}
+
+    try:
+        response = client.post(
+            "/api/admin/site-model-discoveries",
+            headers=admin_headers,
+            json={
+                "base_url": "https://upstream.example/v1",
+                "credentials": [
+                    {"id": "cred-a", "name": "test", "api_key": "test-key"}
+                ],
+                "credential_ids": ["cred-a"],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert {
+            item["model_name"]: item["context_window"] for item in response.json()
+        } == {"gpt-4o": 128_000, "unknown-128k": None}
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert models()["gpt-4o"]["context_window"] == 128_000
+        assert models()["unknown-128k"]["context_window"] is None
+
+        payload = _sync_site_payload(
+            patterns={"cred-a": "*"},
+            models=[_model("gpt-4o", context_window=64_000), _model("unknown-128k")],
+        )
+        response = client.put(
+            f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+        )
+        assert response.status_code == 200, response.text
+        catalog["gpt-4o"]["max_input_tokens"] = 256_000
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        response = client.post(
+            "/api/admin/model-price-sync-jobs", headers=admin_headers
+        )
+        assert response.status_code == 200, response.text
+        assert models()["gpt-4o"]["context_window"] == 64_000
+        groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+        assert all(group["context_window"] is None for group in groups)
+
+        response = client.post(
+            "/api/admin/model-context-detections",
+            headers=admin_headers,
+            json={"model_names": ["gpt-4o", "unknown-128k"]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"gpt-4o": 256_000, "unknown-128k": None}
+        payload["protocols"][0]["models"][0]["context_window"] = response.json()[
+            "gpt-4o"
+        ]
+        response = client.put(
+            f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+        )
+        assert response.status_code == 200, response.text
+        assert models()["gpt-4o"]["context_window"] == 256_000
+        catalog.clear()
+        response = client.post(
+            "/api/admin/model-context-detections",
+            headers=admin_headers,
+            json={"model_names": ["gpt-4o"]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"gpt-4o": None}
+        payload["protocols"][0]["models"][0]["context_window"] = None
+        response = client.put(
+            f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+        )
+        assert response.status_code == 200, response.text
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert models()["gpt-4o"]["context_window"] is None
+    finally:
+        run_async(upstream_client.aclose())
 
 
 def _added_names(result: dict[str, Any]) -> dict[str, tuple[str, ...]]:

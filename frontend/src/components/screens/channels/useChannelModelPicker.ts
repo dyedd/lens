@@ -381,8 +381,8 @@ export function useChannelModelPicker({
                   ) ?? fallbackProtocol,
                 ],
                 protocolIds: {},
-                context_window: null,
-                upstream_context_window: item.context_window,
+                context_window: item.context_window,
+                upstream_context_window: null,
               },
             ];
           });

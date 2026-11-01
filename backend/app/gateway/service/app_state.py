@@ -168,9 +168,9 @@ class AppState:
         return load_time_zone(str(runtime["time_zone"]))
 
     async def _sync_model_prices(self) -> None:
-        from .tasks.model_price_tasks import sync_group_prices
+        from .tasks.litellm_sync_tasks import sync_litellm_metadata
 
-        await sync_group_prices(self)
+        await sync_litellm_metadata(self)
 
     async def _sync_channel_models(self) -> None:
         from .tasks.model_sync import sync_channel_models
