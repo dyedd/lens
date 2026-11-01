@@ -1,275 +1,241 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { ChartConfig } from "@/components/ui/Chart";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { apiRequest } from "@/lib/api/client";
 import type {
+  AttributionDimension,
+  OverviewAttribution,
   OverviewDailyPoint,
-  OverviewModelAnalytics,
   OverviewSummary,
 } from "@/lib/api/overview";
 import { getDateBucketPrefix } from "@/lib/datetime";
 import { useI18n } from "@/lib/I18nContext";
-
+import { ActivityTrendCard } from "./overview/ActivityTrendCard";
 import { ModelAnalyticsCard } from "./overview/ModelAnalyticsCard";
 import { OverviewStats } from "./overview/OverviewStats";
 import {
+  type AnalysisMetric,
   addDays,
-  CHART_COLORS,
-  formatTrendLabel,
-  getPieMetricLabels,
-  type HeatmapMetric,
-  type PieMetric,
   parseDateKey,
-  safeKey,
   startOfHeatmapWeek,
   type TimeRange,
   toLocalDateKey,
 } from "./overview/overviewMetrics";
-import { RequestHeatmap } from "./overview/RequestHeatmap";
 
-/** Render gateway usage and model analytics dashboards. */
 export function OverviewScreen() {
   const { locale } = useI18n();
   const isChineseLocale = locale === "zh-CN";
   const timeZone = useAppTimeZone();
-  const [timeRange, setTimeRange] = useState<TimeRange>("30");
-  const [pieMetric, setPieMetric] = useState<PieMetric>("cost");
-  const [heatmapMetric, setHeatmapMetric] = useState<HeatmapMetric>("requests");
-  const overviewDays = Number(timeRange);
-  const { label: pieMetricLabel, trendTitle: modelTrendTitle } =
-    getPieMetricLabels(pieMetric, isChineseLocale);
-  const modelQuery = useMemo(
-    () =>
-      `/admin/overview-models?${new URLSearchParams({ days: String(overviewDays), metric: pieMetric }).toString()}`,
-    [overviewDays, pieMetric],
-  );
+  const [timeRange, setTimeRange] = useState<TimeRange>("-1");
+  const [metric, setMetric] = useState<AnalysisMetric>("cache");
+  const [dimension, setDimension] = useState<AttributionDimension>("model");
+  const [filterKey, setFilterKey] = useState<string | null>(null);
+  const days = Number(timeRange);
   const summaryQuery = useQuery({
-    queryKey: ["overview-summary", overviewDays],
+    queryKey: ["overview-summary", days, timeZone],
     queryFn: () =>
-      apiRequest<OverviewSummary>(
-        `/admin/overview-summary?days=${overviewDays}`,
-      ),
+      apiRequest<OverviewSummary>(`/admin/overview-summary?days=${days}`),
   });
   const dailyQuery = useQuery({
-    queryKey: ["overview-daily", overviewDays],
+    queryKey: ["overview-daily", days, timeZone],
     queryFn: () =>
-      apiRequest<OverviewDailyPoint[]>(
-        `/admin/overview-daily?days=${overviewDays}`,
-      ),
+      apiRequest<OverviewDailyPoint[]>(`/admin/overview-daily?days=${days}`),
   });
   const heatmapQuery = useQuery({
-    queryKey: ["overview-daily", 365],
+    queryKey: ["overview-daily", 371, timeZone],
     queryFn: () =>
-      apiRequest<OverviewDailyPoint[]>("/admin/overview-daily?days=365"),
+      apiRequest<OverviewDailyPoint[]>("/admin/overview-daily?days=371"),
     staleTime: 60_000,
   });
-  const modelsQuery = useQuery({
-    queryKey: ["overview-models", overviewDays, pieMetric],
-    queryFn: () => apiRequest<OverviewModelAnalytics>(modelQuery),
+  const attributionQuery = useQuery({
+    queryKey: [
+      "overview-attribution",
+      days,
+      dimension,
+      metric,
+      filterKey,
+      timeZone,
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        days: String(days),
+        dimension,
+        metric,
+      });
+      if (filterKey !== null) params.set("filter_key", filterKey);
+      return apiRequest<OverviewAttribution>(
+        `/admin/overview-attribution?${params}`,
+      );
+    },
   });
-  const pageError = summaryQuery.isError
-    ? summaryQuery.error
-    : dailyQuery.error ||
-      heatmapQuery.error ||
-      (modelsQuery.isError ? modelsQuery.error : null);
+  const activityQuery = useQuery({
+    queryKey: ["overview-activity", days, timeZone],
+    queryFn: () =>
+      apiRequest<OverviewDailyPoint[]>(
+        `/admin/overview-daily?days=${days}&granularity=${days === -1 ? "hourly" : "daily"}`,
+      ),
+  });
+  const pageError =
+    summaryQuery.error ||
+    dailyQuery.error ||
+    heatmapQuery.error ||
+    attributionQuery.error ||
+    activityQuery.error;
   useEffect(() => {
     if (!pageError) return;
     toast.error(
       isChineseLocale ? "概览数据加载失败" : "Failed to load overview",
       {
         id: "overview-load-error",
-        description:
-          pageError instanceof Error
-            ? pageError.message
-            : isChineseLocale
-              ? "无法读取概览数据"
-              : "Unable to read overview data",
+        description: pageError instanceof Error ? pageError.message : undefined,
       },
     );
   }, [pageError, isChineseLocale]);
-
-  const allDaily = useMemo(() => dailyQuery.data ?? [], [dailyQuery.data]);
-  const completedRequestCounts = useMemo(
-    () =>
-      allDaily.reduce(
-        (totals, item) => ({
-          successful: totals.successful + item.successful_requests,
-          failed: totals.failed + item.failed_requests,
-        }),
-        { successful: 0, failed: 0 },
-      ),
-    [allDaily],
+  const completed = (dailyQuery.data ?? []).reduce(
+    (counts, point) => ({
+      successful: counts.successful + point.successful_requests,
+      failed: counts.failed + point.failed_requests,
+    }),
+    { successful: 0, failed: 0 },
   );
   const summary = summaryQuery.data;
-  const requestCount = summary?.request_count.value ?? 0;
-  const totalCost = summary?.total_cost_usd.value ?? 0;
-  const inputTokens = summary?.input_tokens.value ?? 0;
-  const outputTokens = summary?.output_tokens.value ?? 0;
-  const totalTokens = summary?.total_tokens.value ?? 0;
-  const inputCost = summary?.input_cost_usd.value ?? 0;
-  const outputCost = summary?.output_cost_usd.value ?? 0;
-  const cacheReadTokens = summary?.cache_read_input_tokens.value ?? 0;
-  const cacheWriteTokens = summary?.cache_write_input_tokens.value ?? 0;
-  const completedRequestCount =
-    completedRequestCounts.successful + completedRequestCounts.failed;
-  const successRate = completedRequestCount
-    ? Math.round(
-        (completedRequestCounts.successful / completedRequestCount) * 100,
-      )
-    : 0;
-  const consumedTime = summary?.wait_time_ms.value ?? 0;
-  const models = modelsQuery.data;
-  const pieData = useMemo(() => {
-    if (!models) return { data: [], total: 0 };
-    const getValue = (item: OverviewModelAnalytics["distribution"][number]) =>
-      pieMetric === "requests"
-        ? item.requests
-        : pieMetric === "tokens"
-          ? item.total_tokens
-          : item.total_cost_usd;
-    return {
-      data: models.distribution.map((item) => ({
-        model: item.model,
-        value: getValue(item),
-        requests: item.requests,
-        total_cost_usd: item.total_cost_usd,
-      })),
-      total: models.distribution.reduce((sum, item) => sum + getValue(item), 0),
-    };
-  }, [models, pieMetric]);
-  const pieChartConfig = useMemo(() => {
-    const config: ChartConfig = {};
-    models?.distribution.forEach((item, index) => {
-      config[item.model] = {
-        label: item.model,
-        color: CHART_COLORS[index % CHART_COLORS.length],
-      };
+  const todayKey = parseDateKey(getDateBucketPrefix(timeZone));
+  const activityPoints = useMemo(() => {
+    const points = activityQuery.data ?? [];
+    if (
+      days !== -1 ||
+      !points.length ||
+      points.some((point) => point.date.length !== 10)
+    )
+      return points;
+    const today = getDateBucketPrefix(timeZone);
+    const hour = Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone,
+        hour: "2-digit",
+        hourCycle: "h23",
+      }).format(new Date()),
+    );
+    const byHour = new Map(points.map((point) => [point.date, point]));
+    const lastHour = Math.max(
+      hour,
+      ...points.map((point) => Number(point.date.slice(8, 10))),
+    );
+    return Array.from({ length: lastHour + 1 }, (_, index) => {
+      const date = `${today}${String(index).padStart(2, "0")}`;
+      return (
+        byHour.get(date) ?? {
+          date,
+          request_count: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+          total_cost_usd: 0,
+          wait_time_ms: 0,
+          successful_requests: 0,
+          failed_requests: 0,
+        }
+      );
     });
-    return config;
-  }, [models]);
-  const { barData, barConfig, barModels } = useMemo(() => {
-    if (!models)
-      return {
-        barData: [],
-        barConfig: {} as ChartConfig,
-        barModels: [] as string[],
-      };
-    const modelSet = (
-      models.distribution.length
-        ? models.distribution.map((item) => item.model)
-        : [...new Set(models.trend.map((point) => point.model))]
-    ).slice(0, 12);
-    if (!modelSet.length)
-      return {
-        barData: [],
-        barConfig: {} as ChartConfig,
-        barModels: [] as string[],
-      };
-    const dateMap = new Map<string, Record<string, number>>();
-    for (const point of models.trend) {
-      if (!modelSet.includes(point.model)) continue;
-      const key = safeKey(point.model);
-      const existing = dateMap.get(point.date) ?? {};
-      existing[key] = (existing[key] ?? 0) + point.value;
-      dateMap.set(point.date, existing);
-    }
-    const buckets =
-      overviewDays === -1
-        ? Array.from(
-            { length: 24 },
-            (_, hour) =>
-              `${getDateBucketPrefix(timeZone)}${String(hour).padStart(2, "0")}`,
-          )
-        : [...dateMap.keys()].sort();
-    const config: ChartConfig = {};
-    const safeModels: string[] = [];
-    modelSet.forEach((model, index) => {
-      const key = safeKey(model);
-      safeModels.push(key);
-      config[key] = {
-        label: model,
-        color: CHART_COLORS[index % CHART_COLORS.length],
-      };
-    });
-    return {
-      barData: buckets.map((bucket) => ({
-        date: formatTrendLabel(bucket),
-        ...(dateMap.get(bucket) ?? {}),
-      })),
-      barConfig: config,
-      barModels: safeModels,
-    };
-  }, [overviewDays, models, timeZone]);
+  }, [activityQuery.data, days, timeZone]);
   const heatmapPoints = useMemo(() => {
-    const pointMap = new Map(
-      (heatmapQuery.data ?? []).map((item) => [
-        parseDateKey(item.date),
-        {
-          count: item.request_count,
-          tokens: item.total_tokens,
-          waitTimeMs: item.wait_time_ms,
-        },
+    const counts = new Map(
+      (heatmapQuery.data ?? []).map((point) => [
+        parseDateKey(point.date),
+        point.request_count,
       ]),
     );
-    const today = new Date();
+    const today = new Date(`${todayKey}T12:00:00`);
     const start = startOfHeatmapWeek(addDays(today, -364));
-    const length =
-      Math.floor(
-        (new Date(toLocalDateKey(today)).getTime() -
-          new Date(toLocalDateKey(start)).getTime()) /
-          86_400_000,
-      ) + 1;
-    const points = Array.from({ length }, (_, index) => {
-      const date = toLocalDateKey(addDays(start, index));
-      const point = pointMap.get(date);
-      return {
-        date,
-        count: point?.count ?? 0,
-        tokens: point?.tokens ?? 0,
-        waitTimeMs: point?.waitTimeMs ?? 0,
-      };
-    });
+    const points = [];
+    for (
+      let date = start;
+      toLocalDateKey(date) <= todayKey;
+      date = addDays(date, 1)
+    ) {
+      const key = toLocalDateKey(date);
+      points.push({ date: key, count: counts.get(key) ?? 0 });
+    }
     return points;
-  }, [heatmapQuery.data]);
-
+  }, [heatmapQuery.data, todayKey]);
+  const queries = [
+    summaryQuery,
+    dailyQuery,
+    heatmapQuery,
+    attributionQuery,
+    activityQuery,
+  ];
   return (
-    <section className="flex flex-col gap-7">
+    <section className="flex min-w-0 flex-col gap-6">
       <OverviewStats
-        cacheReadTokens={cacheReadTokens}
-        cacheWriteTokens={cacheWriteTokens}
-        consumedTime={consumedTime}
-        inputCost={inputCost}
-        inputTokens={inputTokens}
+        cacheReadTokens={summary?.cache_read_input_tokens.value ?? 0}
+        cacheWriteTokens={summary?.cache_write_input_tokens.value ?? 0}
+        consumedTime={summary?.wait_time_ms.value ?? 0}
+        inputCost={summary?.input_cost_usd.value ?? 0}
+        inputTokens={summary?.input_tokens.value ?? 0}
         isChineseLocale={isChineseLocale}
-        outputCost={outputCost}
-        outputTokens={outputTokens}
-        requestCount={requestCount}
-        successRate={successRate}
-        totalCost={totalCost}
-        totalTokens={totalTokens}
+        isRefreshing={queries.some((query) => query.isFetching)}
+        loading={!summary || !dailyQuery.data}
+        outputCost={summary?.output_cost_usd.value ?? 0}
+        outputTokens={summary?.output_tokens.value ?? 0}
+        requestCount={summary?.request_count.value ?? 0}
+        successfulRequests={completed.successful}
+        failedRequests={completed.failed}
+        successRate={
+          completed.successful + completed.failed
+            ? Math.round(
+                (completed.successful /
+                  (completed.successful + completed.failed)) *
+                  1000,
+              ) / 10
+            : Number.NaN
+        }
+        totalCost={summary?.total_cost_usd.value ?? 0}
+        totalTokens={summary?.total_tokens.value ?? 0}
         timeRange={timeRange}
         onTimeRangeChange={setTimeRange}
+        onRefresh={() => {
+          for (const query of queries) void query.refetch();
+        }}
       />
-      <RequestHeatmap
-        points={heatmapPoints}
-        metric={heatmapMetric}
-        onMetricChange={setHeatmapMetric}
-        isChineseLocale={isChineseLocale}
+      <ActivityTrendCard
+        points={activityPoints.map((point) => ({
+          date: point.date,
+          requests: point.request_count,
+          successful: point.successful_requests,
+          failed: point.failed_requests,
+          cost: point.total_cost_usd,
+          waitTimeMs: point.wait_time_ms,
+          tokens: point.total_tokens,
+        }))}
+        isHourly={
+          days === -1 &&
+          (activityQuery.data ?? []).every((point) => point.date.length === 10)
+        }
+        locale={locale}
+        isLoading={activityQuery.isPending}
+        isError={activityQuery.isError}
+        heatmapPoints={heatmapPoints}
+        isHeatmapLoading={heatmapQuery.isPending}
+        isHeatmapError={heatmapQuery.isError}
       />
       <ModelAnalyticsCard
-        barConfig={barConfig}
-        barData={barData}
-        barModels={barModels}
-        isChineseLocale={isChineseLocale}
-        modelTrendTitle={modelTrendTitle}
-        modelsIsError={modelsQuery.isError}
-        pieChartConfig={pieChartConfig}
-        pieData={pieData}
-        pieMetric={pieMetric}
-        pieMetricLabel={pieMetricLabel}
-        onMetricChange={setPieMetric}
+        key={timeRange}
+        timeRange={timeRange}
+        analytics={attributionQuery.data}
+        dimension={dimension}
+        onDimensionChange={(value) => {
+          setDimension(value);
+          setFilterKey(null);
+        }}
+        filterKey={filterKey}
+        onFilterChange={setFilterKey}
+        metric={metric}
+        onMetricChange={setMetric}
+        locale={locale}
+        isLoading={attributionQuery.isPending}
+        isError={attributionQuery.isError}
       />
     </section>
   );

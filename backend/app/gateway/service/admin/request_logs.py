@@ -17,6 +17,8 @@ from ..auth import get_current_admin
 async def list_request_logs(
     limit: int = Query(default=100, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    days: int = Query(default=0, ge=-1),
+    upstream_model: str | None = None,
     gateway_key_id: str | None = None,
     model_prefix: str | None = None,
     status_filter: RequestLogStatusFilter | None = Query(default=None, alias="status"),
@@ -30,6 +32,8 @@ async def list_request_logs(
     return await app_state.request_log_store.queries.list_request_log_page(
         limit=limit,
         offset=offset,
+        days=days,
+        upstream_model=upstream_model,
         gateway_key_id=gateway_key_id,
         model_prefix=model_prefix,
         status_filter=status_filter,

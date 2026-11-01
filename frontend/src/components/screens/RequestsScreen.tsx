@@ -21,6 +21,24 @@ export function RequestsScreen() {
   return (
     <TooltipProvider>
       <RequestsOverview
+        scopeLabel={[
+          screen.period !== "0"
+            ? titleForLocale(
+                screen.locale,
+                screen.period === "-1" ? "今天" : `近 ${screen.period} 天`,
+                screen.period === "-1" ? "Today" : `Last ${screen.period} days`,
+              )
+            : null,
+          screen.model !== null
+            ? titleForLocale(
+                screen.locale,
+                `实际上游模型：${screen.model || "未知模型"}`,
+                `Upstream model: ${screen.model || "Unknown model"}`,
+              )
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         locale={screen.locale}
         items={screen.logsQuery.data?.items ?? []}
         loading={screen.logsQuery.isLoading}

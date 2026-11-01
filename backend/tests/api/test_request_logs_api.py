@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from conftest import seed_request_log
+from datetime import timedelta
+
+from conftest import run_async, seed_request_log
+
+from app.persistence.entities import RequestLogEntity
 
 
 def test_request_log_page_returns_seeded_logs(client, admin_headers, app_state) -> None:
@@ -12,6 +16,49 @@ def test_request_log_page_returns_seeded_logs(client, admin_headers, app_state) 
     payload = response.json()
     assert payload["total"] == 1
     assert payload["items"][0]["id"] == log.id
+
+
+def test_request_log_page_filters_overview_period_model_and_channel(
+    client, admin_headers, app_state
+) -> None:
+    matching = seed_request_log(app_state, resolved_group_name="model/a", success=False)
+    old = seed_request_log(app_state, resolved_group_name="model/a", success=False)
+    seed_request_log(app_state, resolved_group_name="model.a", success=False)
+    seed_request_log(app_state, resolved_group_name="model/a", success=True)
+    seed_request_log(
+        app_state, resolved_group_name="model/a", channel_id="other", success=False
+    )
+
+    async def set_old_date():
+        async with app_state.session_factory.begin() as session:
+            row = await session.get(RequestLogEntity, old.id)
+            row.created_at -= timedelta(days=40)
+
+    run_async(set_old_date())
+    response = client.get(
+        "/api/admin/request-logs/page",
+        params={
+            "days": -1,
+            "status": "failed",
+            "upstream_model": "model/a",
+            "channel": matching.channel_id,
+        },
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["id"] == matching.id
+    response = client.get(
+        "/api/admin/request-logs/page",
+        params={
+            "days": 0,
+            "status": "failed",
+            "upstream_model": "model/a",
+            "channel": matching.channel_id,
+        },
+        headers=admin_headers,
+    )
+    assert response.json()["total"] == 2
 
 
 def test_request_log_detail_returns_saved_content(

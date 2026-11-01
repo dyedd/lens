@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.time_zone import load_time_zone
 
+from .attribution import RequestLogAttribution
 from .overview import RequestLogOverview
 from .query import RequestLogHydrator, RequestLogQueries
 from .statistics import RequestLogStatistics
@@ -46,3 +47,4 @@ class RequestLogRepository:
             session_factory, settings_repo, statistics, runtime_time_zone
         )
         self.statistics = statistics
+        self.attribution = RequestLogAttribution(self.overview)

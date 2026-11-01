@@ -4,6 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
@@ -32,6 +33,15 @@ export function useRequestsScreen() {
   const queryClient = useQueryClient();
   const { locale } = useI18n();
   const timeZone = useAppTimeZone();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedStatus = searchParams.get("status");
+  const requestedChannel = searchParams.get("channel");
+  const days = ["-1", "7", "30"].includes(searchParams.get("days") ?? "")
+    ? searchParams.get("days")!
+    : "0";
+  const upstreamModel = searchParams.get("upstream_model");
+  const [period, setPeriod] = useState(days);
+  const [model, setModel] = useState(upstreamModel);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [page, setPage] = useState(0);
@@ -39,11 +49,15 @@ export function useRequestsScreen() {
     useState<(typeof PAGE_SIZE_OPTIONS)[number]>(25);
   const [selectedModelPrefix, setSelectedModelPrefix] =
     useState<SelectedModelPrefix>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    requestedStatus === "failed" || requestedStatus === "success"
+      ? requestedStatus
+      : "all",
+  );
   const [protocolFilter, setProtocolFilter] = useState<"all" | ProtocolKind>(
     "all",
   );
-  const [channelFilter, setChannelFilter] = useState("all");
+  const [channelFilter, setChannelFilter] = useState(requestedChannel ?? "all");
   const [selectedGatewayKeyId, setSelectedGatewayKeyId] = useState("all");
   const [sortMode, setSortMode] = useState<SortMode>("latest");
   const [keyword, setKeyword] = useState("");
@@ -67,6 +81,8 @@ export function useRequestsScreen() {
     if (gatewayKeyId) params.set("gateway_key_id", gatewayKeyId);
     if (deferredKeyword) params.set("keyword", deferredKeyword);
     if (sortMode !== "latest") params.set("sort", sortMode);
+    if (period !== "0") params.set("days", period);
+    if (model !== null) params.set("upstream_model", model);
     return `/admin/request-logs/page?${params.toString()}`;
   }, [
     channel,
@@ -78,6 +94,8 @@ export function useRequestsScreen() {
     selectedModelPrefix,
     sortMode,
     status,
+    period,
+    model,
   ]);
   const logsQuery = useQuery({
     queryKey: [
@@ -91,6 +109,8 @@ export function useRequestsScreen() {
       gatewayKeyId,
       deferredKeyword,
       sortMode,
+      period,
+      model,
     ],
     queryFn: () => apiRequest<RequestLogPage>(requestLogsQuery),
     placeholderData: keepPreviousData,
@@ -134,7 +154,20 @@ export function useRequestsScreen() {
     protocolFilter !== "all",
     channelFilter !== "all",
     gatewayKeyId !== null,
+    period !== "0",
+    model !== null,
   ].filter(Boolean).length;
+  useEffect(() => {
+    setPeriod(days);
+    setModel(upstreamModel);
+    setStatusFilter(
+      requestedStatus === "failed" || requestedStatus === "success"
+        ? requestedStatus
+        : "all",
+    );
+    setChannelFilter(requestedChannel ?? "all");
+    setPage(0);
+  }, [days, upstreamModel, requestedStatus, requestedChannel]);
   useEffect(() => {
     if (selectedModelPrefix !== effectiveModelPrefix)
       setSelectedModelPrefix(effectiveModelPrefix);
@@ -177,6 +210,9 @@ export function useRequestsScreen() {
     setProtocolFilter("all");
     setChannelFilter("all");
     setSelectedGatewayKeyId("all");
+    setPeriod("0");
+    setModel(null);
+    setSearchParams({}, { replace: true });
     setPage(0);
   }
   function changePageSize(size: (typeof PAGE_SIZE_OPTIONS)[number]) {
@@ -201,6 +237,8 @@ export function useRequestsScreen() {
           ["overview-summary"],
           ["overview-daily"],
           ["overview-models"],
+          ["overview-attribution"],
+          ["overview-activity"],
           ["gateway-api-keys"],
         ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       );
@@ -224,6 +262,8 @@ export function useRequestsScreen() {
   }
   return {
     activeFilterCount,
+    period,
+    model,
     changePageSize,
     channelFilter,
     channelOptions,
