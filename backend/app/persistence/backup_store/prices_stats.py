@@ -9,6 +9,7 @@ from app.core.model_prices import canonical_model_price_key
 from app.models.backups import (
     ConfigBackupImportedStatsDaily,
     ConfigBackupImportedStatsTotal,
+    ConfigBackupOverviewAttributionHourlyStat,
     ConfigBackupOverviewModelDailyStat,
     ConfigBackupRequestLogDailyStat,
     ConfigBackupStatsSnapshot,
@@ -22,6 +23,7 @@ from app.persistence.settings_keys import SETTING_MODEL_PRICE_LAST_SYNC_AT
 from app.persistence.stats_entities import (
     ImportedStatsDailyEntity,
     ImportedStatsTotalEntity,
+    OverviewAttributionHourlyStatsEntity,
     OverviewModelDailyStatsEntity,
     RequestLogDailyStatsEntity,
 )
@@ -59,6 +61,15 @@ async def load_model_prices(session: AsyncSession) -> list[ModelPriceItem]:
 
 
 async def load_stats(session: AsyncSession) -> ConfigBackupStatsSnapshot:
+    attribution_rows = (
+        await session.scalars(
+            select(OverviewAttributionHourlyStatsEntity).order_by(
+                OverviewAttributionHourlyStatsEntity.hour_start,
+                OverviewAttributionHourlyStatsEntity.upstream_model,
+                OverviewAttributionHourlyStatsEntity.channel_id,
+            )
+        )
+    ).all()
     imported_total_row = await session.get(ImportedStatsTotalEntity, 1)
     imported_daily_rows = (
         (
@@ -108,6 +119,12 @@ async def load_stats(session: AsyncSession) -> ConfigBackupStatsSnapshot:
         )
 
     return ConfigBackupStatsSnapshot(
+        attribution_hourly=[
+            ConfigBackupOverviewAttributionHourlyStat.model_validate(
+                row, from_attributes=True
+            )
+            for row in attribution_rows
+        ],
         imported_total=imported_total,
         imported_daily=[
             ConfigBackupImportedStatsDaily(
@@ -201,6 +218,14 @@ async def replace_stats(
     await session.execute(delete(ImportedStatsTotalEntity))
     await session.execute(delete(RequestLogDailyStatsEntity))
     await session.execute(delete(OverviewModelDailyStatsEntity))
+    await session.execute(delete(OverviewAttributionHourlyStatsEntity))
+    attribution_keys: set[tuple[datetime, str, str]] = set()
+    for item in stats.attribution_hourly:
+        key = (item.hour_start, item.upstream_model, item.channel_id)
+        if key in attribution_keys:
+            raise ValueError(f"Duplicate attribution stats row in backup: {key}")
+        attribution_keys.add(key)
+        session.add(OverviewAttributionHourlyStatsEntity(**item.model_dump()))
     if stats.imported_total is not None:
         session.add(
             ImportedStatsTotalEntity(

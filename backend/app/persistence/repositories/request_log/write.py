@@ -212,6 +212,7 @@ class RequestLogMaintenance:
                         "Request interrupted while the service was not running"
                     )
                 entity.stats_archived = 0
+                entity.attribution_archived = 0
             await session.commit()
 
 
@@ -256,3 +257,4 @@ def _apply_request_log_fields(
     entity.stats_archived = (
         0 if payload.lifecycle_status.value in REQUEST_LOG_TERMINAL_STATUSES else 1
     )
+    entity.attribution_archived = entity.stats_archived

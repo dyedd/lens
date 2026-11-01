@@ -20,6 +20,7 @@ async def export_settings_bundle(
     _: Any = Depends(get_current_admin),
 ) -> JSONResponse:
     """Export the selected configuration as a downloadable backup."""
+    await app_state.request_log_store.statistics.persist_request_log_stats(force=True)
     dump = await app_state.backup_store.export_dump(
         lens_version=read_system_version(),
         include_request_logs=include_logs,

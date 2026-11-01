@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -57,11 +58,40 @@ class ConfigBackupOverviewModelDailyStat(StrictBaseModel):
     total_cost_usd: float = 0.0
 
 
+class ConfigBackupOverviewAttributionHourlyStat(StrictBaseModel):
+    hour_start: datetime
+    upstream_model: str
+    channel_id: str
+    channel_name: str = ""
+    request_count: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    wait_time_ms: int = 0
+    input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_cost_usd: float = 0.0
+    output_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+
+    @field_validator("hour_start")
+    @classmethod
+    def utc_hour_start(cls, value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            return value.astimezone(UTC).replace(tzinfo=None)
+        return value
+
+
 class ConfigBackupStatsSnapshot(StrictBaseModel):
     imported_total: ConfigBackupImportedStatsTotal | None = None
     imported_daily: list[ConfigBackupImportedStatsDaily] = Field(default_factory=list)
     request_daily: list[ConfigBackupRequestLogDailyStat] = Field(default_factory=list)
     model_daily: list[ConfigBackupOverviewModelDailyStat] = Field(default_factory=list)
+    attribution_hourly: list[ConfigBackupOverviewAttributionHourlyStat] = Field(
+        default_factory=list
+    )
 
 
 class ConfigBackupGatewayApiKey(GatewayApiKeyBase):
@@ -136,6 +166,7 @@ class ConfigBackupRequestLog(StrictBaseModel):
     error_message: str | None = None
     created_at: str
     stats_archived: bool = False
+    attribution_archived: bool = False
     request_content: str | None = None
     response_content: str | None = None
     attempts: list[ConfigBackupRequestLogAttempt] = Field(default_factory=list)

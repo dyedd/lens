@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String
+from sqlalchemy import DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
@@ -64,4 +64,43 @@ class OverviewModelDailyStatsEntity(Base):
     model: Mapped[str] = mapped_column(String(200), primary_key=True)
     requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
+class OverviewAttributionHourlyStatsEntity(Base):
+    """按 UTC 四分之一小时保存模型和渠道用量，查询时合并为本地小时。"""
+
+    __tablename__ = "overview_attribution_hourly_stats"
+    __table_args__ = (
+        Index(
+            "ix_overview_attribution_hourly_stats_channel_hour",
+            "channel_id",
+            "hour_start",
+        ),
+        Index(
+            "ix_overview_attribution_hourly_stats_model_hour",
+            "upstream_model",
+            "hour_start",
+        ),
+    )
+
+    hour_start: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
+    upstream_model: Mapped[str] = mapped_column(String(200), primary_key=True)
+    channel_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    channel_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    successful_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    wait_time_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cache_read_input_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    cache_write_input_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    output_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
