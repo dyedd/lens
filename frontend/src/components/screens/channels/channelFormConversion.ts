@@ -213,6 +213,7 @@ export function toForm(site: Site): FormState {
         enabled: model.enabled,
         context_window: model.context_window,
         upstream_context_window: model.upstream_context_window,
+        litellm_context_window: model.litellm_context_window,
       })),
     );
     const credentialIds = canonicalizeCredentialIds(
@@ -338,6 +339,7 @@ export function toPayload(form: FormState): SitePayload {
             enabled: model.enabled,
             context_window: model.context_window,
             upstream_context_window: model.upstream_context_window,
+            litellm_context_window: model.litellm_context_window,
           }));
         })
         .filter((model) => model.credential_id && model.model_name);

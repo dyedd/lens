@@ -3,7 +3,7 @@
 export const MIN_CONTEXT_WINDOW = 1_000;
 export const MAX_CONTEXT_WINDOW = 100_000_000;
 
-export type ContextWindowSource = "manual" | "upstream";
+export type ContextWindowSource = "manual" | "upstream" | "litellm";
 
 const CONTEXT_INPUT_RE = /^(\d+(?:\.\d+)?)\s*([km])?$/i;
 const UNIT_TOKENS: Record<string, number> = { k: 1_000, m: 1_000_000 };
@@ -49,6 +49,7 @@ export function contextWindowSourceLabel(
 ): string {
   const isZh = locale === "zh-CN";
   if (source === "manual") return isZh ? "手动设置" : "Set manually";
+  if (source === "litellm") return "LiteLLM";
   return isZh ? "上游模型列表" : "Upstream model list";
 }
 

@@ -383,6 +383,7 @@ export function useChannelModelPicker({
                 protocolIds: {},
                 context_window: null,
                 upstream_context_window: item.context_window,
+                litellm_context_window: null,
               },
             ];
           });

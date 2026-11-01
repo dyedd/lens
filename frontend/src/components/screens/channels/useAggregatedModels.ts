@@ -23,6 +23,7 @@ type ModelGroupSeed = {
   enabled: boolean;
   contextWindow: number | null;
   upstreamContextWindow: number | null;
+  litellmContextWindow: number | null;
   members: Map<string, AggregatedModelMember>;
   testKey: string | null;
 };
@@ -68,6 +69,7 @@ export function useAggregatedModels(
           enabled: false,
           contextWindow: null,
           upstreamContextWindow: null,
+          litellmContextWindow: null,
           members: new Map(),
           testKey: null,
         };
@@ -83,6 +85,7 @@ export function useAggregatedModels(
         group.enabled = group.enabled || model.enabled;
         group.contextWindow ??= model.context_window;
         group.upstreamContextWindow ??= model.upstream_context_window;
+        group.litellmContextWindow ??= model.litellm_context_window;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
         if (group.members.has(memberKey)) continue;
         const names = credentialNames(model.credential_id);
@@ -103,9 +106,14 @@ export function useAggregatedModels(
         protocols: Array.from(group.protocols),
         enabled: group.enabled,
         contextWindow: group.contextWindow,
-        autoContextWindow: group.upstreamContextWindow,
+        autoContextWindow:
+          group.upstreamContextWindow ?? group.litellmContextWindow,
         autoContextWindowSource:
-          group.upstreamContextWindow === null ? null : "upstream",
+          group.upstreamContextWindow !== null
+            ? "upstream"
+            : group.litellmContextWindow !== null
+              ? "litellm"
+              : null,
         members: Array.from(group.members.values()),
         testKey: group.testKey,
       }));

@@ -228,6 +228,7 @@ class SiteProtocolConfigUpsertsMixin:
                     protocol=protocol_value,
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,
+                    litellm_context_window=model.litellm_context_window,
                 )
             )
 

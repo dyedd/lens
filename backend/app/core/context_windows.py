@@ -51,6 +51,7 @@ class ContextWindowSource(str, Enum):
 
     MANUAL = "manual"
     UPSTREAM = "upstream"
+    LITELLM = "litellm"
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,16 +126,21 @@ def resolve_channel_model_context_window(
     *,
     context_window: int | None,
     upstream_context_window: int | None,
+    litellm_context_window: int | None = None,
 ) -> ContextWindowResolution:
-    """Pick a channel model's context window: the manual setting, then upstream.
+    """按手工配置、上游上报、LiteLLM 的顺序选取上下文。
 
-    Models with no value anywhere stay unknown, so routing never drops them.
+    所有来源都没有值时保持未知，路由不因此排除该模型。
     """
     if context_window is not None:
         return ContextWindowResolution(context_window, ContextWindowSource.MANUAL)
     if upstream_context_window is not None:
         return ContextWindowResolution(
             upstream_context_window, ContextWindowSource.UPSTREAM
+        )
+    if litellm_context_window is not None:
+        return ContextWindowResolution(
+            litellm_context_window, ContextWindowSource.LITELLM
         )
     return ContextWindowResolution(None, None)
 

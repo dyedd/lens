@@ -627,6 +627,121 @@ def _stored_models(client, admin_headers) -> set[tuple[str, str]]:
     }
 
 
+def test_context_sync_keeps_manual_and_upstream_values_separate(
+    client, admin_headers, monkeypatch
+) -> None:
+    import app.gateway.service.tasks.litellm_sync_tasks as litellm_sync
+    import app.gateway.service.tasks.model_discovery as discovery
+
+    site_id = _create_sync_site(
+        client,
+        admin_headers,
+        _sync_site_payload(
+            patterns={"cred-a": "*"},
+            models=[_model("gpt-4o", context_window=64_000)],
+        ),
+    )
+    catalog = {
+        "gpt-4o": {
+            "mode": "chat",
+            "max_input_tokens": 128_000,
+            "input_cost_per_token": 0.000001,
+        }
+    }
+    upstream = {"data": [{"id": "gpt-4o"}]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=catalog
+            if str(request.url) == litellm_sync.LITELLM_PRICE_URL
+            else upstream,
+        )
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        litellm_sync.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_type(transport=httpx.MockTransport(handler)),
+    )
+    upstream_client = client_type(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        discovery, "resolve_http_client", lambda _proxy: upstream_client
+    )
+
+    def sync_metadata() -> None:
+        response = client.post(
+            "/api/admin/model-price-sync-jobs", headers=admin_headers
+        )
+        assert response.status_code == 200, response.text
+
+    def stored_model() -> dict[str, Any]:
+        site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+        return site["protocols"][0]["models"][0]
+
+    def group() -> dict[str, Any]:
+        return next(
+            item
+            for item in client.get(
+                "/api/admin/model-groups", headers=admin_headers
+            ).json()
+            if item["name"] == "gpt-4o"
+        )
+
+    try:
+        sync_metadata()
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert stored_model()["litellm_context_window"] == 128_000
+        assert stored_model()["upstream_context_window"] is None
+        assert group()["context_window"] is None
+        assert group()["items"][0]["context_window"] == 64_000
+
+        catalog["gpt-4o"]["max_input_tokens"] = 256_000
+        upstream["data"][0]["context_length"] = 200_000
+        sync_metadata()
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert stored_model()["litellm_context_window"] == 256_000
+        assert stored_model()["upstream_context_window"] == 200_000
+        assert stored_model()["context_window"] == 64_000
+
+        payload = _sync_site_payload(
+            patterns={"cred-a": "*"},
+            models=[stored_model() | {"context_window": None}],
+        )
+        for field in ("credential_name", "sort_order"):
+            payload["protocols"][0]["models"][0].pop(field)
+        response = client.put(
+            f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+        )
+        assert response.status_code == 200, response.text
+        assert group()["items"][0]["context_window"] == 200_000
+        assert group()["items"][0]["context_window_source"] == "upstream"
+
+        upstream["data"][0].pop("context_length")
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert group()["items"][0]["context_window"] == 256_000
+        assert group()["items"][0]["context_window_source"] == "litellm"
+        group_id = group()["id"]
+        response = client.put(
+            f"/api/admin/model-groups/{group_id}",
+            headers=admin_headers,
+            json={"context_window": 32_000},
+        )
+        assert response.status_code == 200, response.text
+        sync_metadata()
+        assert group()["context_window"] == 32_000
+        response = client.put(
+            f"/api/admin/model-groups/{group_id}",
+            headers=admin_headers,
+            json={"context_window": None},
+        )
+        assert response.status_code == 200, response.text
+        sync_metadata()
+        assert group()["context_window"] is None
+    finally:
+        run_async(upstream_client.aclose())
+
+
 def _added_names(result: dict[str, Any]) -> dict[str, tuple[str, ...]]:
     return {item["credential_id"]: tuple(item["added"]) for item in result["items"]}
 
