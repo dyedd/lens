@@ -57,6 +57,14 @@ export function formatMaybeCount(value: number, pending: boolean) {
   return formatCount(value);
 }
 
+/** Format cache reads as a share of input_tokens, which includes cache tokens. */
+export function formatCacheHitRate(
+  item: Pick<RequestLogItem, "input_tokens" | "cache_read_input_tokens">,
+) {
+  if (!item.input_tokens) return "-";
+  return `${Math.round((item.cache_read_input_tokens / item.input_tokens) * 100)}%`;
+}
+
 export function shortenGatewayKeyId(value?: string | null) {
   if (!value) return "";
   if (value.length <= 10) return value;
