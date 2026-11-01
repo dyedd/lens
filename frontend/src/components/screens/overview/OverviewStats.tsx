@@ -1,17 +1,11 @@
 import {
   Activity,
-  Archive,
-  ArrowDownToLine,
-  ArrowUpFromLine,
   Braces,
   CalendarDays,
   Check,
-  ChevronDown,
   CircleCheck,
-  Database,
-  DatabaseZap,
   DollarSign,
-  HardDrive,
+  RefreshCw,
   Timer,
 } from "lucide-react";
 import { useState } from "react";
@@ -27,6 +21,7 @@ import {
   formatCompact,
   formatDuration,
   formatMoney,
+  requestLogsHref,
   TIME_RANGE_OPTIONS,
   type TimeRange,
 } from "./overviewMetrics";
@@ -38,17 +33,21 @@ type Props = {
   inputCost: number;
   inputTokens: number;
   isChineseLocale: boolean;
+  isRefreshing: boolean;
+  loading?: boolean;
   outputCost: number;
   outputTokens: number;
   requestCount: number;
   successRate: number;
+  successfulRequests: number;
+  failedRequests: number;
   totalCost: number;
   totalTokens: number;
   timeRange: TimeRange;
+  onRefresh: () => void;
   onTimeRangeChange: (range: TimeRange) => void;
 };
 
-/** Render the four overview summary metrics. */
 export function OverviewStats(props: Props) {
   const {
     cacheReadTokens,
@@ -57,104 +56,106 @@ export function OverviewStats(props: Props) {
     inputCost,
     inputTokens,
     isChineseLocale,
+    isRefreshing,
+    loading = false,
     outputCost,
     outputTokens,
     requestCount,
     successRate,
+    successfulRequests,
+    failedRequests,
     totalCost,
     totalTokens,
     timeRange,
+    onRefresh,
     onTimeRangeChange,
   } = props;
   const [rangeOpen, setRangeOpen] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const rangeLabel =
     TIME_RANGE_OPTIONS.find((option) => option.value === timeRange)?.[
       isChineseLocale ? "zhLabel" : "enLabel"
-    ] ?? (isChineseLocale ? "近 30 天" : "Last 30 days");
-  const cacheHitRate = inputTokens
-    ? Math.round((cacheReadTokens / inputTokens) * 100)
-    : 0;
-  const metricGroups = [
-    [
-      {
-        icon: Activity,
-        title: isChineseLocale ? "请求总量" : "Total requests",
-        value: formatCompact(requestCount),
-      },
-      {
-        icon: CircleCheck,
-        title: isChineseLocale ? "成功率" : "Success rate",
-        value: `${successRate}%`,
-      },
-      {
-        icon: Timer,
-        title: isChineseLocale ? "总耗时" : "Total time",
-        value: formatDuration(consumedTime),
-      },
-    ],
-    [
-      {
-        icon: DollarSign,
-        title: isChineseLocale ? "预估成本" : "Estimated cost",
-        value: formatMoney(totalCost),
-      },
-      {
-        icon: ArrowDownToLine,
-        title: isChineseLocale ? "输入成本" : "Input cost",
-        value: formatMoney(inputCost),
-      },
-      {
-        icon: ArrowUpFromLine,
-        title: isChineseLocale ? "输出成本" : "Output cost",
-        value: formatMoney(outputCost),
-      },
-    ],
-    [
-      {
-        icon: Braces,
-        title: isChineseLocale ? "Token 总数" : "Total tokens",
-        value: formatCompact(totalTokens),
-      },
-      {
-        icon: ArrowDownToLine,
-        title: isChineseLocale ? "输入 Tokens" : "Input tokens",
-        value: formatCompact(inputTokens),
-      },
-      {
-        icon: ArrowUpFromLine,
-        title: isChineseLocale ? "输出 Tokens" : "Output tokens",
-        value: formatCompact(outputTokens),
-      },
-    ],
-    [
-      {
-        icon: DatabaseZap,
-        title: isChineseLocale ? "缓存命中率" : "Cache hit rate",
-        value: `${cacheHitRate}%`,
-      },
-      {
-        icon: Database,
-        title: isChineseLocale ? "缓存 Tokens" : "Cache tokens",
-        value: formatCompact(cacheReadTokens + cacheWriteTokens),
-      },
-      {
-        icon: Archive,
-        title: isChineseLocale ? "缓存读取" : "Cache read",
-        value: formatCompact(cacheReadTokens),
-      },
-      {
-        icon: HardDrive,
-        title: isChineseLocale ? "缓存写入" : "Cache write",
-        value: formatCompact(cacheWriteTokens),
-      },
-    ],
-  ] satisfies OverviewStatView[][];
+    ] ?? (isChineseLocale ? "今天" : "Today");
+  const display = (value: string) => (loading ? "—" : value);
+  const metricCards: OverviewStatView[] = [
+    {
+      icon: Activity,
+      title: isChineseLocale ? "请求量" : "Requests",
+      value: display(formatCompact(requestCount)),
+    },
+    {
+      icon: CircleCheck,
+      title: isChineseLocale ? "成功率" : "Success rate",
+      value: display(Number.isFinite(successRate) ? `${successRate}%` : "—"),
+      details: [
+        {
+          label: isChineseLocale ? "成功" : "Successful",
+          value: display(formatCompact(successfulRequests)),
+          href: loading
+            ? undefined
+            : requestLogsHref(timeRange, { status: "success" }),
+        },
+        {
+          label: isChineseLocale ? "失败" : "Failed",
+          value: display(formatCompact(failedRequests)),
+          href: loading
+            ? undefined
+            : requestLogsHref(timeRange, { status: "failed" }),
+        },
+      ],
+    },
+    {
+      icon: DollarSign,
+      title: isChineseLocale ? "预估成本" : "Estimated cost",
+      value: display(formatMoney(totalCost)),
+      details: [
+        {
+          label: isChineseLocale ? "输入" : "Input",
+          value: display(formatMoney(inputCost)),
+        },
+        {
+          label: isChineseLocale ? "输出" : "Output",
+          value: display(formatMoney(outputCost)),
+        },
+      ],
+    },
+    {
+      icon: Braces,
+      title: isChineseLocale ? "Token 用量" : "Token usage",
+      value: display(formatCompact(totalTokens)),
+      detailsColumns: 2,
+      description: isChineseLocale
+        ? "总量 = 输入 + 输出；输入包含缓存 Token，缓存读取和写入不重复累加。"
+        : "Total = input + output. Input includes cache tokens; cache reads and writes are not added again.",
+      details: [
+        {
+          label: isChineseLocale ? "输入" : "Input",
+          value: display(formatCompact(inputTokens)),
+        },
+        {
+          label: isChineseLocale ? "输出" : "Output",
+          value: display(formatCompact(outputTokens)),
+        },
+        {
+          label: isChineseLocale ? "缓存读取" : "Cache read",
+          value: display(formatCompact(cacheReadTokens)),
+        },
+        {
+          label: isChineseLocale ? "缓存写入" : "Cache write",
+          value: display(formatCompact(cacheWriteTokens)),
+        },
+      ],
+    },
+    {
+      icon: Timer,
+      title: isChineseLocale ? "总时长" : "Total time",
+      value: display(formatDuration(consumedTime, isChineseLocale)),
+    },
+  ];
 
   return (
     <section className="space-y-3">
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 px-1">
-        <h3 className="page-title">
+        <h3 className="text-sm font-semibold">
           {isChineseLocale ? "运行概览" : "Overview metrics"}
         </h3>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -205,64 +206,25 @@ export function OverviewStats(props: Props) {
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5 px-2 text-sm font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
-            aria-expanded={detailsOpen}
-            aria-label={
-              detailsOpen
-                ? isChineseLocale
-                  ? "收起指标详情"
-                  : "Collapse metric details"
-                : isChineseLocale
-                  ? "展开指标详情"
-                  : "Expand metric details"
-            }
-            onClick={() => setDetailsOpen((open) => !open)}
+            disabled={isRefreshing}
+            aria-label={isChineseLocale ? "刷新概览" : "Refresh overview"}
+            onClick={onRefresh}
           >
-            <ChevronDown
+            <RefreshCw
               className={cn(
-                "size-3.5 stroke-1 transition-transform",
-                detailsOpen && "rotate-180",
+                "size-3.5 stroke-1",
+                isRefreshing && "animate-spin",
               )}
             />
-            <span>
-              {detailsOpen
-                ? isChineseLocale
-                  ? "收起详情"
-                  : "Hide details"
-                : isChineseLocale
-                  ? "展开详情"
-                  : "Show details"}
-            </span>
+            <span>{isChineseLocale ? "刷新" : "Refresh"}</span>
           </Button>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        {metricGroups.map((views) => (
-          <OverviewStatCard key={views[0].title} views={views} />
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
+        {metricCards.map((view) => (
+          <OverviewStatCard key={view.title} view={view} />
         ))}
       </div>
-      {detailsOpen ? (
-        <div className="rounded-md bg-muted/35 p-3 md:p-4">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-4 md:grid-cols-4">
-            {metricGroups.map((views) => (
-              <dl key={views[0].title} className="min-w-0 space-y-2 text-xs">
-                {views.slice(1).map((view) => (
-                  <div
-                    key={view.title}
-                    className="flex items-baseline justify-between gap-3"
-                  >
-                    <dt className="truncate text-muted-foreground">
-                      {view.title}
-                    </dt>
-                    <dd className="shrink-0 font-medium tabular-nums text-foreground">
-                      {view.value}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

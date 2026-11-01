@@ -15,6 +15,7 @@ from app.models.protocols import RequestLogLifecycleStatus
 from app.persistence.entities import RequestLogEntity, SettingEntity
 from app.persistence.settings_keys import SETTING_STATS_TIME_ZONE
 from app.persistence.stats_entities import (
+    OverviewAttributionHourlyStatsEntity,
     OverviewModelDailyStatsEntity,
     RequestLogDailyStatsEntity,
 )
@@ -90,6 +91,9 @@ class RequestLogStatistics:
         rows = (await session.execute(stmt)).mappings().all()
         await self._merge_archive_rows(session, rows, time_zone)
         await self._set_archive_flag(session, rows, is_archived=True)
+        await self._archive_attribution_rows(
+            session, time_zone=time_zone, before=before
+        )
 
     @staticmethod
     async def _lock_archive_time_zone(
@@ -126,6 +130,115 @@ class RequestLogStatistics:
                 .where(RequestLogEntity.id.in_(ids))
                 .values(stats_archived=int(is_archived))
             )
+
+    async def _archive_attribution_rows(
+        self,
+        session: AsyncSession,
+        *,
+        time_zone: ZoneInfo,
+        before: datetime | None,
+    ) -> None:
+        stmt = (
+            select(
+                RequestLogEntity.id,
+                RequestLogEntity.created_at,
+                RequestLogEntity.lifecycle_status,
+                RequestLogEntity.upstream_model_name,
+                RequestLogEntity.channel_id,
+                RequestLogEntity.channel_name,
+                RequestLogEntity.latency_ms,
+                RequestLogEntity.input_tokens,
+                RequestLogEntity.cache_read_input_tokens,
+                RequestLogEntity.cache_write_input_tokens,
+                RequestLogEntity.output_tokens,
+                RequestLogEntity.total_tokens,
+                RequestLogEntity.input_cost_usd,
+                RequestLogEntity.output_cost_usd,
+                RequestLogEntity.total_cost_usd,
+            )
+            .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
+            .where(RequestLogEntity.attribution_archived == 0)
+            .order_by(RequestLogEntity.created_at.asc())
+            .with_for_update()
+        )
+        if before is not None:
+            stmt = stmt.where(RequestLogEntity.created_at < before)
+        rows = (await session.execute(stmt)).mappings().all()
+        if not rows:
+            return
+        buckets = self.attribution_stats_by_hour(rows, time_zone)
+        await self._merge_attribution_buckets(session, buckets)
+        for ids in batched((row["id"] for row in rows), 400, strict=False):
+            await session.execute(
+                update(RequestLogEntity)
+                .where(RequestLogEntity.id.in_(ids))
+                .values(attribution_archived=1)
+            )
+
+    async def _merge_attribution_buckets(
+        self,
+        session: AsyncSession,
+        buckets: Sequence[tuple[datetime, str, str, Mapping[str, Any]]],
+    ) -> None:
+        entities: dict[
+            tuple[datetime, str, str], OverviewAttributionHourlyStatsEntity
+        ] = {}
+        for keys in batched(
+            (
+                (hour_start, model, channel_id)
+                for hour_start, model, channel_id, _ in buckets
+            ),
+            250,
+            strict=False,
+        ):
+            found = await session.scalars(
+                select(OverviewAttributionHourlyStatsEntity).where(
+                    tuple_(
+                        OverviewAttributionHourlyStatsEntity.hour_start,
+                        OverviewAttributionHourlyStatsEntity.upstream_model,
+                        OverviewAttributionHourlyStatsEntity.channel_id,
+                    ).in_(keys)
+                )
+            )
+            entities.update(
+                ((row.hour_start, row.upstream_model, row.channel_id), row)
+                for row in found
+            )
+        for hour_start, model, channel_id, values in buckets:
+            key = (hour_start, model, channel_id)
+            entity = entities.get(key)
+            if entity is None:
+                entity = OverviewAttributionHourlyStatsEntity(
+                    hour_start=hour_start,
+                    upstream_model=model,
+                    channel_id=channel_id,
+                    channel_name=str(values["channel_name"]),
+                    request_count=0,
+                    successful_requests=0,
+                    failed_requests=0,
+                    wait_time_ms=0,
+                    input_tokens=0,
+                    cache_read_input_tokens=0,
+                    cache_write_input_tokens=0,
+                    output_tokens=0,
+                    total_tokens=0,
+                    input_cost_usd=0.0,
+                    output_cost_usd=0.0,
+                    total_cost_usd=0.0,
+                )
+                session.add(entity)
+            entity.request_count += int(values["request_count"])
+            entity.successful_requests += int(values["successful_requests"])
+            entity.failed_requests += int(values["failed_requests"])
+            entity.wait_time_ms += int(values["wait_time_ms"])
+            entity.input_tokens += int(values["input_tokens"])
+            entity.cache_read_input_tokens += int(values["cache_read_input_tokens"])
+            entity.cache_write_input_tokens += int(values["cache_write_input_tokens"])
+            entity.output_tokens += int(values["output_tokens"])
+            entity.total_tokens += int(values["total_tokens"])
+            entity.input_cost_usd += float(values["input_cost_usd"])
+            entity.output_cost_usd += float(values["output_cost_usd"])
+            entity.total_cost_usd += float(values["total_cost_usd"])
 
     async def _merge_archive_rows(
         self,
@@ -329,4 +442,66 @@ class RequestLogStatistics:
         return [
             (date_value, model, int(values[0]), int(values[1]), float(values[2]))
             for (date_value, model), values in sorted(buckets.items())
+        ]
+
+    @classmethod
+    def attribution_stats_by_hour(
+        cls, rows: Sequence[Mapping[str, Any]], time_zone: ZoneInfo
+    ) -> list[tuple[datetime, str, str, dict[str, int | float | str]]]:
+        buckets: dict[tuple[datetime, str, str], dict[str, int | float | str]] = {}
+        for row in rows:
+            created_at = cls.to_utc_datetime(row["created_at"])
+            if created_at is None:
+                continue
+            # UTC 四分之一小时桶可在切换时区后准确覆盖半小时、四十五分钟偏移。
+            hour_start = created_at.replace(
+                minute=created_at.minute // 15 * 15,
+                second=0,
+                microsecond=0,
+                tzinfo=None,
+            )
+            model = str(row["upstream_model_name"] or "")[:200]
+            channel_id = str(row["channel_id"] or "")[:160]
+            key = (hour_start, model, channel_id)
+            current = buckets.setdefault(
+                key,
+                {
+                    "channel_name": str(row["channel_name"] or ""),
+                    "request_count": 0,
+                    "successful_requests": 0,
+                    "failed_requests": 0,
+                    "wait_time_ms": 0,
+                    "input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "cache_write_input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "input_cost_usd": 0.0,
+                    "output_cost_usd": 0.0,
+                    "total_cost_usd": 0.0,
+                },
+            )
+            current["request_count"] = int(current["request_count"]) + 1
+            if row["lifecycle_status"] == RequestLogLifecycleStatus.SUCCEEDED.value:
+                current["successful_requests"] = int(current["successful_requests"]) + 1
+            elif row["lifecycle_status"] == RequestLogLifecycleStatus.FAILED.value:
+                current["failed_requests"] = int(current["failed_requests"]) + 1
+            current["wait_time_ms"] = int(current["wait_time_ms"]) + int(
+                row["latency_ms"]
+            )
+            for column in (
+                "input_tokens",
+                "cache_read_input_tokens",
+                "cache_write_input_tokens",
+                "output_tokens",
+                "total_tokens",
+            ):
+                current[column] = int(current[column]) + int(row[column])
+            for column in ("input_cost_usd", "output_cost_usd", "total_cost_usd"):
+                current[column] = float(current[column]) + float(row[column])
+            if row["channel_name"]:
+                current["channel_name"] = str(row["channel_name"])
+        return [
+            (hour_start, model, channel_id, values)
+            for (hour_start, model, channel_id), values in sorted(buckets.items())
         ]

@@ -38,3 +38,44 @@ export type OverviewModelAnalytics = {
   trend: OverviewModelTrendPoint[];
   available_models: string[];
 };
+export type AttributionDimension = "model" | "channel";
+export type AttributionMetric =
+  | "requests"
+  | "tokens"
+  | "cost"
+  | "cache"
+  | "duration";
+export type OverviewAttributionItem = {
+  key: string;
+  label: string;
+  is_deleted: boolean;
+  requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  input_tokens: number;
+  cache_read_input_tokens: number;
+  cache_write_input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  wait_time_ms: number;
+  cache_hit_rate: number | null;
+};
+export type OverviewAttributionTrendPoint = {
+  date: string;
+  key: string;
+  value: number | null;
+};
+export type OverviewAttribution = {
+  items: OverviewAttributionItem[];
+  trend: OverviewAttributionTrendPoint[];
+  dimension: AttributionDimension;
+  metric: AttributionMetric;
+  filter_key: string | null;
+  filter_label: string | null;
+  filters: Array<{ key: string; label: string; is_deleted: boolean }>;
+  coverage: {
+    has_dimension_history: boolean;
+    has_hourly_history: boolean;
+  };
+};

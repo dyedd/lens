@@ -72,6 +72,7 @@ async def load_request_logs(session: AsyncSession) -> list[ConfigBackupRequestLo
                 error_message=row.error_message,
                 created_at=row.created_at.replace(tzinfo=UTC).isoformat(),
                 stats_archived=bool(row.stats_archived),
+                attribution_archived=bool(row.attribution_archived),
                 request_content=row.request_content,
                 response_content=row.response_content,
                 attempts=attempts,
@@ -128,6 +129,7 @@ async def replace_request_logs(
                 ),
                 error_message=item.error_message,
                 stats_archived=1 if item.stats_archived else 0,
+                attribution_archived=1 if item.attribution_archived else 0,
                 created_at=parse_backup_datetime(item.created_at),
             )
         )

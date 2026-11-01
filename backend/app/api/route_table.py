@@ -37,6 +37,7 @@ from ..gateway.service.admin.model_prices import (
     update_model_price,
 )
 from ..gateway.service.admin.overview import (
+    get_overview_attribution,
     get_overview_model_analytics,
     get_overview_summary,
     list_overview_daily,
@@ -113,6 +114,7 @@ from ..models.model_groups import (
 )
 from ..models.model_prices import ModelPriceItem, ModelPriceListResponse
 from ..models.overview import (
+    OverviewAttribution,
     OverviewDailyPoint,
     OverviewModelAnalytics,
     OverviewSummary,
@@ -277,6 +279,12 @@ def register_routing(app: FastAPI) -> None:
 
 
 def register_overview(app: FastAPI) -> None:
+    app.add_api_route(
+        "/api/admin/overview-attribution",
+        get_overview_attribution,
+        methods=["GET"],
+        response_model=OverviewAttribution,
+    )
     app.add_api_route(
         "/api/admin/overview-summary",
         get_overview_summary,

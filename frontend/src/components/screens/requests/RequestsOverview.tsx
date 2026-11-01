@@ -55,6 +55,7 @@ import {
 } from "./requestView";
 
 type Props = {
+  scopeLabel: string;
   locale: Locale;
   items: RequestLogItem[];
   loading: boolean;
@@ -94,6 +95,7 @@ type Props = {
 
 /** Renders request logs as a toolbar and table. */
 export function RequestsOverview({
+  scopeLabel,
   locale,
   items,
   loading,
@@ -182,6 +184,9 @@ export function RequestsOverview({
         </Button>
       </div>
 
+      {scopeLabel ? (
+        <p className="px-1 text-xs text-muted-foreground">{scopeLabel}</p>
+      ) : null}
       <section className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 [scrollbar-width:none] md:gap-3 [&::-webkit-scrollbar]:hidden">
         <div className="flex min-w-max flex-nowrap items-center gap-1.5 md:min-w-0 md:flex-1">
           <div className="relative min-w-[160px] flex-1 md:max-w-[320px]">
