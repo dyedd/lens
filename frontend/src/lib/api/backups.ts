@@ -41,11 +41,21 @@ export type ConfigBackupOverviewModelDailyStat = {
   total_tokens: number;
   total_cost_usd: number;
 };
+export type ConfigBackupOverviewAttributionHourlyStat = Omit<
+  ConfigBackupRequestLogDailyStat,
+  "date"
+> & {
+  hour_start: string;
+  upstream_model: string;
+  channel_id: string;
+  channel_name: string;
+};
 export type ConfigBackupStatsSnapshot = {
   imported_total?: ConfigBackupImportedStatsTotal | null;
   imported_daily: ConfigBackupImportedStatsDaily[];
   request_daily: ConfigBackupRequestLogDailyStat[];
   model_daily: ConfigBackupOverviewModelDailyStat[];
+  attribution_hourly?: ConfigBackupOverviewAttributionHourlyStat[];
 };
 export type ConfigBackupGatewayApiKey = {
   id: string;
@@ -101,6 +111,7 @@ export type ConfigBackupRequestLog = {
   error_message?: string | null;
   created_at: string;
   stats_archived: boolean;
+  attribution_archived?: boolean;
   request_content?: string | null;
   response_content?: string | null;
   attempts: ConfigBackupRequestLogAttempt[];

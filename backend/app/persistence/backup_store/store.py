@@ -135,6 +135,9 @@ class BackupStore:
             rows_affected["imported_stats_daily"] = len(dump.stats.imported_daily)
             rows_affected["request_log_daily_stats"] = len(dump.stats.request_daily)
             rows_affected["overview_model_daily_stats"] = len(dump.stats.model_daily)
+            rows_affected["overview_attribution_hourly_stats"] = len(
+                dump.stats.attribution_hourly
+            )
 
             if dump.include_gateway_api_keys:
                 await replace_gateway_api_keys(session, dump.gateway_api_keys)

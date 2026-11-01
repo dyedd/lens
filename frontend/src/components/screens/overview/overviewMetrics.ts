@@ -1,23 +1,36 @@
 export type TimeRange = "-1" | "7" | "30" | "0";
-export type PieMetric = "cost" | "requests" | "tokens";
-export type HeatmapMetric = "requests" | "tokens" | "duration";
+export type AnalysisMetric =
+  | "cost"
+  | "requests"
+  | "tokens"
+  | "cache"
+  | "duration";
+export type AttributionDimension = "model" | "channel";
 export type HeatmapPoint = {
   date: string;
   count: number;
-  tokens: number;
-  waitTimeMs: number;
 };
+export function requestLogsHref(
+  timeRange: TimeRange,
+  filters: {
+    model?: string;
+    channel?: string;
+    status?: "success" | "failed";
+  } = {},
+) {
+  const params = new URLSearchParams({ days: timeRange });
+  if (filters.status) params.set("status", filters.status);
+  if (filters.model !== undefined) params.set("upstream_model", filters.model);
+  if (filters.channel !== undefined)
+    params.set("channel", filters.channel || "n/a");
+  return `/requests?${params}`;
+}
 export const TIME_RANGE_OPTIONS = [
   { value: "-1", zhLabel: "今天", enLabel: "Today" },
   { value: "7", zhLabel: "近 7 天", enLabel: "Last 7 days" },
   { value: "30", zhLabel: "近 30 天", enLabel: "Last 30 days" },
   { value: "0", zhLabel: "全部", enLabel: "All time" },
 ] satisfies Array<{ value: TimeRange; zhLabel: string; enLabel: string }>;
-export const PIE_METRIC_OPTIONS = [
-  { value: "cost", zhLabel: "成本", enLabel: "Cost" },
-  { value: "requests", zhLabel: "请求", enLabel: "Requests" },
-  { value: "tokens", zhLabel: "Token", enLabel: "Tokens" },
-] satisfies Array<{ value: PieMetric; zhLabel: string; enLabel: string }>;
 export const CHART_COLORS = [
   "var(--chart-4)",
   "var(--chart-3)",
@@ -28,10 +41,6 @@ export const CHART_COLORS = [
   "var(--muted-foreground)",
 ];
 
-/** Convert a model name into a safe chart data key. */
-export function safeKey(name: string) {
-  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
 /** Format a number using compact dashboard notation. */
 export function formatCompact(value: number, digits = 1) {
   if (value >= 1_000_000_000)
@@ -46,12 +55,27 @@ export function formatMoney(value: number) {
     ? `$${formatCompact(value, 2)}`
     : `$${value.toFixed(value >= 100 ? 0 : 2)}`;
 }
-/** Format milliseconds using the most useful display unit. */
-export function formatDuration(ms: number) {
-  if (ms >= 3_600_000) return `${(ms / 3_600_000).toFixed(1)}h`;
-  if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.round(ms)}ms`;
+export function formatDuration(ms: number, isChinese = false) {
+  const units = [
+    { size: 86_400_000, label: isChinese ? "天" : "d" },
+    { size: 3_600_000, label: isChinese ? "小时" : "h" },
+    { size: 60_000, label: isChinese ? "分钟" : "m" },
+    { size: 1000, label: isChinese ? "秒" : "s" },
+  ];
+  const first = units.findIndex((unit) => ms >= unit.size);
+  if (first >= 0 && first < units.length - 1) {
+    const unit = units[first];
+    const next = units[first + 1];
+    const whole = Math.floor(ms / unit.size);
+    const remainder = Math.floor((ms % unit.size) / next.size);
+    return `${whole}${unit.label}${remainder ? ` ${remainder}${next.label}` : ""}`;
+  }
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}${isChinese ? "秒" : "s"}`;
+  return `${Math.round(ms)}${isChinese ? "毫秒" : "ms"}`;
+}
+/** Convert an attribution rate from 0..1 to a display percentage. */
+export function formatRate(rate: number | null) {
+  return rate === null ? "—" : `${(rate * 100).toFixed(1)}%`;
 }
 /** Format an overview trend bucket for chart axes. */
 export function formatTrendLabel(bucket: string) {
@@ -81,23 +105,4 @@ export function addDays(date: Date, days: number) {
 export function startOfHeatmapWeek(date: Date) {
   const day = date.getDay();
   return addDays(date, day === 0 ? -6 : 1 - day);
-}
-
-/** Build localized labels for the selected model metric. */
-export function getPieMetricLabels(metric: PieMetric, isChinese: boolean) {
-  const label = isChinese
-    ? metric === "cost"
-      ? "成本"
-      : metric === "requests"
-        ? "请求"
-        : "Token"
-    : metric === "cost"
-      ? "Cost"
-      : metric === "requests"
-        ? "Requests"
-        : "Tokens";
-  return {
-    label,
-    trendTitle: isChinese ? `${label}趋势` : `${label} trend`,
-  };
 }

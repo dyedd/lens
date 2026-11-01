@@ -337,6 +337,9 @@ class RequestLogEntity(Base):
     attempts_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     stats_archived: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attribution_archived: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=_utc_now, nullable=False, index=True
     )

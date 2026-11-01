@@ -369,6 +369,7 @@ def apply_request_log_filters(
     protocol: ProtocolKind | None = None,
     channel: str | None = None,
     keyword: str | None = None,
+    upstream_model: str | None = None,
 ) -> Any:
     stmt = apply_request_log_window(stmt, days=days, time_zone=time_zone)
     stmt = apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
@@ -398,6 +399,10 @@ def apply_request_log_filters(
         stmt = stmt.where(RequestLogEntity.channel_id.is_(None))
     elif trimmed_channel:
         stmt = stmt.where(RequestLogEntity.channel_id == trimmed_channel)
+    if upstream_model is not None:
+        stmt = stmt.where(
+            func.coalesce(RequestLogEntity.upstream_model_name, "") == upstream_model
+        )
     return apply_request_log_keyword_filter(stmt, keyword=keyword)
 
 
@@ -728,6 +733,7 @@ class RequestLogQueries:
         channel: str | None = None,
         keyword: str | None = None,
         sort: RequestLogSortMode = RequestLogSortMode.LATEST,
+        upstream_model: str | None = None,
     ) -> RequestLogPage:
         """Return a filtered page of request logs and filter options."""
         time_zone = self.runtime_time_zone(
@@ -739,6 +745,7 @@ class RequestLogQueries:
                 items_stmt,
                 days=days,
                 time_zone=time_zone,
+                upstream_model=upstream_model,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
@@ -753,6 +760,7 @@ class RequestLogQueries:
                 total_stmt,
                 days=days,
                 time_zone=time_zone,
+                upstream_model=upstream_model,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
@@ -774,6 +782,7 @@ class RequestLogQueries:
                 channel_stmt,
                 days=days,
                 time_zone=time_zone,
+                upstream_model=upstream_model,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
@@ -789,6 +798,7 @@ class RequestLogQueries:
                 gateway_key_stmt,
                 days=days,
                 time_zone=time_zone,
+                upstream_model=upstream_model,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
                 protocol=protocol,
@@ -808,6 +818,7 @@ class RequestLogQueries:
                 model_name_stmt,
                 days=days,
                 time_zone=time_zone,
+                upstream_model=upstream_model,
                 gateway_key_id=gateway_key_id,
                 status_filter=status_filter,
                 protocol=protocol,
