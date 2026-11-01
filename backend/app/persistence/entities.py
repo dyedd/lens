@@ -168,6 +168,7 @@ class SiteDiscoveredModelEntity(Base):
     protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
     upstream_context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    litellm_context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ModelGroupEntity(Base):

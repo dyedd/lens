@@ -145,6 +145,7 @@ class SiteChannelProjectionMixin:
                     sort_order=model.sort_order,
                     context_window=model.context_window,
                     upstream_context_window=model.upstream_context_window,
+                    litellm_context_window=model.litellm_context_window,
                 )
             )
         return items

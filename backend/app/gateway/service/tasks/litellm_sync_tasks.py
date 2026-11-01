@@ -15,7 +15,7 @@ from ....core.model_prices import (
     build_litellm_price_index,
     canonical_model_price_key,
 )
-from ....persistence.entities import ModelGroupEntity, SiteDiscoveredModelEntity
+from ....persistence.entities import SiteDiscoveredModelEntity
 from ..app_state import AppState
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,6 @@ class ModelPriceSyncError(Exception):
     """Raised when the remote model price source cannot be synchronized."""
 
 
-# Backward compatibility alias
 LiteLLMSyncError = ModelPriceSyncError
 
 LITELLM_PRICE_URL = (
@@ -107,46 +106,17 @@ async def _sync_channel_model_contexts(
     state: AppState,
     catalog_windows: Mapping[str, int],
 ) -> int:
-    """Populate upstream_context_window for existing channel models where it is missing."""
     if not catalog_windows:
         return 0
     updated_count = 0
     async with state.session_factory() as session:
-        result = await session.execute(
-            select(SiteDiscoveredModelEntity).where(
-                SiteDiscoveredModelEntity.upstream_context_window.is_(None)
-            )
-        )
-        entities = result.scalars().all()
-        for entity in entities:
+        result = await session.execute(select(SiteDiscoveredModelEntity))
+        for entity in result.scalars():
             window = find_context_window(catalog_windows, entity.model_name)
-            if window is not None:
-                entity.upstream_context_window = window
+            if entity.litellm_context_window != window:
+                entity.litellm_context_window = window
                 updated_count += 1
-        if updated_count > 0:
-            await session.commit()
-    return updated_count
-
-
-async def _sync_group_contexts(
-    state: AppState,
-    catalog_windows: Mapping[str, int],
-) -> int:
-    """Populate context_window for existing model groups where it is missing."""
-    if not catalog_windows:
-        return 0
-    updated_count = 0
-    async with state.session_factory() as session:
-        result = await session.execute(
-            select(ModelGroupEntity).where(ModelGroupEntity.context_window.is_(None))
-        )
-        entities = result.scalars().all()
-        for entity in entities:
-            window = find_context_window(catalog_windows, entity.name)
-            if window is not None:
-                entity.context_window = window
-                updated_count += 1
-        if updated_count > 0:
+        if updated_count:
             await session.commit()
     return updated_count
 
@@ -158,22 +128,18 @@ async def sync_litellm_metadata(
     proxy_url = str(runtime["proxy_url"]).strip()
     payload = await _fetch_litellm_payload(proxy_url)
 
-    # 1. Sync context windows directly to existing models in database
     if restore_key is None:
         try:
             catalog_windows = extract_context_windows(payload)
             synced_models = await _sync_channel_model_contexts(state, catalog_windows)
-            synced_groups = await _sync_group_contexts(state, catalog_windows)
-            if synced_models or synced_groups:
+            if synced_models:
                 logger.info(
-                    "LiteLLM context sync updated %d channel models and %d groups",
+                    "LiteLLM context sync updated %d channel models",
                     synced_models,
-                    synced_groups,
                 )
         except Exception as exc:
             logger.warning("Failed to sync model context windows from LiteLLM: %s", exc)
 
-    # 2. Sync prices directly to existing groups in database
     group_names = await state.group_repo.list_group_names(include_routed=True)
     if restore_key is not None:
         restore_key = canonical_model_price_key(restore_key)
@@ -206,5 +172,4 @@ async def sync_litellm_metadata(
     )
 
 
-# Backward compatibility alias
 sync_group_prices = sync_litellm_metadata

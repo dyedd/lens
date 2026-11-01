@@ -67,6 +67,7 @@ export type SiteModel = {
   context_window: number | null;
   /** Context window the upstream model list reports. */
   upstream_context_window: number | null;
+  litellm_context_window: number | null;
 };
 export type SiteModelInput = {
   id?: string | null;
@@ -76,6 +77,7 @@ export type SiteModelInput = {
   enabled: boolean;
   context_window: number | null;
   upstream_context_window: number | null;
+  litellm_context_window: number | null;
 };
 export type SiteProtocolConfig = {
   id: string;

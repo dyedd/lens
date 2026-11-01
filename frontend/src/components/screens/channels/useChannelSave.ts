@@ -3,7 +3,7 @@ import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ChannelModelSyncResponse, Site } from "@/lib/api/sites";
-import { toForm, toPayload } from "./channelFormConversion";
+import { toPayload } from "./channelFormConversion";
 import type { FormState, Locale } from "./channelTypes";
 
 type ChannelEditor = {
@@ -11,7 +11,6 @@ type ChannelEditor = {
   editingSiteId: string | null;
   setEditingSiteId: (value: string | null) => void;
   setIsDialogOpen: (value: boolean) => void;
-  applyPreparedForm: (form: FormState) => void;
   validateSiteForm: () => boolean;
 };
 
@@ -122,15 +121,6 @@ export function useChannelSave({
         },
       );
       await invalidateChannelData();
-      const refreshed = queryClient
-        .getQueryData<Site[]>(["sites"])
-        ?.find((item) => item.id === siteId);
-      if (
-        refreshed &&
-        (!editor.editingSiteId || editor.editingSiteId === siteId)
-      ) {
-        editor.applyPreparedForm(toForm(refreshed));
-      }
       const failures = result.items.filter((item) => item.status === "failed");
       if (!result.items.length) {
         toast.info(
