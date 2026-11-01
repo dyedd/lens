@@ -20,8 +20,6 @@ class ModelPriceSyncError(Exception):
     """模型元数据源同步失败。"""
 
 
-LiteLLMSyncError = ModelPriceSyncError
-
 LITELLM_PRICE_URL = (
     "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/"
     "model_prices_and_context_window.json"
@@ -140,6 +138,3 @@ async def sync_litellm_metadata(
         restore_key=restore_key,
         synced_at=datetime.now(UTC).isoformat(),
     )
-
-
-sync_group_prices = sync_litellm_metadata
