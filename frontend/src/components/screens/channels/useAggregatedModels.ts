@@ -22,7 +22,6 @@ type ModelGroupSeed = {
   protocols: Set<ProtocolKind>;
   enabled: boolean;
   contextWindow: number | null;
-  upstreamContextWindow: number | null;
   members: Map<string, AggregatedModelMember>;
   testKey: string | null;
 };
@@ -67,7 +66,6 @@ export function useAggregatedModels(
           protocols: new Set(),
           enabled: false,
           contextWindow: null,
-          upstreamContextWindow: null,
           members: new Map(),
           testKey: null,
         };
@@ -82,7 +80,6 @@ export function useAggregatedModels(
         }
         group.enabled = group.enabled || model.enabled;
         group.contextWindow ??= model.context_window;
-        group.upstreamContextWindow ??= model.upstream_context_window;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
         if (group.members.has(memberKey)) continue;
         const names = credentialNames(model.credential_id);
@@ -103,9 +100,6 @@ export function useAggregatedModels(
         protocols: Array.from(group.protocols),
         enabled: group.enabled,
         contextWindow: group.contextWindow,
-        autoContextWindow: group.upstreamContextWindow,
-        autoContextWindowSource:
-          group.upstreamContextWindow === null ? null : "upstream",
         members: Array.from(group.members.values()),
         testKey: group.testKey,
       }));
