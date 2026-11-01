@@ -21,6 +21,7 @@ import { titleForLocale } from "@/lib/I18nContext";
 import { protocolLabel } from "@/lib/protocols";
 import { RequestOutcomeBadge } from "./RequestSummaryFields";
 import {
+  formatCacheHitRate,
   formatChannelCredentialLabel,
   formatGatewayKeyLabel,
   formatMaybeCount,
@@ -166,11 +167,21 @@ function UsageCell({
     },
   ];
   return (
-    <div className="grid w-max max-w-[9.5rem] grid-cols-2 gap-1">
-      {chips.map((chip) => (
-        <UsageChip key={chip.label} label={chip.label} value={chip.value} />
-      ))}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="grid w-max max-w-[9.5rem] cursor-default grid-cols-2 gap-1">
+          {chips.map((chip) => (
+            <UsageChip key={chip.label} label={chip.label} value={chip.value} />
+          ))}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="min-w-40">
+        <div className="flex items-center justify-between gap-5 text-xs">
+          <span>{titleForLocale(locale, "缓存命中率", "Cache hit rate")}</span>
+          <span className="tabular-nums">{formatCacheHitRate(item)}</span>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
