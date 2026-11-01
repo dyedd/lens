@@ -148,7 +148,6 @@ class SiteModel(StrictBaseModel):
     protocol: ProtocolKind | None = None
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
-    litellm_context_window: ContextWindow | None = None
 
 
 class SiteModelInput(StrictBaseModel):
@@ -159,7 +158,6 @@ class SiteModelInput(StrictBaseModel):
     protocol: ProtocolKind = ProtocolKind.OPENAI_CHAT
     context_window: ContextWindow | None = None
     upstream_context_window: ContextWindow | None = None
-    litellm_context_window: ContextWindow | None = None
 
 
 class SiteProtocolConfig(StrictBaseModel):

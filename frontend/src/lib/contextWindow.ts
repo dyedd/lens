@@ -3,8 +3,7 @@
 export const MIN_CONTEXT_WINDOW = 1_000;
 export const MAX_CONTEXT_WINDOW = 100_000_000;
 
-export type ContextWindowSource = "manual" | "upstream" | "litellm";
-
+export type ContextWindowSource = "manual" | "upstream";
 const CONTEXT_INPUT_RE = /^(\d+(?:\.\d+)?)\s*([km])?$/i;
 const UNIT_TOKENS: Record<string, number> = { k: 1_000, m: 1_000_000 };
 
@@ -49,22 +48,5 @@ export function contextWindowSourceLabel(
 ): string {
   const isZh = locale === "zh-CN";
   if (source === "manual") return isZh ? "手动设置" : "Set manually";
-  if (source === "litellm") return "LiteLLM";
   return isZh ? "上游模型列表" : "Upstream model list";
-}
-
-const MODEL_NAME_CONTEXT_RE = /[-_:]([0-9]+(?:\.[0-9]+)?)([km])\b/i;
-
-/**
- * Parses context size advertised directly in a model name, e.g. "glm-4-128k".
- */
-export function parseModelNameContextWindow(modelName: string): number | null {
-  const name = modelName.toLowerCase().trim();
-  if (!name) return null;
-  const match = MODEL_NAME_CONTEXT_RE.exec(name);
-  if (!match) return null;
-  const num = Number(match[1]);
-  const unit = match[2]?.toLowerCase();
-  const tokens = Math.round(num * (unit === "m" ? 1_000_000 : 1_000));
-  return isSupportedContextWindow(tokens) ? tokens : null;
 }

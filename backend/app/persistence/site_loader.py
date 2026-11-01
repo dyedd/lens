@@ -136,9 +136,6 @@ def build_site_configs(rows: SiteRows) -> list[SiteConfig]:
                 upstream_context_window=coerce_context_window(
                     row.upstream_context_window
                 ),
-                litellm_context_window=coerce_context_window(
-                    row.litellm_context_window
-                ),
             )
         )
 

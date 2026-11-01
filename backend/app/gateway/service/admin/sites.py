@@ -15,6 +15,7 @@ from ....models.health import HealthSummary
 from ....models.protocols import ProtocolKind
 from ....models.site_import import SiteBatchImportRequest, SiteBatchImportResult
 from ....models.site_model_test import (
+    ModelContextDetectionRequest,
     SiteModelFetchItem,
     SiteModelFetchRequest,
     SiteModelProtocolDetectionRequest,
@@ -31,6 +32,11 @@ from ....models.sites import (
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
+from ..tasks.litellm_sync_tasks import (
+    ModelPriceSyncError,
+    fetch_context_windows,
+    find_context_window,
+)
 from ..tasks.model_discovery import LISTING_PROTOCOLS, fetch_upstream_model_list
 from ..tasks.model_group_reconcile import run_model_group_reconcile
 from ..tasks.model_protocol_detection import detect_model_protocols
@@ -184,7 +190,25 @@ async def fetch_site_models(
             status_code=502,
             detail="Model discovery failed: " + "; ".join(errors),
         )
+    if items:
+        try:
+            windows = await fetch_context_windows(app_state)
+        except ModelPriceSyncError:
+            windows = {}
+        for item in items:
+            item.context_window = find_context_window(windows, item.model_name)
     return items
+
+
+async def detect_model_contexts(
+    payload: ModelContextDetectionRequest,
+    _: Any = Depends(get_current_admin),
+) -> dict[str, int | None]:
+    try:
+        windows = await fetch_context_windows(app_state)
+    except ModelPriceSyncError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {name: find_context_window(windows, name) for name in payload.model_names}
 
 
 async def detect_site_model_protocols(

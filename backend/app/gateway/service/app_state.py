@@ -50,8 +50,8 @@ CRONJOB_SPECS = (
     ),
     CronjobSpec(
         id=TASK_MODEL_PRICE_SYNC,
-        name="模型价格与上下文同步",
-        description="从 LiteLLM 同步模型价格与模型上下文窗口",
+        name="模型价格同步",
+        description="从 LiteLLM 同步模型价格",
         default_interval_hours=24,
     ),
     CronjobSpec(
