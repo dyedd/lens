@@ -11,7 +11,7 @@ from ....models.model_prices import (
 )
 from ..app_state import app_state
 from ..auth import get_current_admin
-from ..tasks.model_price_tasks import ModelPriceSyncError, sync_group_prices
+from ..tasks.litellm_sync_tasks import ModelPriceSyncError, sync_litellm_metadata
 
 
 async def list_model_prices(
@@ -35,7 +35,7 @@ async def restore_model_price(
 ) -> ModelPriceListResponse:
     """Restore a manual price from the latest source."""
     try:
-        await sync_group_prices(app_state, restore_key=model_key)
+        await sync_litellm_metadata(app_state, restore_key=model_key)
     except ModelPriceSyncError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return await app_state.model_price_repo.list_model_prices()
@@ -46,7 +46,7 @@ async def sync_model_prices(
 ) -> ModelPriceListResponse:
     """Refresh model prices and return the resulting list."""
     try:
-        await sync_group_prices(app_state)
+        await sync_litellm_metadata(app_state)
     except ModelPriceSyncError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return await app_state.model_price_repo.list_model_prices()

@@ -23,6 +23,7 @@ import {
   contextWindowSourceLabel,
   formatContextWindow,
   parseContextWindowInput,
+  parseModelNameContextWindow,
 } from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelModels";
@@ -271,10 +272,17 @@ function ContextWindowInput({
       : formatContextWindow(model.contextWindow);
   const [draft, setDraft] = useState(savedText);
   const isZh = locale === "zh-CN";
+  const nameWindow =
+    model.contextWindow === null && model.autoContextWindow === null
+      ? parseModelNameContextWindow(model.modelName)
+      : null;
+  const suggested = model.autoContextWindow ?? nameWindow;
   const autoText =
-    model.autoContextWindow === null
-      ? ""
-      : formatContextWindow(model.autoContextWindow);
+    suggested !== null
+      ? model.autoContextWindow !== null
+        ? formatContextWindow(model.autoContextWindow)
+        : `~${formatContextWindow(suggested)}`
+      : "";
 
   function commit() {
     if (draft.trim() === savedText) {
@@ -304,9 +312,13 @@ function ContextWindowInput({
       : model.autoContextWindowSource !== null &&
           model.autoContextWindow !== null
         ? `${contextWindowSourceLabel(model.autoContextWindowSource, locale)} · ${model.autoContextWindow.toLocaleString()} tokens`
-        : isZh
-          ? "未配置：模型组内用组默认上下文，其余按请求和上游判断"
-          : "Unset: the group default applies in model groups, elsewhere routing is unfiltered";
+        : suggested !== null
+          ? isZh
+            ? `未配置 · 预估 ~${formatContextWindow(suggested)}（留空由上游判断）`
+            : `Unset · Estimated ~${formatContextWindow(suggested)} (upstream decides when empty)`
+          : isZh
+            ? "未配置（留空由上游判断）"
+            : "Unset (upstream decides when empty)";
 
   return (
     <Tooltip>
@@ -326,6 +338,16 @@ function ContextWindowInput({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
+              if (
+                !draft.trim() &&
+                suggested !== null &&
+                model.contextWindow === null
+              ) {
+                onCommit(suggested);
+                setDraft(formatContextWindow(suggested));
+                event.currentTarget.blur();
+                return;
+              }
               event.currentTarget.blur();
             } else if (event.key === "Escape") {
               event.stopPropagation();

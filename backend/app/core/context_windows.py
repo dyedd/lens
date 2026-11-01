@@ -79,6 +79,28 @@ def coerce_context_window(value: Any) -> int | None:
     return None
 
 
+_MODEL_NAME_CONTEXT_RE = re.compile(
+    r"[-_:]([0-9]+(?:\.[0-9]+)?)([km])\b", re.IGNORECASE
+)
+
+
+def parse_model_name_context_window(model_name: str) -> int | None:
+    """Parse context size advertised directly in a model name, e.g. 'glm-4-128k'."""
+    name = model_name.strip()
+    if not name:
+        return None
+    match = _MODEL_NAME_CONTEXT_RE.search(name)
+    if not match:
+        return None
+    try:
+        num = float(match.group(1))
+        unit = match.group(2).lower()
+        tokens = round(num * (1_000_000 if unit == "m" else 1_000))
+        return coerce_context_window(tokens)
+    except Exception:
+        return None
+
+
 def parse_upstream_model_context_window(payload: Mapping[str, Any]) -> int | None:
     """Read the context window an upstream model list entry reports."""
     for field in _UPSTREAM_CONTEXT_FIELDS:
@@ -87,8 +109,11 @@ def parse_upstream_model_context_window(payload: Mapping[str, Any]) -> int | Non
             return size
     top_provider = payload.get("top_provider")
     if isinstance(top_provider, Mapping):
-        return coerce_context_window(top_provider.get("context_length"))
-    return None
+        size = coerce_context_window(top_provider.get("context_length"))
+        if size is not None:
+            return size
+    model_name = str(payload.get("id") or payload.get("name") or "")
+    return parse_model_name_context_window(model_name)
 
 
 def is_context_window_exceeded_error(message: str | None) -> bool:
@@ -121,6 +146,7 @@ __all__ = [
     "ContextWindowSource",
     "coerce_context_window",
     "is_context_window_exceeded_error",
+    "parse_model_name_context_window",
     "parse_upstream_model_context_window",
     "resolve_channel_model_context_window",
 ]
