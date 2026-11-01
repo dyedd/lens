@@ -81,7 +81,6 @@ export function coalesceFormModels(models: FormModel[]) {
     existing.enabled = existing.enabled || model.enabled;
     existing.context_window ??= model.context_window;
     existing.upstream_context_window ??= model.upstream_context_window;
-    existing.litellm_context_window ??= model.litellm_context_window;
   }
   return Array.from(groups.values());
 }

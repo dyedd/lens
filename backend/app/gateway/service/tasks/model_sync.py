@@ -21,6 +21,11 @@ from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus, ProtocolKind
 from ....models.sites import SiteConfig, SiteProtocolConfig
 from ..app_state import logger
+from .litellm_sync_tasks import (
+    ModelPriceSyncError,
+    fetch_context_windows,
+    find_context_window,
+)
 from .model_discovery import (
     NATIVE_LISTING_PROTOCOLS,
     UpstreamModel,
@@ -81,8 +86,22 @@ async def sync_channel_models(
         and (requested_site_ids is None or site.id in requested_site_ids)
     ]
     items: list[ChannelModelSyncResultItem] = []
+    context_windows: dict[str, int] = {}
+    if any(
+        credential.model_pattern.strip()
+        for site in sites
+        for credential in site.credentials
+    ):
+        try:
+            context_windows = await fetch_context_windows(state)
+        except ModelPriceSyncError as exc:
+            logger.warning("Model context lookup failed: %s", exc)
     for site in sites:
-        items.extend(await _sync_site_models(state, site, requested_credential_ids))
+        items.extend(
+            await _sync_site_models(
+                state, site, requested_credential_ids, context_windows
+            )
+        )
 
     logger.info(
         "Channel model sync: targets=%s updated=%s failed=%s",
@@ -120,6 +139,7 @@ async def _sync_site_models(
     state: AppState,
     site: SiteConfig,
     requested_credential_ids: set[str] | None = None,
+    context_windows: dict[str, int] | None = None,
 ) -> list[ChannelModelSyncResultItem]:
     credential_names = {
         credential.id: credential.name for credential in site.credentials
@@ -169,6 +189,7 @@ async def _sync_site_models(
                     credential_patterns,
                     site=site,
                     catalog=catalogs.get(credential_id),
+                    context_windows=context_windows or {},
                 )
                 if catalog is not None and base_urls[
                     protocol_config.base_url_id
@@ -200,6 +221,7 @@ async def _sync_credential_models(
     *,
     site: SiteConfig,
     catalog: _ModelCatalog | None,
+    context_windows: dict[str, int],
 ) -> _ModelCatalog | None:
     pattern = credential_patterns.get(item.credential_id, "").strip()
     if not pattern:
@@ -308,6 +330,11 @@ async def _sync_credential_models(
             if model.context_window is not None
         },
         upstream_protocols=protocols,
+        context_windows={
+            name: window
+            for name in upstream_names
+            if (window := find_context_window(context_windows, name)) is not None
+        },
     )
     item.added = changes.added
     item.missing = changes.missing

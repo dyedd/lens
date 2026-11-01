@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import select
 
 from ....core.context_windows import coerce_context_window
 from ....core.errors import LensError, ResourceNotFoundError
@@ -15,14 +13,11 @@ from ....core.model_prices import (
     build_litellm_price_index,
     canonical_model_price_key,
 )
-from ....persistence.entities import SiteDiscoveredModelEntity
 from ..app_state import AppState
-
-logger = logging.getLogger(__name__)
 
 
 class ModelPriceSyncError(Exception):
-    """Raised when the remote model price source cannot be synchronized."""
+    """模型元数据源同步失败。"""
 
 
 LiteLLMSyncError = ModelPriceSyncError
@@ -76,7 +71,7 @@ def extract_context_windows(payload: Mapping[str, Any]) -> dict[str, int]:
             continue
         index[name] = window
 
-    # Tail aliases: e.g. "openrouter/anthropic/claude-3-5-sonnet" -> "claude-3-5-sonnet"
+    # 使用去掉供应商路径后的模型名作为别名。
     aliases: dict[str, int] = {}
     for name, window in index.items():
         if "/" not in name:
@@ -102,23 +97,10 @@ def find_context_window(windows: Mapping[str, int], model_name: str) -> int | No
     return None
 
 
-async def _sync_channel_model_contexts(
-    state: AppState,
-    catalog_windows: Mapping[str, int],
-) -> int:
-    if not catalog_windows:
-        return 0
-    updated_count = 0
-    async with state.session_factory() as session:
-        result = await session.execute(select(SiteDiscoveredModelEntity))
-        for entity in result.scalars():
-            window = find_context_window(catalog_windows, entity.model_name)
-            if entity.litellm_context_window != window:
-                entity.litellm_context_window = window
-                updated_count += 1
-        if updated_count:
-            await session.commit()
-    return updated_count
+async def fetch_context_windows(state: AppState) -> dict[str, int]:
+    runtime = await state.settings_repo.get_runtime_settings()
+    payload = await _fetch_litellm_payload(str(runtime["proxy_url"]).strip())
+    return extract_context_windows(payload)
 
 
 async def sync_litellm_metadata(
@@ -127,18 +109,6 @@ async def sync_litellm_metadata(
     runtime = await state.settings_repo.get_runtime_settings()
     proxy_url = str(runtime["proxy_url"]).strip()
     payload = await _fetch_litellm_payload(proxy_url)
-
-    if restore_key is None:
-        try:
-            catalog_windows = extract_context_windows(payload)
-            synced_models = await _sync_channel_model_contexts(state, catalog_windows)
-            if synced_models:
-                logger.info(
-                    "LiteLLM context sync updated %d channel models",
-                    synced_models,
-                )
-        except Exception as exc:
-            logger.warning("Failed to sync model context windows from LiteLLM: %s", exc)
 
     group_names = await state.group_repo.list_group_names(include_routed=True)
     if restore_key is not None:

@@ -295,17 +295,12 @@ export function ModelPricesScreen() {
     try {
       await apiRequest("/admin/model-price-sync-jobs", { method: "POST" });
       await refresh();
-      await queryClient.invalidateQueries({ queryKey: ["sites"] });
-      toast.success(
-        isChinese ? "价格与上下文已同步" : "Prices and contexts synced",
-      );
+      toast.success(isChinese ? "模型价格已同步" : "Model prices synced");
     } catch (error) {
       toast.error(
         modelGroupErrorMessage(
           error,
-          isChinese
-            ? "同步价格与上下文失败"
-            : "Failed to sync prices and contexts",
+          isChinese ? "同步价格失败" : "Failed to sync prices",
         ),
       );
     } finally {
@@ -344,9 +339,7 @@ export function ModelPricesScreen() {
                 variant="ghost"
                 disabled={groups.isFetching || syncing}
                 onClick={() => void syncPrices()}
-                aria-label={
-                  isChinese ? "同步价格与上下文" : "Sync prices and contexts"
-                }
+                aria-label={isChinese ? "同步价格" : "Sync prices"}
               >
                 <RefreshCw
                   className={
@@ -356,7 +349,7 @@ export function ModelPricesScreen() {
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {isChinese ? "同步价格与上下文" : "Sync prices and contexts"}
+              {isChinese ? "同步价格" : "Sync prices"}
             </TooltipContent>
           </Tooltip>
         </div>

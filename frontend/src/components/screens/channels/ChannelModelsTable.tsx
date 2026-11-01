@@ -1,4 +1,4 @@
-import { Activity, Trash2 } from "lucide-react";
+import { Activity, Trash2, Wand2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
@@ -18,12 +18,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
+import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import {
-  contextWindowSourceLabel,
   formatContextWindow,
   parseContextWindowInput,
-  parseModelNameContextWindow,
 } from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelModels";
@@ -93,7 +92,7 @@ export function ChannelModelsTable({
           <TableHead className="w-[180px]">
             {locale === "zh-CN" ? "上游协议" : "Upstream protocol"}
           </TableHead>
-          <TableHead className="w-[92px]">
+          <TableHead className="w-[128px]">
             {locale === "zh-CN" ? "上下文" : "Context"}
           </TableHead>
           <TableHead className="w-[72px]" />
@@ -188,9 +187,9 @@ export function ChannelModelsTable({
                   }
                 />
               </TableCell>
-              <TableCell className="w-[92px] py-1.5">
+              <TableCell className="w-[128px] py-1.5">
                 <ContextWindowInput
-                  // Remount when the saved value changes so the draft resets.
+                  // 保存值变化后重建输入框，更新草稿。
                   key={model.contextWindow ?? "auto"}
                   model={model}
                   locale={locale}
@@ -253,10 +252,7 @@ export function ChannelModelsTable({
   );
 }
 
-/**
- * Edits a model's context window override inline. Empty falls back to the
- * upstream-reported value shown as the placeholder.
- */
+/** 编辑上下文，或主动用识别结果覆盖当前值。 */
 function ContextWindowInput({
   model,
   locale,
@@ -272,17 +268,29 @@ function ContextWindowInput({
       : formatContextWindow(model.contextWindow);
   const [draft, setDraft] = useState(savedText);
   const isZh = locale === "zh-CN";
-  const nameWindow =
-    model.contextWindow === null && model.autoContextWindow === null
-      ? parseModelNameContextWindow(model.modelName)
-      : null;
-  const suggested = model.autoContextWindow ?? nameWindow;
-  const autoText =
-    suggested !== null
-      ? model.autoContextWindow !== null
-        ? formatContextWindow(model.autoContextWindow)
-        : `~${formatContextWindow(suggested)}`
-      : "";
+  const [detecting, setDetecting] = useState(false);
+
+  async function detectContext() {
+    setDetecting(true);
+    try {
+      const values = await apiRequest<Record<string, number | null>>(
+        "/admin/model-context-detections",
+        {
+          method: "POST",
+          body: JSON.stringify({ model_names: [model.modelName] }),
+        },
+      );
+      const value = values[model.modelName] ?? null;
+      onCommit(value);
+      setDraft(value === null ? "" : formatContextWindow(value));
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(error, isZh ? "自动识别失败" : "Detection failed"),
+      );
+    } finally {
+      setDetecting(false);
+    }
+  }
 
   function commit() {
     if (draft.trim() === savedText) {
@@ -306,58 +314,60 @@ function ContextWindowInput({
     onCommit(parsed);
   }
 
-  const hint =
-    model.contextWindow !== null
-      ? `${contextWindowSourceLabel("manual", locale)} · ${model.contextWindow.toLocaleString()} tokens`
-      : model.autoContextWindowSource !== null &&
-          model.autoContextWindow !== null
-        ? `${contextWindowSourceLabel(model.autoContextWindowSource, locale)} · ${model.autoContextWindow.toLocaleString()} tokens`
-        : suggested !== null
-          ? isZh
-            ? `未配置 · 预估 ~${formatContextWindow(suggested)}（留空由上游判断）`
-            : `Unset · Estimated ~${formatContextWindow(suggested)} (upstream decides when empty)`
-          : isZh
-            ? "未配置（留空由上游判断）"
-            : "Unset (upstream decides when empty)";
+  const hint = isZh
+    ? "留空交给上游判断"
+    : "Leave empty for the upstream to decide";
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Input
-          value={draft}
-          placeholder={autoText || (isZh ? "默认" : "Default")}
-          inputMode="numeric"
-          aria-label={
-            isZh
-              ? `${model.modelName} 上下文窗口`
-              : `${model.modelName} context window`
-          }
-          className="h-7 px-2 font-mono text-xs placeholder:font-sans"
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              if (
-                !draft.trim() &&
-                suggested !== null &&
-                model.contextWindow === null
-              ) {
-                onCommit(suggested);
-                setDraft(formatContextWindow(suggested));
-                event.currentTarget.blur();
-                return;
-              }
-              event.currentTarget.blur();
-            } else if (event.key === "Escape") {
-              event.stopPropagation();
-              setDraft(savedText);
+    <div className="flex items-center gap-0.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Input
+            value={draft}
+            disabled={detecting}
+            placeholder={isZh ? "默认" : "Default"}
+            inputMode="numeric"
+            aria-label={
+              isZh
+                ? `${model.modelName} 上下文窗口`
+                : `${model.modelName} context window`
             }
-          }}
-        />
-      </TooltipTrigger>
-      <TooltipContent side="top">{hint}</TooltipContent>
-    </Tooltip>
+            className="h-7 px-2 font-mono text-xs placeholder:font-sans"
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                event.stopPropagation();
+                setDraft(savedText);
+              }
+            }}
+          />
+        </TooltipTrigger>
+        <TooltipContent side="top">{hint}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="size-6 shrink-0 text-muted-foreground"
+              disabled={detecting}
+              aria-label={isZh ? "自动识别上下文" : "Detect context"}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void detectContext()}
+            >
+              <Wand2 className="size-3.5 stroke-1" />
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{isZh ? "自动识别" : "Auto-detect"}</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }
 

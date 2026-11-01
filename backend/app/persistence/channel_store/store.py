@@ -132,6 +132,7 @@ class SiteOperationsMixin:
         upstream_pattern: str = "",
         upstream_context_windows: Mapping[str, int] | None = None,
         upstream_protocols: Mapping[str, ProtocolKind] | None = None,
+        context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
         """Make one credential's rows equal the models its filter keeps.
 
@@ -220,6 +221,7 @@ class SiteOperationsMixin:
                             name, ProtocolKind.OPENAI_CHAT
                         ).value,
                         upstream_context_window=reported_context_windows.get(name),
+                        context_window=(context_windows or {}).get(name),
                     )
                 )
                 next_sort_order += 1
