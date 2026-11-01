@@ -15,7 +15,7 @@ export function cronjobTitle(locale: Locale, task: CronjobItem) {
       "请求日志统计归档",
       "Archive request log statistics",
     ],
-    model_price_sync: ["模型价格同步", "Model price sync"],
+    model_price_sync: ["模型价格与上下文同步", "Model prices and context sync"],
     channel_model_sync: ["渠道模型同步", "Channel model sync"],
     credential_rate_sync: ["凭据倍率同步", "Credential rate sync"],
     version_check: ["版本检测", "Version check"],
