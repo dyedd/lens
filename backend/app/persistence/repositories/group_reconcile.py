@@ -26,7 +26,6 @@ from app.core.model_group_status import (
     build_model_group_channel_lookups,
     evaluate_model_group_item,
 )
-from app.core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupItemInput,
@@ -52,9 +51,8 @@ _AUTO_SOURCES = frozenset(
 )
 
 type MemberKey = tuple[str, str, str]
-# An exclusion covers every protocol channel of one credential's model, so a
-# protocol added to the site later does not bring the model back.
-type ExclusionKey = tuple[str, str, str]
+# 同一密钥的模型共享排除状态，新增地址或协议不能将它重新加入。
+type ExclusionKey = tuple[str, str]
 
 
 def _matches_group(state: _GroupMemberState, model_name: str) -> bool:
@@ -66,16 +64,6 @@ def _matches_group(state: _GroupMemberState, model_name: str) -> bool:
 
 def _row_key(row: ModelGroupItemEntity) -> MemberKey:
     return row.channel_id, row.credential_id, row.model_name
-
-
-def _exclusion_key(
-    channel_id: str, credential_id: str, model_name: str
-) -> ExclusionKey:
-    return (
-        protocol_config_id_from_runtime_channel_id(channel_id),
-        credential_id,
-        model_name,
-    )
 
 
 @dataclass(slots=True)
@@ -93,7 +81,7 @@ class _GroupMemberState:
         return {_row_key(row) for row in (*self.members, *self.excluded)}
 
     def exclusion_keys(self) -> set[ExclusionKey]:
-        return {_exclusion_key(*_row_key(row)) for row in self.excluded}
+        return {(row.credential_id, row.model_name) for row in self.excluded}
 
     def model_names(self) -> frozenset[str]:
         return frozenset(row.model_name for row in (*self.members, *self.excluded))
@@ -142,9 +130,16 @@ class _ReconcileRun:
         """Save READY channel items as members at the end of the group."""
         existing_keys = state.keys()
         exclusion_keys = state.exclusion_keys()
+        enabled_by_member: dict[ExclusionKey, bool] = {}
+        for row in state.members:
+            member_key = (row.credential_id, row.model_name)
+            enabled_by_member[member_key] = enabled_by_member.get(
+                member_key, False
+            ) or bool(row.enabled)
         for item in items:
             key = (item.channel_id, item.credential_id, item.model_name)
-            if key in existing_keys or _exclusion_key(*key) in exclusion_keys:
+            member_key = (item.credential_id, item.model_name)
+            if key in existing_keys or member_key in exclusion_keys:
                 continue
             deleted = next(
                 (
@@ -179,7 +174,7 @@ class _ReconcileRun:
                 channel_id=item.channel_id,
                 credential_id=item.credential_id,
                 model_name=item.model_name,
-                enabled=1,
+                enabled=int(enabled_by_member.get(member_key, True)),
                 source=source.value,
                 excluded=0,
                 sort_order=0,

@@ -165,7 +165,9 @@ class RoutePlanner:
         ]
         ordered_available = [
             *self._order_available(preferred_available, route_key, strategy),
-            *self._order_available(fallback_available, route_key, strategy),
+            *self._order_available(
+                fallback_available, route_key, strategy, mutate=False
+            ),
         ]
         affinity = self._affinity.get(route_key)
         if affinity is not None:
@@ -201,11 +203,20 @@ class RoutePlanner:
             return []
         if strategy == RoutingStrategy.FAILOVER:
             return list(available)
-        primary_index = self._swrr_pick_index(available, route_key, mutate=mutate)
-        primary = available[primary_index]
-        fallbacks = [
-            target for index, target in enumerate(available) if index != primary_index
-        ]
+        members: dict[tuple[str, str | None, str | None], RouteTarget] = {}
+        for target in available:
+            member_key = (
+                target.channel.site_id
+                or protocol_config_id_from_runtime_channel_id(target.channel.id),
+                target.credential_id,
+                target.model_name,
+            )
+            members.setdefault(member_key, target)
+        # 同一密钥的多个出口只占一个轮询位置，其余出口保留用于故障切换。
+        member_targets = list(members.values())
+        primary_index = self._swrr_pick_index(member_targets, route_key, mutate=mutate)
+        primary = member_targets[primary_index]
+        fallbacks = [target for target in available if target is not primary]
         fallbacks.sort(key=self._health.score, reverse=True)
         return [primary, *fallbacks]
 

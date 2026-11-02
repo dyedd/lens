@@ -7,7 +7,7 @@ import type {
 import { compileRegexRulePattern, matchesModelGroup } from "@/lib/regexRules";
 import type { FormState } from "./groupTypes";
 import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
-import { modelGroupItemKey } from "./modelGroupFormatting";
+import { modelFoldKey, modelGroupItemKey } from "./modelGroupFormatting";
 
 type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;
@@ -113,15 +113,13 @@ export function useGroupCandidates({
       const itemsToAdd = newFormItems.filter(
         (item) => !existingKeys.has(modelGroupItemKey(item)),
       );
-      const addedKeys = new Set(
-        itemsToAdd.map((item) => modelGroupItemKey(item)),
-      );
+      const addedKeys = new Set(itemsToAdd.map(modelFoldKey));
       return itemsToAdd.length
         ? {
             ...current,
             items: [...current.items, ...itemsToAdd],
             excluded_items: current.excluded_items.filter(
-              (item) => !addedKeys.has(modelGroupItemKey(item)),
+              (item) => !addedKeys.has(modelFoldKey(item)),
             ),
           }
         : current;

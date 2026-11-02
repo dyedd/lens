@@ -909,6 +909,136 @@ def test_group_candidates_list_available_channel_models(
     assert payload["evaluated_items"] == []
 
 
+def test_model_group_members_follow_keys_across_endpoints(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+) -> None:
+    create_model_group(name="sharedmodel")
+    payload = valid_site_payload(
+        model_name="shared-model", protocols=["openai_chat", "openai_responses"]
+    )
+    payload["credentials"].append(
+        {"id": "cred-2", "name": "secondary-key", "api_key": "secondary-secret"}
+    )
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-2",
+            "model_name": "shared-model",
+            "protocol": "openai_chat",
+        }
+    )
+    payload["base_urls"].append(
+        {"id": "anthropic", "kind": "anthropic", "url": "https://anthropic.example"}
+    )
+    payload["protocols"].append(
+        {
+            "id": "pc-anthropic",
+            "base_url_id": "anthropic",
+            "models": [
+                {
+                    "credential_id": "cred-1",
+                    "model_name": "shared-model",
+                    "protocol": "anthropic",
+                }
+            ],
+        }
+    )
+    site = create_site(payload)
+    unplaced = client.get("/api/admin/unplaced-models", headers=admin_headers).json()
+    assert len(unplaced["items"][0]["providers"]) == 2
+
+    response = client.post(
+        "/api/admin/model-group-candidates", headers=admin_headers, json={"items": []}
+    )
+    assert response.status_code == 200, response.text
+    candidates = response.json()["candidates"]
+    assert len(candidates) == 2
+    primary = next(item for item in candidates if item["credential_id"] == "cred-1")
+    assert set(primary["protocols"]) == {"openai_chat", "openai_responses", "anthropic"}
+    assert {
+        (item["protocol_config_id"], item["protocol"]) for item in primary["items"]
+    } == {
+        ("pc-1", "openai_chat"),
+        ("pc-1", "openai_responses"),
+        ("pc-anthropic", "anthropic"),
+    }
+    items = [
+        _member(
+            channel_id=item["channel_id"],
+            credential_id=item["credential_id"],
+            model_name=item["model_name"],
+        )
+        for candidate in candidates
+        for item in candidate["items"]
+    ]
+    response = client.post(
+        "/api/admin/model-groups",
+        headers=admin_headers,
+        json={"name": "pooled", "match_regex": "^shared-model$", "items": items},
+    )
+    assert response.status_code == 201, response.text
+    group_id = response.json()["id"]
+    group_path = f"/api/admin/model-groups/{group_id}"
+    assert len(client.get(group_path, headers=admin_headers).json()["items"]) == 4
+
+    disabled_items = [
+        {**item, "enabled": item["credential_id"] != "cred-1"} for item in items
+    ]
+    response = client.put(
+        group_path, headers=admin_headers, json={"items": disabled_items}
+    )
+    assert response.status_code == 200, response.text
+    payload["base_urls"].append(
+        {"id": "gemini", "kind": "gemini", "url": "https://gemini.example"}
+    )
+    payload["protocols"].append(
+        {
+            "id": "pc-gemini",
+            "base_url_id": "gemini",
+            "models": [
+                {
+                    "credential_id": "cred-1",
+                    "model_name": "shared-model",
+                    "protocol": "gemini",
+                }
+            ],
+        }
+    )
+    response = client.put(
+        f"/api/admin/sites/{site['id']}", headers=admin_headers, json=payload
+    )
+    assert response.status_code == 200, response.text
+    saved = client.get(group_path, headers=admin_headers).json()
+    primary_items = [
+        item for item in saved["items"] if item["credential_id"] == "cred-1"
+    ]
+    assert {item["protocol"] for item in primary_items} == {
+        "openai_chat",
+        "openai_responses",
+        "anthropic",
+        "gemini",
+    }
+    assert all(not item["enabled"] for item in primary_items)
+
+    response = client.put(
+        group_path,
+        headers=admin_headers,
+        json={
+            "items": [item for item in items if item["credential_id"] == "cred-2"],
+            "excluded_items": [_member(model_name="shared-model")],
+        },
+    )
+    assert response.status_code == 200, response.text
+    response = client.put(
+        f"/api/admin/sites/{site['id']}", headers=admin_headers, json=payload
+    )
+    assert response.status_code == 200, response.text
+    saved = client.get(group_path, headers=admin_headers).json()
+    assert {item["credential_id"] for item in saved["items"]} == {"cred-2"}
+
+
 def test_place_models_without_group_reports_unplaced_conflicts(
     client,
     admin_headers,

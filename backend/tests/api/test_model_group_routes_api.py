@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from typing import Any
 
 import httpx
@@ -211,6 +212,143 @@ def test_rate_limit_retries_a_sibling_credential(
     assert response.status_code == 200, response.text
     assert len(seen_credentials) == 2
     assert seen_credentials[0] != seen_credentials[1]
+
+
+def test_round_robin_counts_keys_once_and_keeps_protocol_fallbacks(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_gateway_key,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    payload = _two_credential_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-primary",
+            "model_name": "shared-model",
+            "protocol": "anthropic",
+        }
+    )
+    for credential in payload["credentials"]:
+        credential["base_url_id"] = "china"
+    payload["credentials"].append(
+        {"id": "cred-fallback", "name": "fallback-key", "api_key": "fallback-secret"}
+    )
+    payload["base_urls"].append(
+        {"id": "china", "kind": "china", "url": "https://china.example/v1"}
+    )
+    payload["protocols"].append(
+        {
+            "id": "pc-china",
+            "base_url_id": "china",
+            "models": payload["protocols"][0]["models"],
+        }
+    )
+    payload["protocols"][0]["models"] = [
+        {
+            "credential_id": "cred-fallback",
+            "model_name": "shared-model",
+            "protocol": "openai_chat",
+        }
+    ]
+    create_site(payload)
+    group = next(
+        item
+        for item in client.get("/api/admin/model-groups", headers=admin_headers).json()
+        if item["name"] == "shared-model"
+    )
+    response = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"strategy": "round_robin"},
+    )
+    assert response.status_code == 200, response.text
+    seen: list[tuple[str, str, str]] = []
+    failures_left = 0
+
+    async def fake_send(_client, upstream, *, stream, body_bytes):
+        nonlocal failures_left
+        assert not stream
+        url = httpx.URL(upstream.url)
+        credential = (
+            upstream.headers.get("authorization") or upstream.headers["x-api-key"]
+        )
+        seen.append((credential, url.host, url.path))
+        request = httpx.Request("POST", upstream.url)
+        if failures_left:
+            failures_left -= 1
+            return httpx.Response(
+                500, json={"error": {"message": "failed"}}, request=request
+            )
+        body = (
+            {
+                "id": "msg-test",
+                "type": "message",
+                "role": "assistant",
+                "model": "shared-model",
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+            if url.path.endswith("/messages")
+            else {
+                "id": "chat-test",
+                "model": "shared-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        )
+        return httpx.Response(200, json=body, request=request)
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send)
+    headers = gateway_headers(create_gateway_key())
+    body = {"model": "shared-model", "input": "hi"}
+    for _ in range(8):
+        response = client.post("/v1/responses", headers=headers, json=body)
+        assert response.status_code == 200, response.text
+    assert sorted(
+        Counter(
+            credential.removeprefix("Bearer ") for credential, _, _ in seen
+        ).values()
+    ) == [4, 4]
+    assert {host for _, host, _ in seen} == {"china.example"}
+
+    response = client.get(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    )
+    items = [
+        {
+            "channel_id": item["channel_id"],
+            "credential_id": item["credential_id"],
+            "model_name": item["model_name"],
+            "enabled": item["credential_id"] != "cred-secondary",
+        }
+        for item in response.json()["items"]
+    ]
+    response = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"items": items},
+    )
+    assert response.status_code == 200, response.text
+    seen.clear()
+    failures_left = 2
+    response = client.post("/v1/responses", headers=headers, json=body)
+    assert response.status_code == 200, response.text
+    assert len(seen) == 3
+    assert {path for _, _, path in seen[:2]} == {"/v1/chat/completions", "/v1/messages"}
+    assert [host for _, host, _ in seen] == [
+        "china.example",
+        "china.example",
+        "upstream.example",
+    ]
 
 
 def test_request_error_does_not_retry_another_target(
