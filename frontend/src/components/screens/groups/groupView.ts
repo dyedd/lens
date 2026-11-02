@@ -235,14 +235,17 @@ export function buildGroupRows(groups: ModelGroup[]): GroupRow[] {
   });
 }
 
-/** Group candidate models by their site or protocol configuration. */
+/** 按渠道归并候选模型，同一密钥的各个出口共用一行。 */
 export function groupModelCandidates(
   candidates: ModelGroupCandidateItem[],
   locale: "zh-CN" | "en-US",
 ) {
   const candidatesBySite = new Map<string, CandidateChannelGroup>();
   for (const candidate of candidates) {
-    const groupKey = candidate.protocol_config_id;
+    const groupKey = modelGroupChannelKey(
+      candidate.site_id,
+      candidate.protocol_config_id,
+    );
     let group = candidatesBySite.get(groupKey);
     if (!group) {
       group = {
@@ -292,11 +295,7 @@ export function foldGroupMembers(
           reasons: evaluationMatchesForm ? evaluation.reasons : item.reasons,
         }
       : item;
-    const key = modelFoldKey(
-      evaluatedItem.protocol_config_id,
-      evaluatedItem.credential_id,
-      evaluatedItem.model_name,
-    );
+    const key = modelFoldKey(evaluatedItem);
     let member = membersByKey.get(key);
     if (!member) {
       member = {

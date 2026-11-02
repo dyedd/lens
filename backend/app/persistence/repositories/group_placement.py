@@ -107,7 +107,7 @@ def build_unplaced_models(
         if is_covered(item.model_name):
             continue
         provider = providers_by_name[item.model_name].setdefault(
-            (item.protocol_config_id, item.credential_id),
+            (item.site_id or item.protocol_config_id, item.credential_id),
             UnplacedModelProvider(
                 site_id=item.site_id or "",
                 channel_name=item.channel_name,

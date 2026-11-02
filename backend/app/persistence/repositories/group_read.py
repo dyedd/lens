@@ -43,6 +43,7 @@ from ...core.model_group_status import (
     model_group_item_key,
 )
 from ...core.protocol_reachability import infer_client_protocols
+from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
 from ...models.model_groups import (
     ModelGroupItemState,
     ModelGroupMemberSource,
@@ -59,8 +60,7 @@ class GroupItemViews:
 
 @dataclass
 class _CandidateAggregate:
-    native_protocols: list[ProtocolKind] = field(default_factory=list)
-    protocol_channels: dict[ProtocolKind, str] = field(default_factory=dict)
+    channels: list[ChannelConfig] = field(default_factory=list)
     site_id: str = ""
     channel_name: str = ""
     credential_name: str = ""
@@ -182,7 +182,7 @@ class GroupCandidatesMixin:
                     continue
 
                 model_key = (
-                    evaluation.protocol_config_id,
+                    channel.site_id or evaluation.protocol_config_id,
                     model.credential_id,
                     model.model_name,
                 )
@@ -204,9 +204,7 @@ class GroupCandidatesMixin:
                         base_url=str(channel.base_url),
                     )
                 aggregate = candidate_aggregates[model_key]
-                if channel.protocol not in aggregate.native_protocols:
-                    aggregate.native_protocols.append(channel.protocol)
-                aggregate.protocol_channels.setdefault(channel.protocol, channel.id)
+                aggregate.channels.append(channel)
 
         candidates: list[ModelGroupCandidateItem] = []
         for aggregate in candidate_aggregates.values():
@@ -235,12 +233,15 @@ class GroupCandidatesMixin:
                     model_name=aggregate.model_name,
                     protocol_config_id=aggregate.protocol_config_id,
                     protocols=sorted(
-                        aggregate.native_protocols, key=lambda protocol: protocol.value
+                        {channel.protocol for channel in aggregate.channels},
+                        key=lambda protocol: protocol.value,
                     ),
                     items=[
                         ModelGroupCandidateSubitem(
                             channel_id=item.channel_id,
-                            protocol_config_id=aggregate.protocol_config_id,
+                            protocol_config_id=protocol_config_id_from_runtime_channel_id(
+                                item.channel_id
+                            ),
                             protocol=channels_by_id[item.channel_id].channel.protocol,
                             credential_id=item.credential_id,
                             model_name=item.model_name,
@@ -269,13 +270,13 @@ class GroupCandidatesMixin:
     ) -> list[ModelGroupItemInput]:
         return [
             ModelGroupItemInput(
-                channel_id=channel_id,
+                channel_id=channel.id,
                 credential_id=aggregate.credential_id,
                 model_name=aggregate.model_name,
                 enabled=True,
             )
-            for _, channel_id in sorted(
-                aggregate.protocol_channels.items(), key=lambda item: item[0].value
+            for channel in sorted(
+                aggregate.channels, key=lambda channel: channel.protocol.value
             )
         ]
 
