@@ -38,7 +38,7 @@ export type OverviewModelAnalytics = {
   trend: OverviewModelTrendPoint[];
   available_models: string[];
 };
-export type AttributionDimension = "model" | "channel";
+export type AttributionDimension = "model" | "channel" | "agent";
 export type AttributionMetric =
   | "requests"
   | "tokens"

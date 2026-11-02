@@ -84,6 +84,7 @@ def seed_request_log(
     app_state: Any,
     *,
     protocol: str = ProtocolKind.OPENAI_CHAT.value,
+    user_agent: str = "pytest",
     requested_group_name: str | None = "gpt-4o",
     resolved_group_name: str | None = "gpt-4o",
     channel_id: str | None = None,
@@ -102,7 +103,7 @@ def seed_request_log(
         app_state.request_log_store.commands.create_request_log(
             RequestLogInput(
                 protocol=protocol,
-                user_agent="pytest",
+                user_agent=user_agent,
                 requested_group_name=requested_group_name,
                 resolved_group_name=resolved_group_name,
                 upstream_model_name=resolved_group_name,

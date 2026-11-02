@@ -5,6 +5,34 @@ from conftest import run_async, seed_request_log, valid_site_payload
 from app.persistence.entities import RequestLogEntity
 
 
+def test_overview_attribution_groups_agents_and_keeps_history(
+    client, admin_headers, app_state
+):
+    seed_request_log(app_state, user_agent="codex-tui/0.1")
+    seed_request_log(app_state, user_agent="claude-cli/1.0")
+    params = {"days": -1, "dimension": "agent", "metric": "requests"}
+
+    response = client.get(
+        "/api/admin/overview-attribution", params=params, headers=admin_headers
+    )
+    assert response.status_code == 200, response.text
+    before = {row["key"]: row for row in response.json()["items"]}
+    assert before["codex"]["label"] == "Codex"
+    assert before["codex"]["requests"] == 1
+    assert before["claude_code"]["label"] == "Claude Code"
+    assert before["claude_code"]["requests"] == 1
+
+    assert (
+        client.delete("/api/admin/request-logs", headers=admin_headers).status_code
+        == 204
+    )
+    after = client.get(
+        "/api/admin/overview-attribution", params=params, headers=admin_headers
+    )
+    assert after.status_code == 200, after.text
+    assert after.json()["items"] == response.json()["items"]
+
+
 def test_overview_attribution_survives_channel_deletion_and_log_cleanup(
     client, admin_headers, app_state, create_site
 ):

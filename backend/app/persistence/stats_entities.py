@@ -68,7 +68,7 @@ class OverviewModelDailyStatsEntity(Base):
 
 
 class OverviewAttributionHourlyStatsEntity(Base):
-    """按 UTC 四分之一小时保存模型和渠道用量，查询时合并为本地小时。"""
+    """按 UTC 四分之一小时保存模型、渠道和 Agent 用量。"""
 
     __tablename__ = "overview_attribution_hourly_stats"
     __table_args__ = (
@@ -82,11 +82,17 @@ class OverviewAttributionHourlyStatsEntity(Base):
             "upstream_model",
             "hour_start",
         ),
+        Index(
+            "ix_overview_attribution_hourly_stats_agent_hour",
+            "agent",
+            "hour_start",
+        ),
     )
 
     hour_start: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
     upstream_model: Mapped[str] = mapped_column(String(200), primary_key=True)
     channel_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    agent: Mapped[str] = mapped_column(String(32), primary_key=True)
     channel_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     successful_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

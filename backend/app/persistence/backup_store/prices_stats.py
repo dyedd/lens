@@ -67,6 +67,7 @@ async def load_stats(session: AsyncSession) -> ConfigBackupStatsSnapshot:
                 OverviewAttributionHourlyStatsEntity.hour_start,
                 OverviewAttributionHourlyStatsEntity.upstream_model,
                 OverviewAttributionHourlyStatsEntity.channel_id,
+                OverviewAttributionHourlyStatsEntity.agent,
             )
         )
     ).all()
@@ -219,9 +220,9 @@ async def replace_stats(
     await session.execute(delete(RequestLogDailyStatsEntity))
     await session.execute(delete(OverviewModelDailyStatsEntity))
     await session.execute(delete(OverviewAttributionHourlyStatsEntity))
-    attribution_keys: set[tuple[datetime, str, str]] = set()
+    attribution_keys: set[tuple[datetime, str, str, str]] = set()
     for item in stats.attribution_hourly:
-        key = (item.hour_start, item.upstream_model, item.channel_id)
+        key = (item.hour_start, item.upstream_model, item.channel_id, item.agent)
         if key in attribution_keys:
             raise ValueError(f"Duplicate attribution stats row in backup: {key}")
         attribution_keys.add(key)
