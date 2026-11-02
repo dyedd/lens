@@ -53,7 +53,7 @@ async def get_overview_model_analytics(
 
 async def get_overview_attribution(
     days: int = Query(default=-1, ge=-1),
-    dimension: Literal["model", "channel"] = "model",
+    dimension: Literal["model", "channel", "agent"] = "model",
     metric: str = Query(
         default="cache", pattern="^(requests|tokens|cost|cache|duration)$"
     ),

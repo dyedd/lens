@@ -21,6 +21,7 @@ from app.models.overview import (
 from app.persistence.entities import RequestLogEntity, SiteProtocolConfigEntity
 from app.persistence.stats_entities import OverviewAttributionHourlyStatsEntity
 
+from .agents import agent_label, user_agent_sql_expression
 from .query import resolve_request_log_window
 from .types import REQUEST_LOG_TERMINAL_STATUSES
 
@@ -61,6 +62,7 @@ class RequestLogAttribution:
             func.floor(archive_epoch / 900).label("bucket"),
             archive.upstream_model.label("model"),
             archive.channel_id,
+            archive.agent,
             archive.channel_name,
             *[getattr(archive, name) for name in METRICS],
         )
@@ -77,6 +79,7 @@ class RequestLogAttribution:
         bucket = func.floor(epoch / 900)
         model = func.coalesce(log.upstream_model_name, "")
         channel = func.coalesce(log.channel_id, "")
+        agent = user_agent_sql_expression(log.user_agent)
         columns = {
             "request_count": func.count(),
             "successful_requests": func.sum(
@@ -92,6 +95,7 @@ class RequestLogAttribution:
             bucket.label("bucket"),
             model.label("model"),
             channel.label("channel_id"),
+            agent.label("agent"),
             func.max(log.channel_name).label("channel_name"),
             *[value.label(name) for name, value in columns.items()],
         ).where(
@@ -100,7 +104,7 @@ class RequestLogAttribution:
         )
         if start is not None:
             stmt = stmt.where(log.created_at >= start, log.created_at < end)
-        stmt = stmt.group_by(bucket, model, channel)
+        stmt = stmt.group_by(bucket, model, channel, agent)
         # 一条查询读取归档和明细，避免归档事务提交时漏计或重复。
         buckets = []
         for row in (await session.execute(union_all(archived, stmt))).mappings():
@@ -118,7 +122,7 @@ class RequestLogAttribution:
         self,
         *,
         days: int,
-        dimension: Literal["model", "channel"],
+        dimension: Literal["model", "channel", "agent"],
         metric: str,
         filter_key: str | None = None,
     ) -> OverviewAttribution:
@@ -153,14 +157,21 @@ class RequestLogAttribution:
             )
 
         def label(key: str, dim: str) -> str:
-            return (
-                (key or "Unknown model")
-                if dim == "model"
-                else labels.get(key, key or "Unknown channel")
-            )
+            if dim == "model":
+                return key or "Unknown model"
+            if dim == "channel":
+                return labels.get(key, key or "Unknown channel")
+            return agent_label(key)
 
-        opposite = "channel" if dimension == "model" else "model"
-        opposite_field = "channel_id" if opposite == "channel" else "model"
+        opposite = {
+            "model": "channel",
+            "channel": "model",
+            "agent": "model",
+        }[dimension]
+        opposite_field = {
+            "channel": "channel_id",
+            "model": "model",
+        }[opposite]
         filters = [
             OverviewAttributionFilterOption(
                 key=key,
@@ -174,7 +185,11 @@ class RequestLogAttribution:
         for row in buckets:
             if filter_key is not None and row[opposite_field] != filter_key:
                 continue
-            key = row["model" if dimension == "model" else "channel_id"]
+            key = {
+                "model": row["model"],
+                "channel": row["channel_id"],
+                "agent": row["agent"],
+            }[dimension]
             date = (
                 row["hour_start"]
                 .replace(tzinfo=UTC)

@@ -38,6 +38,7 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
 )
 
+from .agents import user_agent_sql_expression
 from .types import (
     REQUEST_LOG_HEALTH_STATUSES,
     REQUEST_LOG_MODEL_FAMILY_PREFIXES,
@@ -370,6 +371,7 @@ def apply_request_log_filters(
     channel: str | None = None,
     keyword: str | None = None,
     upstream_model: str | None = None,
+    agent: str | None = None,
 ) -> Any:
     stmt = apply_request_log_window(stmt, days=days, time_zone=time_zone)
     stmt = apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
@@ -402,6 +404,10 @@ def apply_request_log_filters(
     if upstream_model is not None:
         stmt = stmt.where(
             func.coalesce(RequestLogEntity.upstream_model_name, "") == upstream_model
+        )
+    if agent is not None:
+        stmt = stmt.where(
+            user_agent_sql_expression(RequestLogEntity.user_agent) == agent
         )
     return apply_request_log_keyword_filter(stmt, keyword=keyword)
 
@@ -734,6 +740,7 @@ class RequestLogQueries:
         keyword: str | None = None,
         sort: RequestLogSortMode = RequestLogSortMode.LATEST,
         upstream_model: str | None = None,
+        agent: str | None = None,
     ) -> RequestLogPage:
         """Return a filtered page of request logs and filter options."""
         time_zone = self.runtime_time_zone(
@@ -746,6 +753,7 @@ class RequestLogQueries:
                 days=days,
                 time_zone=time_zone,
                 upstream_model=upstream_model,
+                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
@@ -761,6 +769,7 @@ class RequestLogQueries:
                 days=days,
                 time_zone=time_zone,
                 upstream_model=upstream_model,
+                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
@@ -783,6 +792,7 @@ class RequestLogQueries:
                 days=days,
                 time_zone=time_zone,
                 upstream_model=upstream_model,
+                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
@@ -799,6 +809,7 @@ class RequestLogQueries:
                 days=days,
                 time_zone=time_zone,
                 upstream_model=upstream_model,
+                agent=agent,
                 model_prefix=model_prefix,
                 status_filter=status_filter,
                 protocol=protocol,
@@ -819,6 +830,7 @@ class RequestLogQueries:
                 days=days,
                 time_zone=time_zone,
                 upstream_model=upstream_model,
+                agent=agent,
                 gateway_key_id=gateway_key_id,
                 status_filter=status_filter,
                 protocol=protocol,

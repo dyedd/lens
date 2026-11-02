@@ -8,17 +8,31 @@ from app.persistence.entities import RequestLogEntity
 
 
 def test_request_log_page_returns_seeded_logs(client, admin_headers, app_state) -> None:
-    log = seed_request_log(app_state)
+    logs = {
+        "codex": seed_request_log(app_state, user_agent="CoDeX-TuI/0.1"),
+        "claude_code": seed_request_log(app_state, user_agent="claude-cli/1.0"),
+        "other": seed_request_log(app_state, user_agent="pytest"),
+        "unknown": seed_request_log(app_state, user_agent=""),
+    }
 
     response = client.get("/api/admin/request-logs/page", headers=admin_headers)
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["total"] == 1
-    assert payload["items"][0]["id"] == log.id
+    assert payload["total"] == 4
+    assert {row["id"] for row in payload["items"]} == {log.id for log in logs.values()}
+    for agent, log in logs.items():
+        filtered = client.get(
+            "/api/admin/request-logs/page",
+            params={"agent": agent},
+            headers=admin_headers,
+        )
+        assert filtered.status_code == 200, filtered.text
+        assert filtered.json()["total"] == 1
+        assert filtered.json()["items"][0]["id"] == log.id
 
 
-def test_request_log_page_filters_overview_period_model_and_channel(
+def test_request_log_page_filters_overview_period_model_channel_and_agent(
     client, admin_headers, app_state
 ) -> None:
     matching = seed_request_log(app_state, resolved_group_name="model/a", success=False)
@@ -27,6 +41,12 @@ def test_request_log_page_filters_overview_period_model_and_channel(
     seed_request_log(app_state, resolved_group_name="model/a", success=True)
     seed_request_log(
         app_state, resolved_group_name="model/a", channel_id="other", success=False
+    )
+    seed_request_log(
+        app_state,
+        resolved_group_name="model/a",
+        user_agent="claude-cli/1.0",
+        success=False,
     )
 
     async def set_old_date():
@@ -42,6 +62,7 @@ def test_request_log_page_filters_overview_period_model_and_channel(
             "status": "failed",
             "upstream_model": "model/a",
             "channel": matching.channel_id,
+            "agent": "other",
         },
         headers=admin_headers,
     )
@@ -55,6 +76,7 @@ def test_request_log_page_filters_overview_period_model_and_channel(
             "status": "failed",
             "upstream_model": "model/a",
             "channel": matching.channel_id,
+            "agent": "other",
         },
         headers=admin_headers,
     )

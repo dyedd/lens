@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Depends, Query, Response
 
@@ -19,6 +19,7 @@ async def list_request_logs(
     offset: int = Query(default=0, ge=0),
     days: int = Query(default=0, ge=-1),
     upstream_model: str | None = None,
+    agent: Literal["codex", "claude_code", "other", "unknown"] | None = None,
     gateway_key_id: str | None = None,
     model_prefix: str | None = None,
     status_filter: RequestLogStatusFilter | None = Query(default=None, alias="status"),
@@ -34,6 +35,7 @@ async def list_request_logs(
         offset=offset,
         days=days,
         upstream_model=upstream_model,
+        agent=agent,
         gateway_key_id=gateway_key_id,
         model_prefix=model_prefix,
         status_filter=status_filter,

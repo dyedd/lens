@@ -127,10 +127,15 @@ export function ModelAnalyticsCard({
             model: row.key,
             ...(filterKey !== null ? { channel: filterKey } : {}),
           }
-        : {
-            channel: row.key,
-            ...(filterKey !== null ? { model: filterKey } : {}),
-          }),
+        : dimension === "channel"
+          ? {
+              channel: row.key,
+              ...(filterKey !== null ? { model: filterKey } : {}),
+            }
+          : {
+              agent: row.key,
+              ...(filterKey !== null ? { model: filterKey } : {}),
+            }),
     });
   const selected = rows.find((row) => row.key === selectedKey);
   const formatValue = (value: number) =>
@@ -179,14 +184,18 @@ export function ModelAnalyticsCard({
         ? zh
           ? "未知模型"
           : "Unknown model"
-        : zh
-          ? "未知渠道"
-          : "Unknown channel";
+        : dim === "channel"
+          ? zh
+            ? "未知渠道"
+            : "Unknown channel"
+          : zh
+            ? "未知 Agent"
+            : "Unknown agent";
   return (
     <section className="flex min-w-0 flex-col gap-3">
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 px-1">
         <h3 className="text-sm font-semibold">
-          {zh ? "模型与渠道" : "Models and channels"}
+          {zh ? "模型、渠道与 Agent" : "Models, channels, and agents"}
         </h3>
         <div className="flex flex-wrap items-center gap-2">
           <SegmentedControl
@@ -199,6 +208,7 @@ export function ModelAnalyticsCard({
             options={[
               { value: "model", label: zh ? "按模型" : "By model" },
               { value: "channel", label: zh ? "按渠道" : "By channel" },
+              { value: "agent", label: zh ? "按 Agent" : "By agent" },
             ]}
           />
           <Popover open={filterOpen} onOpenChange={setFilterOpen}>
@@ -272,8 +282,8 @@ export function ModelAnalyticsCard({
       !analytics.coverage.has_dimension_history ? (
         <p role="status" className="px-1 text-xs text-muted-foreground">
           {zh
-            ? "部分旧统计未保存模型和渠道明细，以下仅展示可归因数据。"
-            : "Some older statistics lack model and channel details. Only attributable usage is shown."}
+            ? "部分旧统计未保存归因明细，以下仅展示可归因数据。"
+            : "Some older statistics lack attribution details. Only attributable usage is shown."}
         </p>
       ) : null}
       <Table>
@@ -284,9 +294,11 @@ export function ModelAnalyticsCard({
                 ? zh
                   ? "实际上游模型"
                   : "Upstream model"
-                : zh
-                  ? "渠道"
-                  : "Channel"}
+                : dimension === "channel"
+                  ? zh
+                    ? "渠道"
+                    : "Channel"
+                  : "Agent"}
             </TableHead>
             {columns.map((column) => (
               <TableHead
@@ -415,27 +427,29 @@ export function ModelAnalyticsCard({
                       </TableCell>
                     ))}
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs"
-                        onClick={() => {
-                          onDimensionChange(
-                            dimension === "model" ? "channel" : "model",
-                          );
-                          onFilterChange(row.key);
-                          setSelectedKey(null);
-                          setPage(1);
-                        }}
-                      >
-                        {dimension === "model"
-                          ? zh
-                            ? "比较渠道"
-                            : "Compare channels"
-                          : zh
-                            ? "比较模型"
-                            : "Compare models"}
-                      </Button>
+                      {dimension === "agent" ? null : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          onClick={() => {
+                            onDimensionChange(
+                              dimension === "model" ? "channel" : "model",
+                            );
+                            onFilterChange(row.key);
+                            setSelectedKey(null);
+                            setPage(1);
+                          }}
+                        >
+                          {dimension === "model"
+                            ? zh
+                              ? "比较渠道"
+                              : "Compare channels"
+                            : zh
+                              ? "比较模型"
+                              : "Compare models"}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                   {expandedKey === row.key ? (
@@ -579,8 +593,8 @@ export function ModelAnalyticsCard({
       ) : rows.length ? (
         <p className="px-1 text-xs text-muted-foreground">
           {zh
-            ? "点击模型或渠道查看趋势"
-            : "Select a model or channel to view its trend"}
+            ? "点击模型、渠道或 Agent 查看趋势"
+            : "Select a model, channel, or agent to view its trend"}
         </p>
       ) : null}
     </section>

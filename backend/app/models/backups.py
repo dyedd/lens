@@ -62,6 +62,7 @@ class ConfigBackupOverviewAttributionHourlyStat(StrictBaseModel):
     hour_start: datetime
     upstream_model: str
     channel_id: str
+    agent: str = "unknown"
     channel_name: str = ""
     request_count: int = 0
     successful_requests: int = 0

@@ -5,7 +5,7 @@ export type AnalysisMetric =
   | "tokens"
   | "cache"
   | "duration";
-export type AttributionDimension = "model" | "channel";
+export type AttributionDimension = "model" | "channel" | "agent";
 export type HeatmapPoint = {
   date: string;
   count: number;
@@ -15,6 +15,7 @@ export function requestLogsHref(
   filters: {
     model?: string;
     channel?: string;
+    agent?: string;
     status?: "success" | "failed";
   } = {},
 ) {
@@ -23,6 +24,7 @@ export function requestLogsHref(
   if (filters.model !== undefined) params.set("upstream_model", filters.model);
   if (filters.channel !== undefined)
     params.set("channel", filters.channel || "n/a");
+  if (filters.agent !== undefined) params.set("agent", filters.agent);
   return `/requests?${params}`;
 }
 export const TIME_RANGE_OPTIONS = [

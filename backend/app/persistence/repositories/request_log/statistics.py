@@ -20,6 +20,7 @@ from app.persistence.stats_entities import (
     RequestLogDailyStatsEntity,
 )
 
+from .agents import classify_user_agent
 from .query import REQUEST_LOG_STATS_COLUMNS
 from .types import REQUEST_LOG_TERMINAL_STATUSES, RuntimeTimeZone, SettingsPort
 
@@ -146,6 +147,7 @@ class RequestLogStatistics:
                 RequestLogEntity.upstream_model_name,
                 RequestLogEntity.channel_id,
                 RequestLogEntity.channel_name,
+                RequestLogEntity.user_agent,
                 RequestLogEntity.latency_ms,
                 RequestLogEntity.input_tokens,
                 RequestLogEntity.cache_read_input_tokens,
@@ -178,17 +180,17 @@ class RequestLogStatistics:
     async def _merge_attribution_buckets(
         self,
         session: AsyncSession,
-        buckets: Sequence[tuple[datetime, str, str, Mapping[str, Any]]],
+        buckets: Sequence[tuple[datetime, str, str, str, Mapping[str, Any]]],
     ) -> None:
         entities: dict[
-            tuple[datetime, str, str], OverviewAttributionHourlyStatsEntity
+            tuple[datetime, str, str, str], OverviewAttributionHourlyStatsEntity
         ] = {}
         for keys in batched(
             (
-                (hour_start, model, channel_id)
-                for hour_start, model, channel_id, _ in buckets
+                (hour_start, model, channel_id, agent)
+                for hour_start, model, channel_id, agent, _ in buckets
             ),
-            250,
+            200,
             strict=False,
         ):
             found = await session.scalars(
@@ -197,21 +199,23 @@ class RequestLogStatistics:
                         OverviewAttributionHourlyStatsEntity.hour_start,
                         OverviewAttributionHourlyStatsEntity.upstream_model,
                         OverviewAttributionHourlyStatsEntity.channel_id,
+                        OverviewAttributionHourlyStatsEntity.agent,
                     ).in_(keys)
                 )
             )
             entities.update(
-                ((row.hour_start, row.upstream_model, row.channel_id), row)
+                ((row.hour_start, row.upstream_model, row.channel_id, row.agent), row)
                 for row in found
             )
-        for hour_start, model, channel_id, values in buckets:
-            key = (hour_start, model, channel_id)
+        for hour_start, model, channel_id, agent, values in buckets:
+            key = (hour_start, model, channel_id, agent)
             entity = entities.get(key)
             if entity is None:
                 entity = OverviewAttributionHourlyStatsEntity(
                     hour_start=hour_start,
                     upstream_model=model,
                     channel_id=channel_id,
+                    agent=agent,
                     channel_name=str(values["channel_name"]),
                     request_count=0,
                     successful_requests=0,
@@ -447,8 +451,8 @@ class RequestLogStatistics:
     @classmethod
     def attribution_stats_by_hour(
         cls, rows: Sequence[Mapping[str, Any]], time_zone: ZoneInfo
-    ) -> list[tuple[datetime, str, str, dict[str, int | float | str]]]:
-        buckets: dict[tuple[datetime, str, str], dict[str, int | float | str]] = {}
+    ) -> list[tuple[datetime, str, str, str, dict[str, int | float | str]]]:
+        buckets: dict[tuple[datetime, str, str, str], dict[str, int | float | str]] = {}
         for row in rows:
             created_at = cls.to_utc_datetime(row["created_at"])
             if created_at is None:
@@ -462,7 +466,8 @@ class RequestLogStatistics:
             )
             model = str(row["upstream_model_name"] or "")[:200]
             channel_id = str(row["channel_id"] or "")[:160]
-            key = (hour_start, model, channel_id)
+            agent = classify_user_agent(row["user_agent"])
+            key = (hour_start, model, channel_id, agent)
             current = buckets.setdefault(
                 key,
                 {
@@ -502,6 +507,8 @@ class RequestLogStatistics:
             if row["channel_name"]:
                 current["channel_name"] = str(row["channel_name"])
         return [
-            (hour_start, model, channel_id, values)
-            for (hour_start, model, channel_id), values in sorted(buckets.items())
+            (hour_start, model, channel_id, agent, values)
+            for (hour_start, model, channel_id, agent), values in sorted(
+                buckets.items()
+            )
         ]
