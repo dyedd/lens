@@ -14,6 +14,12 @@ import { useRequestsScreen } from "./requests/useRequestsScreen";
 /** Render searchable request logs and request details. */
 export function RequestsScreen() {
   const screen = useRequestsScreen();
+  const agentLabels: Record<string, string> = {
+    codex: "Codex",
+    claude_code: "Claude Code",
+    other: titleForLocale(screen.locale, "其他", "Other"),
+    unknown: titleForLocale(screen.locale, "未知", "Unknown"),
+  };
   const selectedItem =
     screen.logsQuery.data?.items.find((item) => item.id === screen.detailId) ??
     screen.detailQuery.data ??
@@ -35,6 +41,9 @@ export function RequestsScreen() {
                 `实际上游模型：${screen.model || "未知模型"}`,
                 `Upstream model: ${screen.model || "Unknown model"}`,
               )
+            : null,
+          screen.agent !== null
+            ? `Agent: ${agentLabels[screen.agent] ?? screen.agent}`
             : null,
         ]
           .filter(Boolean)

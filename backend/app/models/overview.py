@@ -92,7 +92,7 @@ class OverviewAttribution(StrictBaseModel):
     items: list[OverviewAttributionItem] = Field(default_factory=list)
     trend: list[OverviewAttributionTrendPoint] = Field(default_factory=list)
     filters: list[OverviewAttributionFilterOption] = Field(default_factory=list)
-    dimension: Literal["model", "channel"]
+    dimension: Literal["model", "channel", "agent"]
     metric: Literal["requests", "tokens", "cost", "cache", "duration"]
     filter_key: str | None = None
     filter_label: str | None = None

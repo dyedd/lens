@@ -40,8 +40,10 @@ export function useRequestsScreen() {
     ? searchParams.get("days")!
     : "0";
   const upstreamModel = searchParams.get("upstream_model");
+  const requestedAgent = searchParams.get("agent");
   const [period, setPeriod] = useState(days);
   const [model, setModel] = useState(upstreamModel);
+  const [agent, setAgent] = useState(requestedAgent);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [page, setPage] = useState(0);
@@ -83,6 +85,7 @@ export function useRequestsScreen() {
     if (sortMode !== "latest") params.set("sort", sortMode);
     if (period !== "0") params.set("days", period);
     if (model !== null) params.set("upstream_model", model);
+    if (agent !== null) params.set("agent", agent);
     return `/admin/request-logs/page?${params.toString()}`;
   }, [
     channel,
@@ -96,6 +99,7 @@ export function useRequestsScreen() {
     status,
     period,
     model,
+    agent,
   ]);
   const logsQuery = useQuery({
     queryKey: [
@@ -111,6 +115,7 @@ export function useRequestsScreen() {
       sortMode,
       period,
       model,
+      agent,
     ],
     queryFn: () => apiRequest<RequestLogPage>(requestLogsQuery),
     placeholderData: keepPreviousData,
@@ -156,10 +161,12 @@ export function useRequestsScreen() {
     gatewayKeyId !== null,
     period !== "0",
     model !== null,
+    agent !== null,
   ].filter(Boolean).length;
   useEffect(() => {
     setPeriod(days);
     setModel(upstreamModel);
+    setAgent(requestedAgent);
     setStatusFilter(
       requestedStatus === "failed" || requestedStatus === "success"
         ? requestedStatus
@@ -167,7 +174,7 @@ export function useRequestsScreen() {
     );
     setChannelFilter(requestedChannel ?? "all");
     setPage(0);
-  }, [days, upstreamModel, requestedStatus, requestedChannel]);
+  }, [days, upstreamModel, requestedStatus, requestedChannel, requestedAgent]);
   useEffect(() => {
     if (selectedModelPrefix !== effectiveModelPrefix)
       setSelectedModelPrefix(effectiveModelPrefix);
@@ -212,6 +219,7 @@ export function useRequestsScreen() {
     setSelectedGatewayKeyId("all");
     setPeriod("0");
     setModel(null);
+    setAgent(null);
     setSearchParams({}, { replace: true });
     setPage(0);
   }
@@ -262,6 +270,7 @@ export function useRequestsScreen() {
   }
   return {
     activeFilterCount,
+    agent,
     period,
     model,
     changePageSize,
