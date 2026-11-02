@@ -155,11 +155,16 @@ export function modelGroupItemKey(
 
 /** Build the stable key used to fold equivalent model members. */
 export function modelFoldKey(
-  protocolConfigId: string,
-  credentialId: string,
-  modelName: string,
+  item: Pick<
+    FormItem,
+    "site_id" | "protocol_config_id" | "credential_id" | "model_name"
+  >,
 ): string {
-  return `${protocolConfigId}::${credentialId}::${modelName}`;
+  const channelKey = modelGroupChannelKey(
+    item.site_id,
+    item.protocol_config_id,
+  );
+  return `${channelKey}::${item.credential_id}::${item.model_name}`;
 }
 
 /** Build the shared channel identity used by failover ordering. */
@@ -177,11 +182,7 @@ export function buildGroupDisplayMembers(
   const memberMap = new Map<string, GroupDisplayMember>();
 
   for (const item of items) {
-    const key = modelFoldKey(
-      item.protocol_config_id,
-      item.credential_id,
-      item.model_name,
-    );
+    const key = modelFoldKey(item);
     let member = memberMap.get(key);
     if (!member) {
       member = {

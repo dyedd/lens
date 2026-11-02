@@ -9,14 +9,6 @@ import {
   moveItems,
 } from "./modelGroupFormatting";
 
-function formItemMemberKey(item: FormItem) {
-  return modelFoldKey(
-    item.protocol_config_id,
-    item.credential_id,
-    item.model_name,
-  );
-}
-
 function formItemChannelKey(item: FormItem) {
   return modelGroupChannelKey(item.site_id, item.channel_id);
 }
@@ -30,7 +22,7 @@ type FormItemMember = {
 function groupFormItemsByMember(items: FormItem[]): FormItemMember[] {
   const membersByKey = new Map<string, FormItemMember>();
   for (const item of items) {
-    const key = formItemMemberKey(item);
+    const key = modelFoldKey(item);
     let member = membersByKey.get(key);
     if (!member) {
       member = {
@@ -161,7 +153,7 @@ export function useGroupMembers(
     setForm((current) =>
       removeFormItems(
         current,
-        (item) => formItemMemberKey(item) === foldKey,
+        (item) => modelFoldKey(item) === foldKey,
         isAutoJoined,
       ),
     );
@@ -171,7 +163,7 @@ export function useGroupMembers(
   function restoreExcludedMember(foldKey: string) {
     setForm((current) => {
       const restoredItems = current.excluded_items.filter(
-        (item) => formItemMemberKey(item) === foldKey,
+        (item) => modelFoldKey(item) === foldKey,
       );
       if (!restoredItems.length) return current;
       return {
@@ -188,14 +180,14 @@ export function useGroupMembers(
           })),
         ],
         excluded_items: current.excluded_items.filter(
-          (item) => formItemMemberKey(item) !== foldKey,
+          (item) => modelFoldKey(item) !== foldKey,
         ),
       };
     });
   }
 
   function toggleFoldedMember(foldKey: string, enabled: boolean) {
-    setItemsEnabled(enabled, (item) => formItemMemberKey(item) === foldKey);
+    setItemsEnabled(enabled, (item) => modelFoldKey(item) === foldKey);
   }
 
   function toggleChannelMembers(channelKey: string, enabled: boolean) {
