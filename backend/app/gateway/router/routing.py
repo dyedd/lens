@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Protocol
@@ -9,6 +10,7 @@ from ...core.runtime_channel_ids import protocol_config_id_from_runtime_channel_
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouteState
+from ...plugins.contract import RouteSeat
 from .targets import (
     RouteTarget,
     build_route_targets,
@@ -16,6 +18,9 @@ from .targets import (
     endpoint_supports_protocol,
     target_key,
 )
+
+# (策略 id, pool, 候选) -> 下标的排列；None 表示按列出的顺序。路由器不再校验排列。
+SeatOrderer = Callable[[str, str, Sequence[RouteSeat]], list[int] | None]
 
 
 @dataclass(slots=True)
@@ -111,12 +116,13 @@ class RoutePlanner:
         channels: list[ChannelConfig],
         protocol: ProtocolKind,
         requested_model: str | None,
-        strategy: RoutingStrategy,
+        strategy: str,
         allowed_channel_ids: set[str] | None,
         use_model_matching: bool,
         route_targets: list[RouteTarget] | None,
         cursor_key: str | None,
         required_context_tokens: int | None = None,
+        seat_orderer: SeatOrderer | None = None,
     ) -> RouteSelection:
         pool = self._build_active_pool(
             channels,
@@ -164,9 +170,16 @@ class RoutePlanner:
             if endpoint_priority(target.channel, protocol) < preferred_priority
         ]
         ordered_available = [
-            *self._order_available(preferred_available, route_key, strategy),
             *self._order_available(
-                fallback_available, route_key, strategy, mutate=False
+                preferred_available, route_key, strategy, seat_orderer=seat_orderer
+            ),
+            *self._order_available(
+                fallback_available,
+                route_key,
+                strategy,
+                strategy_pool=f"{route_key}#fallback",
+                seat_orderer=seat_orderer,
+                mutate=strategy not in RoutingStrategy,
             ),
         ]
         affinity = self._affinity.get(route_key)
@@ -195,15 +208,17 @@ class RoutePlanner:
         self,
         available: list[RouteTarget],
         route_key: str,
-        strategy: RoutingStrategy,
+        strategy: str,
         *,
         mutate: bool = True,
+        strategy_pool: str | None = None,
+        seat_orderer: SeatOrderer | None = None,
     ) -> list[RouteTarget]:
         if not available:
             return []
         if strategy == RoutingStrategy.FAILOVER:
             return list(available)
-        members: dict[tuple[str, str | None, str | None], RouteTarget] = {}
+        members: dict[tuple[str, str | None, str | None], list[RouteTarget]] = {}
         for target in available:
             member_key = (
                 target.channel.site_id
@@ -211,9 +226,31 @@ class RoutePlanner:
                 target.credential_id,
                 target.model_name,
             )
-            members.setdefault(member_key, target)
+            members.setdefault(member_key, []).append(target)
+        member_outlets = list(members.values())
+        member_targets = [outlets[0] for outlets in member_outlets]
+        if strategy not in RoutingStrategy:
+            if mutate and len(member_targets) >= 2 and seat_orderer is not None:
+                seats = [
+                    RouteSeat(
+                        channel_id=target.channel.id,
+                        channel_name=target.channel.name,
+                        credential_id=target.credential_id,
+                        credential_name=target.credential_name or "",
+                        model_name=target.model_name,
+                        rate_multiplier=target.rate_multiplier,
+                        context_window=target.context_window,
+                        health_score=self._health.score(target),
+                    )
+                    for target in member_targets
+                ]
+                order = seat_orderer(strategy, strategy_pool or route_key, seats)
+                if order is not None:
+                    return [
+                        target for index in order for target in member_outlets[index]
+                    ]
+            return list(available)
         # 同一密钥的多个出口只占一个轮询位置，其余出口保留用于故障切换。
-        member_targets = list(members.values())
         primary_index = self._swrr_pick_index(member_targets, route_key, mutate=mutate)
         primary = member_targets[primary_index]
         fallbacks = [target for target in available if target is not primary]

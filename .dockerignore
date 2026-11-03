@@ -16,6 +16,8 @@ build
 *.egg-info
 .env
 data
+.agents
+examples/plugins
 AGENTS.md
 CLAUDE.md
 GEMINI.md

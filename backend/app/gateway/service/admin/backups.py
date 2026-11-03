@@ -64,6 +64,7 @@ async def import_settings_bundle(
 
     app_state.settings_repo.invalidate_settings_cache()
     await run_model_group_reconcile(app_state)
+    await app_state.load_plugins()
     return result
 
 

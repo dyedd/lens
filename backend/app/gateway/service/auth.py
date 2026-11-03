@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ...core.auth import create_access_token, decode_access_token
 from ...core.config import settings
+from ...core.version import read_system_version
 from ...models.auth import (
     AdminLoginRequest,
     AdminPasswordChangeRequest,
@@ -32,7 +33,7 @@ from ...persistence.settings_keys import (
     SETTING_LATEST_VERSION_URL,
     SETTING_VERSION_CHECK_AT,
 )
-from .app_state import app_state, logger, read_system_version
+from .app_state import app_state, logger
 from .lifecycle import auth_scheme
 
 _LOGIN_FAILURE_LIMIT = 5

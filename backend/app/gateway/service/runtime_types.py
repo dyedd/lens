@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 
 from ...core.model_name_parser import ParsedModelName
 from ...models.model_groups import ModelGroup
-from ...models.protocols import RoutingStrategy
 from ..router import RouteSelection, RouteTarget
 from ..router.cooldown import CooldownScope, ErrorCategory
 
@@ -25,7 +24,7 @@ class RoutingPlan:
     resolved_group_name: str | None
     requested_group: ModelGroup | None
     resolved_group: ModelGroup | None
-    strategy: RoutingStrategy
+    strategy: str
     route_targets: list[RouteTarget] | None
     use_model_matching: bool
     cursor_key: str | None = None
