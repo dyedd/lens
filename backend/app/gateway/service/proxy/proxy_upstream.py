@@ -14,6 +14,13 @@ from fastapi import Response
 from ....core.context_windows import is_context_window_exceeded_error
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
+from ....plugins.contract import UpstreamCall, UpstreamResponse
+from ....plugins.runtime import (
+    PluginRun,
+    apply_response_hooks,
+    apply_upstream_hooks,
+    rewrite_event_stream,
+)
 from ...converters import (
     convert_response,
     convert_stream_iterator,
@@ -78,6 +85,7 @@ class UpstreamResponseContext:
     request_content: str | None
     log_body_enabled: bool
     deadline: RequestDeadline
+    plugin_run: PluginRun
 
 
 @dataclass(slots=True)
@@ -86,6 +94,24 @@ class UpstreamExecutionRequest:
     body_bytes: bytes
     response_context: UpstreamResponseContext
     global_proxy_url: str | None
+
+
+async def _apply_reply_hooks(
+    context: UpstreamResponseContext,
+    response: httpx.Response,
+    content: bytes,
+    headers: dict[str, str],
+) -> UpstreamResponse:
+    return await apply_response_hooks(
+        context.plugin_run,
+        UpstreamResponse(
+            channel=context.channel,
+            protocol=(context.client_protocol or context.channel.protocol).value,
+            status_code=response.status_code,
+            headers=headers,
+            content=content,
+        ),
+    )
 
 
 def _image_count(body: dict[str, Any], payload: Any) -> int:
@@ -201,7 +227,11 @@ async def _json_upstream_result(
             content=content,
             status_code=response.status_code,
             media_type=media_type,
-            headers=headers,
+            headers={
+                key: value
+                for key, value in headers.items()
+                if key.lower() not in {"content-length", "transfer-encoding"}
+            },
         ),
         status_code=response.status_code,
         is_stream=False,
@@ -268,6 +298,9 @@ async def _build_anthropic_sse_to_json_result(
             raise _invalid_upstream("Invalid upstream response", exc) from exc
         response_content = decode_content_bytes(content)
 
+    if media_type == "application/json":
+        hooked = await _apply_reply_hooks(context, response, content, response_headers)
+        content, response_headers = hooked.content, hooked.headers
     return await _json_upstream_result(
         response,
         content=content,
@@ -333,6 +366,15 @@ async def _build_stream_result(
         converted_iter = raw_iter
         stream_media = response.headers.get("content-type")
 
+    converted_iter = rewrite_event_stream(
+        context.plugin_run,
+        converted_iter,
+        event_format=(
+            "ndjson"
+            if capture.event_format == "ndjson" and stream_media != "text/event-stream"
+            else "sse"
+        ),
+    )
     converted_iter = _stream_client_iterator(converted_iter, capture, client_protocol)
 
     return UpstreamResult(
@@ -421,11 +463,17 @@ async def _build_json_result(
         except ValueError as exc:
             raise _invalid_upstream("Invalid upstream response", exc) from exc
 
+    response_content = (
+        decode_log_content_bytes(content) if context.log_body_enabled else None
+    )
+    hooked = await _apply_reply_hooks(
+        context, response, content, passthrough_headers(response.headers)
+    )
     return await _json_upstream_result(
         response,
-        content=content,
+        content=hooked.content,
         media_type=response.headers.get("content-type"),
-        headers=passthrough_headers(response.headers),
+        headers=hooked.headers,
         parsed=parsed,
         context=context,
         image_count=(
@@ -433,13 +481,11 @@ async def _build_json_result(
             if channel.protocol == ProtocolKind.OPENAI_IMAGE
             else 0
         ),
-        response_content=(
-            decode_log_content_bytes(content) if context.log_body_enabled else None
-        ),
+        response_content=response_content,
     )
 
 
-def prepare_upstream_request(
+async def prepare_upstream_request(
     channel: ChannelConfig,
     body: dict[str, Any],
     *,
@@ -450,6 +496,7 @@ def prepare_upstream_request(
     model_group_headers: Mapping[str, str] | None,
     log_body_enabled: bool,
     max_request_body_bytes: int,
+    plugin_run: PluginRun,
     path_suffix: str | None = None,
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
 ) -> tuple[Any, bytes, str | None]:
@@ -462,6 +509,25 @@ def prepare_upstream_request(
         upstream_headers_config=upstream_headers_config,
         model_group_headers=model_group_headers,
         path_suffix=path_suffix,
+    )
+    target_model = upstream.json_body.get("model")
+    hooked = await apply_upstream_hooks(
+        plugin_run,
+        UpstreamCall(
+            channel=channel,
+            protocol=channel.protocol.value,
+            url=upstream.url,
+            headers=dict(upstream.headers),
+            body=upstream.json_body,
+            credential_id=credential_id,
+            model_name=target_model if isinstance(target_model, str) else None,
+        ),
+    )
+    upstream = UpstreamRequest(
+        method=upstream.method,
+        url=hooked.url,
+        headers=hooked.headers,
+        json_body=hooked.body,
     )
     if multipart_files is not None:
         multipart_request = httpx.Request(

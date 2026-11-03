@@ -17,7 +17,8 @@ export type ParamOverrideRule = {
   value?: unknown;
 };
 
-export type RoutingStrategy = "round_robin" | "failover";
+/** 内置的 "round_robin"、"failover"，或插件提供的 `<插件 id>/<策略名>`。 */
+export type RoutingStrategy = string;
 export type MatchRegexOperator = "and" | "or";
 export type ModelGroupItemState =
   | "ready"
