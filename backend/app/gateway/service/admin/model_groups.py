@@ -94,6 +94,7 @@ async def test_model_group_model(
     return await run_site_model_probe(
         probe_payload,
         request,
+        channel=channel,
         model_group_headers=group.headers,
         model_group_param_override=group.param_override,
     )
