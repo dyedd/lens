@@ -326,6 +326,12 @@ export function foldGroupMembers(
       membersByKey.set(key, member);
     }
     member.subItems.push(evaluatedItem);
+    if (member.rate_multiplier !== evaluatedItem.rate_multiplier)
+      member.rate_multiplier = null;
+    if (member.context_window !== evaluatedItem.context_window)
+      member.context_window = null;
+    if (member.context_window_source !== evaluatedItem.context_window_source)
+      member.context_window_source = null;
     if (member.source !== evaluatedItem.source) member.source = "manual";
     if (evaluatedItem.enabled) member.enabled_item_count += 1;
     else member.disabled_item_count += 1;

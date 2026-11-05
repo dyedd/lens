@@ -54,7 +54,7 @@ export type PickerModelItem = {
   protocol_config_id: string;
   credential_id: string;
   model_name: string;
-  /** Context window the upstream model list reports. */
+  protocol: ProtocolKind;
   context_window: number | null;
 };
 
@@ -80,15 +80,15 @@ export type AggregatedModelMember = {
   credentialName: string;
   /** Key label plus masked value. */
   credentialTitle: string;
+  baseUrl: string;
 };
 
 export type AggregatedModel = {
-  /** Group key shared by every same-name model inside one protocol config. */
+  /** 同一渠道内同名模型共用的展示键。 */
   key: string;
   modelName: string;
-  /** Base URL of the protocol config that owns this row. */
-  baseUrl: string;
-  /** Number of keys bound to the owning protocol config. */
+  baseUrls: string[];
+  /** 渠道各出口绑定的 Key 去重计数。 */
   credentialCount: number;
   protocols: ProtocolKind[];
   enabled: boolean;

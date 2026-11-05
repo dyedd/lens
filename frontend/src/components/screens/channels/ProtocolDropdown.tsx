@@ -5,6 +5,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/Popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
 import { PROTOCOL_LIST, protocolLabel } from "@/lib/protocols";
@@ -18,22 +23,6 @@ type Props = {
   onChange: (protocols: ProtocolKind[]) => void;
 };
 
-/** Mirrors backend protocol_reachability: every chat protocol converts for the others. */
-function protocolNote(protocol: ProtocolKind, locale: Locale) {
-  const zh = locale === "zh-CN";
-  if (
-    protocol === "openai_chat" ||
-    protocol === "openai_responses" ||
-    protocol === "anthropic" ||
-    protocol === "gemini"
-  ) {
-    return zh
-      ? "可转换服务其他三种 chat 协议客户端"
-      : "Can convert for the other three chat protocols";
-  }
-  return "";
-}
-
 export function ProtocolDropdown({
   value,
   locale,
@@ -42,8 +31,9 @@ export function ProtocolDropdown({
   onChange,
 }: Props) {
   const selected = new Set(value);
-  const selectedLabel = ([...PROTOCOL_LIST] as ProtocolKind[])
-    .filter((protocol) => selected.has(protocol))
+  const selectedLabel = PROTOCOL_LIST.filter((protocol) =>
+    selected.has(protocol),
+  )
     .map((protocol) => protocolLabel(protocol, locale))
     .join(", ");
 
@@ -63,20 +53,33 @@ export function ProtocolDropdown({
           variant="outline"
           size="sm"
           disabled={disabled}
+          aria-label={
+            selectedLabel ||
+            (locale === "zh-CN" ? "选择上游协议" : "Select upstream protocols")
+          }
           className={cn(
-            "h-8 min-w-0 w-full justify-between gap-2 border-input/40 bg-transparent px-3 py-1 text-sm font-normal text-muted-foreground shadow-none hover:bg-transparent focus-visible:border-ring/60 focus-visible:ring-[1px] focus-visible:ring-ring/40 has-[>svg]:px-3",
+            "h-auto min-h-8 min-w-0 w-full max-w-72 justify-between gap-2 border-input/40 bg-transparent px-3 py-1 text-sm font-normal text-muted-foreground shadow-none hover:bg-transparent focus-visible:border-ring/60 focus-visible:ring-[1px] focus-visible:ring-ring/40 has-[>svg]:px-3",
             className,
           )}
         >
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-left",
-              selectedLabel && "text-foreground/75",
-            )}
-          >
-            {selectedLabel ||
-              (locale === "zh-CN" ? "选择协议" : "Select protocols")}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-left",
+                  selectedLabel && "text-foreground/75",
+                )}
+              >
+                {selectedLabel ||
+                  (locale === "zh-CN" ? "选择协议" : "Select protocols")}
+              </span>
+            </TooltipTrigger>
+            {selectedLabel ? (
+              <TooltipContent className="z-[110] max-w-sm break-words">
+                {selectedLabel}
+              </TooltipContent>
+            ) : null}
+          </Tooltip>
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -91,15 +94,8 @@ export function ProtocolDropdown({
             onClick={() => toggle(protocol)}
             className="relative h-auto min-h-7 w-full justify-start rounded-md py-1 pr-8 pl-2 font-normal"
           >
-            <span className="grid min-w-0 flex-1 text-left">
-              <span className="truncate">
-                {protocolLabel(protocol, locale)}
-              </span>
-              {protocolNote(protocol, locale) ? (
-                <span className="text-xs leading-4 whitespace-normal text-muted-foreground">
-                  {protocolNote(protocol, locale)}
-                </span>
-              ) : null}
+            <span className="min-w-0 flex-1 truncate text-left">
+              {protocolLabel(protocol, locale)}
             </span>
             {selected.has(protocol) ? (
               <Check className="absolute right-2" />

@@ -113,13 +113,18 @@ export function useGroupCandidates({
       const itemsToAdd = newFormItems.filter(
         (item) => !existingKeys.has(modelGroupItemKey(item)),
       );
-      const addedKeys = new Set(itemsToAdd.map(modelFoldKey));
+      const addedKeys = new Set(
+        itemsToAdd.map(
+          (item) => `${modelFoldKey(item)}::${item.credential_id}`,
+        ),
+      );
       return itemsToAdd.length
         ? {
             ...current,
             items: [...current.items, ...itemsToAdd],
             excluded_items: current.excluded_items.filter(
-              (item) => !addedKeys.has(modelFoldKey(item)),
+              (item) =>
+                !addedKeys.has(`${modelFoldKey(item)}::${item.credential_id}`),
             ),
           }
         : current;
@@ -151,7 +156,7 @@ export function useGroupCandidates({
     groupedCandidates,
     isAutoJoined,
     setCandidateRegex,
-    visibleCandidateCount: filteredCandidates.length,
+    visibleCandidateCount: new Set(filteredCandidates.map(modelFoldKey)).size,
     toggleChannel,
   };
 }

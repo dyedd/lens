@@ -41,7 +41,7 @@ import type {
 } from "./groupTypes";
 import {
   buildPluginStrategyIds,
-  formatCredentialIdentity,
+  formatMemberIdentity,
   isGroupEnabled,
   STRATEGY_OPTIONS,
   strategyLabel,
@@ -125,7 +125,7 @@ function GroupMembersPopover({
               </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate">
-                  {formatCredentialIdentity(member, locale)}
+                  {formatMemberIdentity(member.items, locale)}
                 </div>
                 {member.model_name !== group.name ? (
                   <div className="truncate font-mono text-xs text-muted-foreground">

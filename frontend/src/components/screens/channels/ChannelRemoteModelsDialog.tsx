@@ -34,11 +34,11 @@ type Props = {
   locale: Locale;
   channelName: string;
   loading: boolean;
-  /** Protocols of the selected models are being detected. */
+  /** 后台正在补齐已加入模型的上下文。 */
   importing: boolean;
   onOpenChange: (open: boolean) => void;
   onLoad: () => Promise<RemoteModelCatalog | null>;
-  onImport: (items: PickerModelItem[]) => Promise<void>;
+  onImport: (items: PickerModelItem[]) => void;
 };
 
 function statusLabel(status: CatalogRow["status"], locale: Locale) {
@@ -118,15 +118,15 @@ export function ChannelRemoteModelsDialog({
     });
   }
 
-  async function importSelected() {
+  function importSelected() {
     const items = (catalog?.items ?? []).filter((item) =>
       selected.has(item.model_name),
     );
-    await onImport(items);
+    onImport(items);
     toast.success(
       locale === "zh-CN"
-        ? `已加入 ${selected.size} 个模型，保存后同步生效。`
-        : `Added ${selected.size} models; they apply after the channel is saved.`,
+        ? `已加入 ${selected.size} 个模型，保存后生效。`
+        : `Added ${selected.size} models; save to apply.`,
     );
     onOpenChange(false);
   }
@@ -162,7 +162,7 @@ export function ChannelRemoteModelsDialog({
               type="button"
               size="sm"
               disabled={loading || importing || selected.size === 0}
-              onClick={() => void importSelected()}
+              onClick={importSelected}
             >
               {importing ? (
                 <RefreshCw className="size-3.5 animate-spin" />
@@ -171,8 +171,8 @@ export function ChannelRemoteModelsDialog({
               )}
               {importing
                 ? locale === "zh-CN"
-                  ? "识别协议中..."
-                  : "Detecting protocols..."
+                  ? "后台识别中..."
+                  : "Detecting in background..."
                 : locale === "zh-CN"
                   ? `加入所选 ${selected.size}`
                   : `Add selected ${selected.size}`}

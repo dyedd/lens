@@ -255,13 +255,7 @@ async def _sync_credential_models(
         ):
             raise ValueError("no usable shared model catalog")
         upstream_models = await fetch_upstream_models(fetch_channel)
-        if not upstream_models:
-            raise ValueError("upstream returned no models")
-        pinned = ENDPOINT_KIND_PROTOCOLS.get(fetch_channel.endpoint_kind) or (
-            fetch_channel.protocol
-            if fetch_channel.protocol in NATIVE_LISTING_PROTOCOLS
-            else None
-        )
+        pinned = ENDPOINT_KIND_PROTOCOLS.get(fetch_channel.endpoint_kind)
         existing_protocols: dict[str, set[ProtocolKind]] = defaultdict(set)
         for config in site.protocols:
             for model in config.models:
@@ -279,7 +273,14 @@ async def _sync_credential_models(
             or resolve_onboard_protocol(
                 model.name,
                 pinned=pinned,
-                declared=model.protocols,
+                declared=(
+                    *model.protocols,
+                    *(
+                        (fetch_channel.protocol,)
+                        if fetch_channel.protocol in NATIVE_LISTING_PROTOCOLS
+                        else ()
+                    ),
+                ),
                 configured=protocol_config.protocols,
             )
             for model in upstream_models

@@ -35,12 +35,9 @@ export function protocolConfigModelKey(
   ]);
 }
 
-/** Builds the collapsed overview row key shared by same-name models. */
-export function aggregateModelGroupKey(
-  protocolConfig: Pick<FormProtocolConfig, "id">,
-  modelName: string,
-) {
-  return JSON.stringify([protocolConfig.id, modelName]);
+/** 同一渠道的同名模型共用一行，具体出口和 Key 保留各自记录。 */
+export function aggregateModelGroupKey(modelName: string) {
+  return JSON.stringify(["model", modelName]);
 }
 
 /** Reports whether a key targets a whole model group instead of one model. */

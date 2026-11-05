@@ -231,15 +231,24 @@ cd frontend
 pnpm dev
 ```
 
+Run the backend API tests:
+
+```bash
+uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal
+```
+
 ## Usage
 
 ### 1. Add Upstream Sites
 
-Open `/channels`, create a site, configure Base URLs and credentials, then sync or manually add models. Headers, proxy, and parameter overrides are set on the site.
+Open `/channels` to create a site, configure Base URLs and credentials, and select models. Configure headers, proxies, and parameter overrides on the site.
 
 - **Base URLs**: One site can maintain multiple upstream URLs.
 - **Credentials**: One site can maintain multiple API keys so routing can switch at credential granularity.
-- **Models**: The upstream protocol is detected, not picked. A protocol-specific endpoint, a native Anthropic/Gemini endpoint, an embedding/rerank/image model name, or the `supported_endpoint_types` a NewAPI-style upstream declares decides it directly; other chat models are probed in the order OpenAI Responses → OpenAI Chat → Anthropic → Gemini (Claude and Gemini models try their own protocol first), and the first that answers wins. Fetching models detects on add, the bulk actions in Manage models detect again, and a detected protocol can still be changed by hand. Scheduled syncs send no probes and decide from the same facts plus the configured protocols. Clients using other chat protocols convert automatically. Models can bind to different credentials in the same site.
+- **Models**: Default protocol and context values can be adjusted manually. A model can use multiple upstream protocols; use model tests to check the configuration.
+- **Model rules**: Each credential has a model filter. Rules match the full name: `gpt-4` selects that exact model, and `gpt-4.*` selects the series. Leave the rule empty to manage models manually, or use `*` for all visible models.
+- **Automatic sync**: Scheduled jobs and model rule changes trigger synchronization. Sync adds matching models, removes those absent from the upstream catalog or excluded by the rules, and updates model group members. Failed fetches preserve existing data.
+- **Batch setup**: Fetch model list combines results from all URLs and keys. Selected models are added to the corresponding keys' rules.
 
 Common Base URLs:
 

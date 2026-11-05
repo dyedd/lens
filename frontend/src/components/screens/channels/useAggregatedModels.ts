@@ -19,6 +19,7 @@ import type {
 
 type ModelGroupSeed = {
   modelName: string;
+  baseUrls: Set<string>;
   protocols: Set<ProtocolKind>;
   enabled: boolean;
   contextWindow: number | null;
@@ -26,10 +27,7 @@ type ModelGroupSeed = {
   testKey: string | null;
 };
 
-/**
- * Builds the channel overview rows, collapsing models that share a name
- * within one protocol configuration so multi-key duplicates stay one row.
- */
+/** 同名模型合并显示，保留每把 Key 在各地址的记录。 */
 export function useAggregatedModels(
   form: Pick<FormState, "base_urls" | "credentials" | "protocolConfigs">,
   locale: Locale,
@@ -50,22 +48,24 @@ export function useAggregatedModels(
         title: formatCredentialTitle(entry.credential, entry.index, locale),
       };
     };
-    return protocolConfigs.flatMap((protocolConfig) => {
+    const credentialCount = new Set(
+      protocolConfigs.flatMap(protocolConfigSelectedCredentialIds),
+    ).size;
+    const groups = new Map<string, ModelGroupSeed>();
+    for (const protocolConfig of protocolConfigs) {
       const baseUrl = activeBaseUrlValue(
         { base_urls: baseUrls },
         protocolConfig,
       ).trim();
-      const credentialCount =
-        protocolConfigSelectedCredentialIds(protocolConfig).length;
-      const groups = new Map<string, ModelGroupSeed>();
-      const groupOf = (modelName: string) => {
+      const groupOf = (modelName: string, contextWindow: number | null) => {
         const existing = groups.get(modelName);
         if (existing) return existing;
         const created: ModelGroupSeed = {
           modelName,
+          baseUrls: new Set(),
           protocols: new Set(),
           enabled: false,
-          contextWindow: null,
+          contextWindow,
           members: new Map(),
           testKey: null,
         };
@@ -74,12 +74,14 @@ export function useAggregatedModels(
       };
 
       for (const model of protocolConfig.models) {
-        const group = groupOf(model.model_name);
+        const group = groupOf(model.model_name, model.context_window);
+        group.baseUrls.add(baseUrl);
         for (const protocol of model.protocols) {
           group.protocols.add(protocol);
         }
         group.enabled = group.enabled || model.enabled;
-        group.contextWindow ??= model.context_window;
+        if (group.contextWindow !== model.context_window)
+          group.contextWindow = null;
         const memberKey = protocolConfigModelKey(protocolConfig, model);
         if (group.members.has(memberKey)) continue;
         const names = credentialNames(model.credential_id);
@@ -88,21 +90,21 @@ export function useAggregatedModels(
           credentialId: model.credential_id,
           credentialName: names.name,
           credentialTitle: names.title,
+          baseUrl,
         });
         group.testKey ??= memberKey;
       }
-
-      return Array.from(groups.values()).map((group) => ({
-        key: aggregateModelGroupKey(protocolConfig, group.modelName),
-        modelName: group.modelName,
-        baseUrl,
-        credentialCount,
-        protocols: Array.from(group.protocols),
-        enabled: group.enabled,
-        contextWindow: group.contextWindow,
-        members: Array.from(group.members.values()),
-        testKey: group.testKey,
-      }));
-    });
+    }
+    return Array.from(groups.values()).map((group) => ({
+      key: aggregateModelGroupKey(group.modelName),
+      modelName: group.modelName,
+      baseUrls: Array.from(group.baseUrls),
+      credentialCount,
+      protocols: Array.from(group.protocols),
+      enabled: group.enabled,
+      contextWindow: group.contextWindow,
+      members: Array.from(group.members.values()),
+      testKey: group.testKey,
+    }));
   }, [baseUrls, credentials, protocolConfigs, locale]);
 }
