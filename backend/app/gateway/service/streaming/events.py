@@ -286,17 +286,21 @@ def _stream_payload_error_message(
             response = payload.get("response")
             error = response.get("error") if isinstance(response, dict) else None
         elif event_type == "error":
-            error = payload.get("error")
+            error = payload.get("error") or payload
         else:
             return None
     elif protocol == ProtocolKind.ANTHROPIC:
         if event_type != "error":
             return None
         error = payload.get("error")
-    elif protocol in (ProtocolKind.OPENAI_CHAT, ProtocolKind.GEMINI):
-        if "error" not in payload:
+    elif protocol in (
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.OPENAI_IMAGE,
+        ProtocolKind.GEMINI,
+    ):
+        if "error" not in payload and event_type != "error":
             return None
-        error = payload.get("error")
+        error = payload.get("error") or payload
     else:
         return None
 

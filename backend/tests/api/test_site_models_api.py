@@ -214,7 +214,11 @@ def test_detect_site_model_protocols_probes_only_open_chat_models(
                     ]
                 },
             )
-        model = json.loads(request.content)["model"]
+        model = (
+            request.url.path.rsplit("/", 1)[-1].removesuffix(":generateContent")
+            if request.url.path.endswith(":generateContent")
+            else json.loads(request.content)["model"]
+        )
         probes.append((model, request.url.path))
         if model == "mystery-model":
             return httpx.Response(404, json={"error": {"message": "no route"}})
@@ -332,33 +336,128 @@ def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
     assert_error(response, 502, "Model discovery failed")
 
 
+@pytest.mark.parametrize(
+    ("protocol", "suffix", "body_field", "upstream_payload", "output"),
+    [
+        (
+            ProtocolKind.OPENAI_CHAT,
+            "/v1/chat/completions",
+            "messages",
+            {"choices": [{"message": {"content": "pong"}}]},
+            "pong",
+        ),
+        (
+            ProtocolKind.OPENAI_RESPONSES,
+            "/v1/responses",
+            "input",
+            {
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "pong"}],
+                    }
+                ],
+            },
+            "pong",
+        ),
+        (
+            ProtocolKind.OPENAI_EMBEDDING,
+            "/v1/embeddings",
+            "input",
+            {"data": [{"embedding": [0.1, 0.2]}]},
+            "<vector dim=2>",
+        ),
+        (
+            ProtocolKind.OPENAI_IMAGE,
+            "/v1/images/generations",
+            "prompt",
+            {"data": [{"b64_json": "YWJj"}]},
+            "<image base64>",
+        ),
+        (
+            ProtocolKind.RERANK,
+            "/v1/rerank",
+            "query",
+            {
+                "results": [
+                    {"index": 0, "relevance_score": 0.95, "document": {"text": "ping"}}
+                ]
+            },
+            "top score=0.9500; index=0; document=ping",
+        ),
+        (
+            ProtocolKind.RERANK,
+            "/v2/rerank",
+            "query",
+            {"results": [{"index": 0, "relevance_score": 0.95}]},
+            "top score=0.9500; index=0",
+        ),
+        (
+            ProtocolKind.ANTHROPIC,
+            "/v1/messages",
+            "messages",
+            {"content": [{"type": "text", "text": "pong"}]},
+            "pong",
+        ),
+        (
+            ProtocolKind.GEMINI,
+            "/v1beta/models/test-model:generateContent",
+            "contents",
+            {
+                "candidates": [
+                    {"content": {"role": "model", "parts": [{"text": "pong"}]}}
+                ]
+            },
+            "pong",
+        ),
+    ],
+)
 def test_test_site_model_returns_probe_result(
     client,
     admin_headers,
+    app_state,
     monkeypatch,
+    protocol,
+    suffix,
+    body_field,
+    upstream_payload,
+    output,
 ) -> None:
-    async def fake_probe(**kwargs: Any) -> SiteModelTestResult:
-        return SiteModelTestResult(
-            success=True,
-            status_code=200,
-            latency_ms=8,
-            model_name=kwargs["model_name"],
-            credential_id=kwargs["credential_id"],
-            output_text="pong",
-        )
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == suffix
+        body = json.loads(request.content)
+        assert body_field in body
+        assert body.get("stream", False) is False
+        if protocol == ProtocolKind.RERANK:
+            assert body == {
+                "model": "test-model",
+                "query": "ping",
+                "documents": ["ping"],
+                "top_n": 1,
+            }
+        return httpx.Response(200, json=upstream_payload, request=request)
 
     import app.gateway.service.tasks.site_model_probe as probe
 
-    monkeypatch.setattr(probe, "_call_site_model_probe_channel", fake_probe)
-
-    response = client.post(
-        "/api/admin/site-model-tests",
-        headers=admin_headers,
-        json=_model_test_payload(ProtocolKind.OPENAI_CHAT),
-    )
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(probe, "app_state", app_state)
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
+    payload = _model_test_payload(protocol)
+    if suffix.startswith("/v2/"):
+        payload["base_url"] = "https://upstream.example/v2"
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json=payload,
+        )
+    finally:
+        run_async(upstream_client.aclose())
 
     assert response.status_code == 200
-    assert response.json()["output_text"] == "pong"
+    assert response.json()["success"] is True
+    assert response.json()["output_text"] == output
 
 
 def test_test_site_model_returns_sanitized_probe_debug(
@@ -402,19 +501,16 @@ def test_test_gemini_probe_debug_hides_api_key(
     client, admin_headers, app_state, monkeypatch
 ) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path.endswith("/v1beta/interactions")
+        assert request.url.path.endswith("/v1beta/models/test-model:generateContent")
         assert request.headers["x-goog-api-key"] == "upstream-secret"
         return httpx.Response(
             200,
             json={
-                "id": "interaction_1",
-                "object": "interaction",
-                "model": "test-model",
-                "status": "completed",
-                "steps": [
+                "modelVersion": "test-model",
+                "candidates": [
                     {
-                        "type": "model_output",
-                        "content": [{"type": "text", "text": "OK"}],
+                        "content": {"role": "model", "parts": [{"text": "OK"}]},
+                        "finishReason": "STOP",
                     }
                 ],
             },
@@ -436,7 +532,10 @@ def test_test_gemini_probe_debug_hides_api_key(
         run_async(upstream_client.aclose())
 
     assert response.status_code == 200
-    assert response.json()["debug"]["request"]["path"] == "/v1beta/interactions"
+    assert (
+        response.json()["debug"]["request"]["path"]
+        == "/v1beta/models/test-model:generateContent"
+    )
     assert "upstream-secret" not in response.text
 
 

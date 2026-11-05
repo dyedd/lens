@@ -41,14 +41,19 @@ def apply_reasoning_intent(
             )
             body["thinking"] = {"type": "enabled", "budget_tokens": budget}
     elif channel.protocol == ProtocolKind.GEMINI:
-        effort = parsed.reasoning_effort
-        if effort == "none":
-            level = "minimal"
-        elif effort in {"minimal", "low", "medium", "high"}:
-            level = effort
-        else:
-            level = "high"
-        body.setdefault("generation_config", {})["thinking_level"] = level
+        from ...converters.spoke_gemini import gemini_thinking_config
+        from ...converters.unified import ReasoningIntent
+
+        body.setdefault("generationConfig", {})["thinkingConfig"] = (
+            gemini_thinking_config(
+                ReasoningIntent(
+                    enabled=parsed.reasoning_effort != "none",
+                    effort=parsed.reasoning_effort,
+                    budget_tokens=parsed.reasoning_budget,
+                ),
+                parsed.base_model,
+            )
+        )
     return body
 
 
@@ -72,6 +77,23 @@ def extract_request_reasoning_effort(
     for body in bodies:
         if not isinstance(body, Mapping):
             continue
+
+        generation = body.get("generationConfig")
+        thinking_config = (
+            generation.get("thinkingConfig")
+            if isinstance(generation, Mapping)
+            else None
+        )
+        if isinstance(thinking_config, Mapping):
+            level = clean_reasoning_effort(thinking_config.get("thinkingLevel"))
+            if level:
+                return level.lower()
+            budget = thinking_config.get("thinkingBudget")
+            if budget == 0:
+                return "none"
+            effort = clean_reasoning_effort(budget)
+            if effort:
+                return effort
 
         for key in (
             "reasoning_effort",

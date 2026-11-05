@@ -23,7 +23,7 @@
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ 客户端                                                               │
-│ OpenAI SDK / Anthropic SDK / Gemini Interactions / curl              │
+│ OpenAI SDK / Anthropic SDK / Gemini SDK / curl                       │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │ Lens Base URL + sk-lens-...
                                 ▼
@@ -34,7 +34,8 @@
 │  /v1/chat/completions        /v1/messages                            │
 │  /v1/responses               /v1/embeddings      /v1/rerank          │
 │  /v1/images/generations      /v1/images/edits                        │
-│  /v1beta/interactions                                               │
+│  /v1beta/models/{model}:generateContent                              │
+│  /v1beta/models/{model}:streamGenerateContent                        │
 │                                                                      │
 │  请求解析                                                            │
 │  - 校验网关 Key                                                       │
@@ -45,7 +46,7 @@
 │  路由计划                                                            │
 │  - 模型组成员：运行时渠道 + 凭证 + 上游模型                           │
 │  - 路由策略：轮询 / 故障切换                                          │
-│  - 默认 OpenAI Chat：其他 chat 协议客户端自动转换                     │
+│  - 按模型配置选择上游协议，支持对话协议互转                          │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
@@ -55,7 +56,7 @@
 │  站点                                                                │
 │  ├─ Base URL：一个站点可维护多个上游地址                              │
 │  ├─ 凭证：一个站点可维护多个 API Key                                  │
-│  └─ 模型：默认 OpenAI Chat，其他协议客户端自动转换                   │
+│  └─ 模型：配置上游协议和上下文                                       │
 │                                                                      │
 │  上游模型同步                                                          │
 │  - 模型挂在地址下，记录协议、凭证和上游模型名                         │
@@ -106,7 +107,7 @@
 - 自动建组：渠道里新出现的可用模型默认自动建立同名故障切换模型组；名称与已有组近似时留待手动放置或合并
 - 模型组路由：按“运行时渠道 + 凭证 + 上游模型”组成候选，同名或匹配组规则的模型自动加入并保存成员，支持轮询、故障切换、执行模型组复用、渠道级启停和多模态回退
 - 上下文感知：同一模型在不同渠道可有不同上下文窗口（在渠道模型表或获取模型时手动填写，未填则用上游模型列表返回的值），模型组可设成员未配置时的默认上下文；请求估算超出某个成员的上下文时跳过它，上游报上下文超限时继续切到下一个成员
-- 协议：模型默认 OpenAI Chat，其他 chat 协议客户端自动转换。OpenAI Chat、OpenAI Responses、Anthropic、Gemini 四种 chat 协议之间可任意互转；Embeddings、Images 和 Rerank 仍按原生协议转发
+- 协议：OpenAI Chat、OpenAI Responses、Anthropic、Gemini 对话协议支持互转；Embeddings、Images 和 Rerank 按原生协议转发
 - 模型测试：单模型测试与批量模型测试，测试提示词可配置
 - 请求日志：记录协议、模型、延迟、Token、成本、User-Agent 和每次上游尝试链路；支持请求体 / 响应体留存
 - 健康与冷却：按成功率分级的模型健康页，内置熔断冷却与指数退避，冷却检测规则可自定义
@@ -248,8 +249,8 @@ pnpm dev
 | ---------- | ------------------------------------------- | ----------------------------------------- |
 | OpenAI     | `https://api.openai.com`                    | 按接口指定 Chat / Responses 等            |
 | Anthropic  | `https://api.anthropic.com`                 | Anthropic                                 |
-| Gemini     | `https://generativelanguage.googleapis.com` | Gemini（上游走 Interactions API）         |
-| 兼容服务   | `https://newapi.example.com`                | OpenAI Chat（Chat、Rerank 等按入口转换）  |
+| Gemini     | `https://generativelanguage.googleapis.com` | Gemini generateContent                   |
+| 兼容服务   | `https://newapi.example.com`                | 按上游接口指定 Chat / Rerank 等            |
 
 ### 2. 管理模型组
 
@@ -266,7 +267,7 @@ pnpm dev
 - **上下文窗口**：渠道模型优先用手动填写的上下文（渠道模型表、获取模型弹窗或模型组默认值），没填则用上游模型列表返回的值；上游也不报的成员不参与上下文过滤，按请求和上游判断。网关按请求估算的 Token 数跳过上下文不足的成员；若所有成员都不够，仍交给上游判断，上游返回上下文超限错误时会继续故障切换
 - **合并**：把一个模型组并入另一个执行组，成员去重后并入目标组，引用它的展示组和备用组改指向目标组，源组及其匹配规则一并删除
 
-**协议转换**：成员指定了上游协议、且与客户端协议不同时才转换。OpenAI Chat、OpenAI Responses、Anthropic、Gemini 四种 chat 协议之间可任意互转（客户端协议 × 上游协议共 12 种组合）；同协议请求原样转发。Gemini 客户端和上游都使用 Google 推荐的 Interactions API。
+**协议转换**：OpenAI Chat、OpenAI Responses、Anthropic 和 Gemini 对话协议支持互转；相同协议的请求直接转发。Gemini 使用 `generateContent`，流式请求使用 `streamGenerateContent`。
 
 ### 3. 发放网关 Key
 
@@ -531,7 +532,7 @@ curl http://127.0.0.1:3000/v1/images/generations \
   }'
 ```
 
-请求体透传到上游 `/v1/images/generations`；`/v1/images/edits` 同理（multipart 上传）。图像按张计费，单价在模型价格中配置。
+图片生成和编辑支持 JSON 请求及 `stream: true` 事件流，图片编辑还支持 multipart 上传。图像按张计费，单价在模型价格中配置。
 
 </details>
 
@@ -550,12 +551,11 @@ curl http://127.0.0.1:3000/v1/rerank \
       "Berlin is the capital of Germany.",
       "Madrid is the capital of Spain."
     ],
-    "top_n": 3,
-    "return_documents": true
+    "top_n": 3
   }'
 ```
 
-请求体透传到上游 `/v1/rerank`（如 NewAPI、Jina、Cohere 等兼容服务）。响应原样返回，包含 `results[*].relevance_score / index / document`。
+请求转发到上游 `/v1/rerank`，返回上游的排序结果和用量信息。Cohere v2 使用带 `/v2` 的上游 Base URL。
 
 </details>
 
@@ -563,12 +563,11 @@ curl http://127.0.0.1:3000/v1/rerank \
 <summary>Gemini (curl)</summary>
 
 ```bash
-curl "http://127.0.0.1:3000/v1beta/interactions" \
+curl "http://127.0.0.1:3000/v1beta/models/your-gemini-model:generateContent" \
   -H "x-goog-api-key: sk-lens-..." \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "your-gemini-model",
-    "input": "hello"
+    "contents": [{"role": "user", "parts": [{"text": "hello"}]}]
   }'
 ```
 

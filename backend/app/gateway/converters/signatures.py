@@ -17,6 +17,7 @@ OPENAI = "openai"
 GEMINI = "gemini"
 GROK = "grok"
 UNKNOWN = ""
+FOREIGN_THINKING_SIGNATURE = "lens-foreign-thinking"
 
 _OPENAI_MARKERS = ("gpt", "codex", "o1", "o3", "o4", "davinci")
 

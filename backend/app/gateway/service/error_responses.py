@@ -130,8 +130,6 @@ def stream_error_frame(
             "message": message,
             "param": None,
         }
-    elif protocol == ProtocolKind.GEMINI:
-        payload = {"event_type": "error", "error": {"message": message}}
     else:
         payload = _protocol_error_payload(
             protocol=protocol,

@@ -116,25 +116,19 @@ def _extract_anthropic_output(raw_payload: dict[str, Any]) -> str:
 
 
 def _extract_gemini_output(raw_payload: dict[str, Any]) -> str:
-    steps = raw_payload.get("steps")
-    if not isinstance(steps, list):
-        return ""
-    for step in steps:
-        if not isinstance(step, dict) or step.get("type") != "model_output":
+    parts: list[str] = []
+    for candidate in raw_payload.get("candidates", []):
+        content = candidate.get("content") if isinstance(candidate, dict) else None
+        if not isinstance(content, dict):
             continue
-        content = step.get("content")
-        if not isinstance(content, list):
-            continue
-        parts = [
-            str(block.get("text")).strip()
-            for block in content
-            if isinstance(block, dict)
-            and block.get("type") == "text"
-            and block.get("text")
-        ]
-        if parts:
-            return "\n".join(parts)
-    return ""
+        for part in content.get("parts", []):
+            if (
+                isinstance(part, dict)
+                and not part.get("thought")
+                and isinstance(part.get("text"), str)
+            ):
+                parts.append(part["text"])
+    return "".join(parts).strip()
 
 
 def _extract_image_output(raw_payload: dict[str, Any]) -> str:
@@ -147,6 +141,10 @@ def _extract_image_output(raw_payload: dict[str, Any]) -> str:
         revised = item.get("revised_prompt")
         if isinstance(revised, str) and revised.strip():
             return revised.strip()
+        if item.get("b64_json"):
+            return "<image base64>"
+        if item.get("url"):
+            return "<image url>"
     return ""
 
 

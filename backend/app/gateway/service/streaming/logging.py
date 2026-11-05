@@ -160,6 +160,7 @@ async def record_stream_request_log(
         parsed["output_tokens"],
         parsed["cache_read_input_tokens"],
         parsed["cache_write_input_tokens"],
+        image_count=capture.image_count if capture is not None else 0,
         image_input_tokens=parsed["image_input_tokens"],
         rate_multiplier=log_ctx.rate_multiplier,
     )

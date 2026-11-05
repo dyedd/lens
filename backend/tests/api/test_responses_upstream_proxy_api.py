@@ -336,17 +336,16 @@ def test_chat_client_converts_gemini_response(
         monkeypatch,
         captured,
         json_body={
-            "object": "interaction",
-            "id": "interaction-1",
-            "model": "gemini-model",
-            "status": "completed",
-            "steps": [
+            "modelVersion": "gemini-model",
+            "candidates": [
                 {
-                    "type": "model_output",
-                    "content": [{"type": "text", "text": "Hello from Gemini"}],
+                    "content": {
+                        "role": "model",
+                        "parts": [{"text": "Hello from Gemini"}],
+                    },
+                    "finishReason": "STOP",
                 }
             ],
-            "usage": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
         },
     )
     monkeypatch.setattr(app_state.model_price_repo, "estimate_model_cost", _no_cost)
@@ -374,17 +373,8 @@ def test_chat_client_converts_gemini_response(
 
     assert response.status_code == 200, response.text
     assert captured == {
-        "url": "https://upstream.example/v1beta/interactions",
-        "body": {
-            "model": "gemini-model",
-            "store": False,
-            "input": [
-                {
-                    "type": "user_input",
-                    "content": [{"type": "text", "text": "hello"}],
-                }
-            ],
-        },
+        "url": "https://upstream.example/v1beta/models/gemini-model:generateContent",
+        "body": {"contents": [{"role": "user", "parts": [{"text": "hello"}]}]},
     }
     payload = response.json()
     assert payload["object"] == "chat.completion"

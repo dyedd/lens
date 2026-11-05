@@ -15,32 +15,45 @@ async def parse_sse_json_stream(
     *,
     require_done: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Parse JSON payloads from an OpenAI-compatible SSE byte stream."""
     buffer = b""
+    data: list[str] = []
     try:
         async for chunk in raw_iterator:
             buffer += chunk
             while b"\n" in buffer:
-                line, buffer = buffer.split(b"\n", 1)
-                line_str = line.decode("utf-8", errors="replace").strip()
-                if not line_str.startswith("data:"):
-                    continue
-                data_str = line_str[5:].strip()
-                if data_str == "[DONE]":
-                    return
-                try:
-                    payload = json.loads(data_str)
-                except json.JSONDecodeError as exc:
-                    raise ValueError("Invalid stream JSON") from exc
-                if not isinstance(payload, dict):
-                    raise ValueError("Invalid stream JSON object")
-                yield payload
+                raw_line, buffer = buffer.split(b"\n", 1)
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
+                if line.startswith("data:"):
+                    data.append(line[5:].removeprefix(" "))
+                elif not line and data:
+                    value = "\n".join(data)
+                    data.clear()
+                    if value.strip() == "[DONE]":
+                        return
+                    yield _parse_sse_data(value)
+        if buffer.startswith(b"data:"):
+            data.append(buffer[5:].decode("utf-8", errors="replace").strip())
+        if data:
+            value = "\n".join(data)
+            if value.strip() == "[DONE]":
+                return
+            yield _parse_sse_data(value)
         if require_done:
             raise ValueError("Chat stream ended before [DONE]")
     finally:
         aclose = getattr(raw_iterator, "aclose", None)
         if aclose is not None:
             await aclose()
+
+
+def _parse_sse_data(value: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Invalid stream JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid stream JSON object")
+    return payload
 
 
 def format_sse_event(event: str | None, data: dict[str, Any] | str) -> bytes:

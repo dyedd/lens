@@ -53,6 +53,7 @@ class StreamCapture:
     parse_errors: list[str] = field(default_factory=list)
     input_tokens: int = 0
     image_input_tokens: int = 0
+    image_count: int = 0
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
     output_tokens: int = 0
