@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..models.protocols import ProtocolKind
 
@@ -39,8 +40,6 @@ _NON_CHAT_PROTOCOL_ORDER = (
     ProtocolKind.RERANK,
 )
 
-# NewAPI-style `supported_endpoint_types`, by name or by path. Their "gemini"
-# is generateContent, which Lens does not call, so it is left out.
 _DECLARED_ENDPOINT_PROTOCOLS: dict[str, ProtocolKind] = {
     "openai": ProtocolKind.OPENAI_CHAT,
     "chat": ProtocolKind.OPENAI_CHAT,
@@ -49,6 +48,7 @@ _DECLARED_ENDPOINT_PROTOCOLS: dict[str, ProtocolKind] = {
     "openai-response-compact": ProtocolKind.OPENAI_RESPONSES,
     "responses": ProtocolKind.OPENAI_RESPONSES,
     "/v1/responses": ProtocolKind.OPENAI_RESPONSES,
+    "/v1/responses/compact": ProtocolKind.OPENAI_RESPONSES,
     "anthropic": ProtocolKind.ANTHROPIC,
     "/v1/messages": ProtocolKind.ANTHROPIC,
     "embeddings": ProtocolKind.OPENAI_EMBEDDING,
@@ -58,6 +58,10 @@ _DECLARED_ENDPOINT_PROTOCOLS: dict[str, ProtocolKind] = {
     "/v1/rerank": ProtocolKind.RERANK,
     "image-generation": ProtocolKind.OPENAI_IMAGE,
     "/v1/images/generations": ProtocolKind.OPENAI_IMAGE,
+    "/v1/images/edits": ProtocolKind.OPENAI_IMAGE,
+    "gemini": ProtocolKind.GEMINI,
+    "generatecontent": ProtocolKind.GEMINI,
+    "streamgeneratecontent": ProtocolKind.GEMINI,
 }
 
 _RERANK_NAME_RE = re.compile(r"rerank")
@@ -102,15 +106,26 @@ def chat_protocol_order(model_name: str) -> list[ProtocolKind]:
 
 
 def parse_declared_protocols(entry: Mapping[str, Any]) -> list[ProtocolKind]:
-    """Read the protocols a model list entry says the upstream serves."""
-    declared = entry.get("supported_endpoint_types")
-    if not isinstance(declared, list):
-        return []
     protocols: list[ProtocolKind] = []
-    for value in declared:
-        protocol = _DECLARED_ENDPOINT_PROTOCOLS.get(str(value).strip().lower())
-        if protocol is not None and protocol not in protocols:
-            protocols.append(protocol)
+    for field in ("supported_endpoint_types", "supported_endpoints"):
+        declared = entry.get(field)
+        if not isinstance(declared, list):
+            continue
+        for value in declared:
+            try:
+                endpoint = urlsplit(str(value).strip().lower()).path.rstrip("/")
+            except ValueError:
+                continue
+            protocol = _DECLARED_ENDPOINT_PROTOCOLS.get(endpoint)
+            if protocol is None and endpoint.startswith("/"):
+                protocol = _DECLARED_ENDPOINT_PROTOCOLS.get(f"/v1{endpoint}")
+            if protocol is None and endpoint.rsplit(":", 1)[-1] in {
+                "generatecontent",
+                "streamgeneratecontent",
+            }:
+                protocol = ProtocolKind.GEMINI
+            if protocol is not None and protocol not in protocols:
+                protocols.append(protocol)
     return protocols
 
 

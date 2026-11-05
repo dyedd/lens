@@ -167,9 +167,18 @@ async def proxy_openai_image_generations(
 async def proxy_openai_image_edits(
     request: Request, gateway_key: GatewayApiKey = Depends(get_current_gateway_key)
 ) -> Response:
-    """Proxy an authenticated multipart OpenAI image edit request."""
+    """转发经过认证的 JSON 或 multipart 图片编辑请求。"""
+    content_type = request.headers.get("content-type", "").partition(";")[0].strip()
+    if content_type.lower() == "application/json":
+        return await _proxy_json_request(
+            request,
+            gateway_key,
+            protocol=ProtocolKind.OPENAI_IMAGE,
+            body_name="Image edits",
+            path_suffix="images/edits",
+        )
     async with request.form() as form:
-        fields: dict[str, str] = {}
+        fields: dict[str, Any] = {}
         files: list[tuple[str, tuple[str, bytes, str]]] = []
         for field_name, value in form.multi_items():
             if isinstance(value, UploadFile):
@@ -185,9 +194,16 @@ async def proxy_openai_image_edits(
                 )
             else:
                 fields[field_name] = value
+    if "stream" in fields:
+        stream = fields["stream"].strip().lower()
+        if stream not in {"true", "false"}:
+            raise HTTPException(
+                status_code=400, detail="Image edits stream must be true or false"
+            )
+        fields["stream"] = stream == "true"
     return await proxy_protocol(
         ProtocolKind.OPENAI_IMAGE,
-        dict(fields),
+        fields,
         gateway_key,
         request.headers.get("user-agent"),
         path_suffix="images/edits",
@@ -212,12 +228,14 @@ async def list_gemini_models(
     return build_gemini_models_payload(groups, gateway_key)
 
 
-async def proxy_gemini_interaction(
+async def proxy_gemini_generate_content(
     request: Request,
+    model_name: str,
     gateway_key: GatewayApiKey = Depends(get_current_gateway_key),
 ) -> Response:
-    """Proxy an authenticated Gemini Interactions request."""
-    body = await _read_json_object(request, "Gemini Interactions")
+    body = await _read_json_object(request, "Gemini generateContent")
+    body["model"] = model_name
+    body["stream"] = request.url.path.endswith(":streamGenerateContent")
     return await proxy_protocol(
         ProtocolKind.GEMINI,
         body,

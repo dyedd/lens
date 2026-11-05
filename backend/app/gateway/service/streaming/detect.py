@@ -84,11 +84,25 @@ def _record_stream_completion(
         if is_terminal:
             capture.protocol_completed = True
         return is_terminal
+    if protocol == ProtocolKind.OPENAI_IMAGE:
+        if payload.get("type") in {
+            "image_generation.completed",
+            "image_edit.completed",
+        }:
+            capture.image_count += 1
+            capture.protocol_completed = True
+        return False
     if protocol != ProtocolKind.GEMINI:
         return False
-    if payload.get("event_type") == "interaction.completed":
+    feedback = payload.get("promptFeedback")
+    candidates = payload.get("candidates")
+    if (isinstance(feedback, dict) and feedback.get("blockReason")) or (
+        isinstance(candidates, list)
+        and any(
+            isinstance(item, dict) and item.get("finishReason") for item in candidates
+        )
+    ):
         capture.protocol_completed = True
-        return True
     return False
 
 
@@ -150,20 +164,29 @@ def _anthropic_stream_payload_has_output(payload: dict[str, Any]) -> bool:
 
 
 def _gemini_stream_payload_has_output(payload: dict[str, Any]) -> bool:
-    if payload.get("event_type") == "step.delta":
-        delta = payload.get("delta")
-        if not isinstance(delta, dict):
-            return False
-        if delta.get("type") == "text":
-            return _has_non_empty_stream_value(delta.get("text"))
-        if delta.get("type") == "thought_summary":
-            content = delta.get("content")
-            return isinstance(content, dict) and _has_non_empty_stream_value(
-                content.get("text")
-            )
-        if delta.get("type") == "arguments_delta":
-            return _has_non_empty_stream_value(delta.get("arguments"))
+    feedback = payload.get("promptFeedback")
+    if isinstance(feedback, dict) and feedback.get("blockReason"):
+        return True
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
         return False
+    for candidate in candidates:
+        content = candidate.get("content") if isinstance(candidate, dict) else None
+        if not isinstance(content, dict):
+            continue
+        for part in content.get("parts", []):
+            if isinstance(part, dict) and any(
+                _has_non_empty_stream_value(part.get(key))
+                for key in (
+                    "text",
+                    "functionCall",
+                    "inlineData",
+                    "fileData",
+                    "executableCode",
+                    "codeExecutionResult",
+                )
+            ):
+                return True
     return False
 
 

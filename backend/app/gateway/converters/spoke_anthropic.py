@@ -16,6 +16,8 @@ from typing import Any
 
 from ...models.protocols import ProtocolKind
 from . import cache, capabilities, repair
+from .responses_common import is_reasoning_envelope
+from .signatures import FOREIGN_THINKING_SIGNATURE
 from .sse import (
     anthropic_block_delta,
     anthropic_block_start,
@@ -757,8 +759,10 @@ def _parts_to_anthropic_content(
             if drops is not None:
                 drops.drop("audio")
         elif isinstance(part, ReasoningPart) and role is MessageRole.ASSISTANT:
-            if replay_reasoning or part.origin is _ORIGIN:
+            if part.origin is _ORIGIN and part.opaque != FOREIGN_THINKING_SIGNATURE:
                 thinking_blocks.append(_reasoning_to_anthropic(part))
+            elif replay_reasoning and part.text:
+                text_blocks.append({"type": "text", "text": part.text})
         elif isinstance(part, ToolCallPart):
             call_blocks.append(_tool_call_to_anthropic(part))
         elif isinstance(part, ToolResultPart):
@@ -891,6 +895,13 @@ def _file_to_anthropic(part: FilePart) -> dict[str, Any]:
 
 
 def _reasoning_to_anthropic(part: ReasoningPart) -> dict[str, Any]:
+    if part.origin is not _ORIGIN and not is_reasoning_envelope(part.opaque):
+        # 其它供应商的思考无法通过 Claude 签名校验，标记后在历史重放时移除。
+        return {
+            "type": "thinking",
+            "thinking": part.text,
+            "signature": FOREIGN_THINKING_SIGNATURE,
+        }
     if part.kind is ReasoningKind.REDACTED and part.opaque:
         return {"type": "redacted_thinking", "data": part.opaque}
     if part.text:
@@ -1413,6 +1424,7 @@ async def _anthropic_serializer(
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
     model = original_model
     open_blocks: list[int] = []
+    signed_blocks: set[int] = set()
 
     def message_start() -> bytes:
         return format_sse_event(
@@ -1521,9 +1533,13 @@ async def _anthropic_serializer(
             )
             continue
         if isinstance(event, SignatureDelta):
-            yield anthropic_block_delta(
-                event.index, {"type": "signature_delta", "signature": event.opaque}
-            )
+            if kind_by_index.get(
+                event.index
+            ) == BlockKind.REASONING and is_reasoning_envelope(event.opaque):
+                signed_blocks.add(event.index)
+                yield anthropic_block_delta(
+                    event.index, {"type": "signature_delta", "signature": event.opaque}
+                )
             continue
         if isinstance(event, ToolCallArgsDelta):
             yield anthropic_block_delta(
@@ -1532,6 +1548,17 @@ async def _anthropic_serializer(
             )
             continue
         if isinstance(event, BlockStop):
+            if (
+                kind_by_index.get(event.index) == BlockKind.REASONING
+                and event.index not in signed_blocks
+            ):
+                yield anthropic_block_delta(
+                    event.index,
+                    {
+                        "type": "signature_delta",
+                        "signature": FOREIGN_THINKING_SIGNATURE,
+                    },
+                )
             if event.index in open_blocks:
                 open_blocks.remove(event.index)
             yield anthropic_block_stop(event.index)
@@ -1542,6 +1569,17 @@ async def _anthropic_serializer(
                 yield message_start()
                 yield format_sse_event("ping", {"type": "ping"})
             for index in sorted(open_blocks):
+                if (
+                    kind_by_index.get(index) == BlockKind.REASONING
+                    and index not in signed_blocks
+                ):
+                    yield anthropic_block_delta(
+                        index,
+                        {
+                            "type": "signature_delta",
+                            "signature": FOREIGN_THINKING_SIGNATURE,
+                        },
+                    )
                 yield anthropic_block_stop(index)
             open_blocks.clear()
             has_tools = any(

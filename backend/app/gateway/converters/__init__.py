@@ -21,7 +21,7 @@ from ...core.protocol_reachability import can_reach_protocol
 from ...models.protocols import ProtocolKind
 from .chat_stream import repair_chat_tool_call_stream
 from .responses_common import is_reasoning_envelope
-from .signatures import fits
+from .signatures import FOREIGN_THINKING_SIGNATURE, fits
 
 __all__ = [
     "can_reach_protocol",
@@ -68,13 +68,13 @@ def _spokes() -> dict[ProtocolKind, Spoke]:
         parse_chat_response,
     )
     from .spoke_chat_stream import parse_chat_stream, serialize_chat_stream
-    from .spoke_gemini_interactions import (
-        build_gemini_interaction_request,
-        build_gemini_interaction_response,
-        parse_gemini_interaction_request,
-        parse_gemini_interaction_response,
-        parse_gemini_interaction_stream,
-        serialize_gemini_interaction_stream,
+    from .spoke_gemini import (
+        build_gemini_request,
+        build_gemini_response,
+        parse_gemini_request,
+        parse_gemini_response,
+        parse_gemini_stream,
+        serialize_gemini_stream,
     )
     from .spoke_responses import (
         build_responses_request,
@@ -111,12 +111,12 @@ def _spokes() -> dict[ProtocolKind, Spoke]:
             build_stream=serialize_anthropic_stream,
         ),
         ProtocolKind.GEMINI: Spoke(
-            parse_request=parse_gemini_interaction_request,
-            build_request=build_gemini_interaction_request,
-            parse_response=parse_gemini_interaction_response,
-            build_response=build_gemini_interaction_response,
-            parse_stream=parse_gemini_interaction_stream,
-            build_stream=serialize_gemini_interaction_stream,
+            parse_request=parse_gemini_request,
+            build_request=build_gemini_request,
+            parse_response=parse_gemini_response,
+            build_response=build_gemini_response,
+            parse_stream=parse_gemini_stream,
+            build_stream=serialize_gemini_stream,
         ),
     }
 
@@ -238,7 +238,11 @@ def _foreign_anthropic(block: Any, target_model: str) -> bool:
     value = block.get(field) if field else None
     if not isinstance(value, str) or not value:
         return False
-    return is_reasoning_envelope(value) or not fits(value, target_model)
+    return (
+        value == FOREIGN_THINKING_SIGNATURE
+        or is_reasoning_envelope(value)
+        or not fits(value, target_model)
+    )
 
 
 def _strip_responses_reasoning(

@@ -83,32 +83,32 @@ def _anthropic_usage(
 
 
 def _gemini_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
-    source = payload.get("interaction")
-    if isinstance(source, Mapping):
-        payload = source
-    usage = payload.get("usage")
-    if not isinstance(usage, Mapping):
-        usage = {}
-    input_tokens = _usage_int(usage, "total_input_tokens")
-    output_tokens = _usage_int(usage, "total_output_tokens")
-    total_tokens = _usage_int(usage, "total_tokens") or (input_tokens + output_tokens)
-    cached_tokens = _usage_int(usage, "total_cached_tokens")
-    image_input_tokens = 0
-    modalities = usage.get("input_tokens_by_modality")
-    if isinstance(modalities, list):
-        for item in modalities:
-            if not isinstance(item, Mapping):
-                continue
-            if item.get("modality") == "IMAGE":
-                image_input_tokens += _usage_int(item, "tokens")
+    usage = _usage_mapping(payload.get("usageMetadata"), "usageMetadata")
+    input_tokens = _usage_int(usage, "promptTokenCount")
+    output_tokens = _usage_int(usage, "candidatesTokenCount") + _usage_int(
+        usage, "thoughtsTokenCount"
+    )
+    details = usage.get("promptTokensDetails")
+    image_tokens = (
+        sum(
+            _usage_int(item, "tokenCount")
+            for item in details
+            if isinstance(item, Mapping) and item.get("modality") == "IMAGE"
+        )
+        if isinstance(details, list)
+        else 0
+    )
     return {
-        "resolved_model": payload.get("model"),
+        "resolved_model": payload.get("modelVersion"),
         "input_tokens": input_tokens,
-        "image_input_tokens": image_input_tokens,
-        "cache_read_input_tokens": min(cached_tokens, input_tokens),
+        "image_input_tokens": image_tokens,
+        "cache_read_input_tokens": min(
+            _usage_int(usage, "cachedContentTokenCount"), input_tokens
+        ),
         "cache_write_input_tokens": 0,
         "output_tokens": output_tokens,
-        "total_tokens": total_tokens,
+        "total_tokens": _usage_int(usage, "totalTokenCount")
+        or input_tokens + output_tokens,
     }
 
 
@@ -174,14 +174,17 @@ def _openai_image_usage(
 
 def _openai_embedding_usage(payload: Mapping[str, Any]) -> dict[str, int | str | None]:
     usage = _usage_mapping(payload.get("usage"))
+    input_tokens = _usage_int(usage, "prompt_tokens") or _usage_int(
+        usage, "total_tokens"
+    )
     return {
         "resolved_model": payload.get("model"),
-        "input_tokens": _usage_int(usage, "prompt_tokens"),
+        "input_tokens": input_tokens,
         "image_input_tokens": 0,
         "cache_read_input_tokens": 0,
         "cache_write_input_tokens": 0,
         "output_tokens": 0,
-        "total_tokens": _usage_int(usage, "total_tokens"),
+        "total_tokens": _usage_int(usage, "total_tokens") or input_tokens,
     }
 
 
@@ -196,6 +199,26 @@ EMPTY_USAGE: dict[str, int | str | None] = {
 }
 
 
+def _rerank_usage(
+    payload: Mapping[str, Any], *, model: str | None
+) -> dict[str, int | str | None]:
+    usage = _usage_mapping(payload.get("usage"))
+    meta = _usage_mapping(payload.get("meta"), "meta")
+    billed = _usage_mapping(meta.get("billed_units"), "meta.billed_units")
+    input_tokens = (
+        _usage_int(usage, "input_tokens")
+        or _usage_int(usage, "prompt_tokens")
+        or _usage_int(usage, "total_tokens")
+        or _usage_int(billed, "input_tokens")
+    )
+    return {
+        **EMPTY_USAGE,
+        "resolved_model": model,
+        "input_tokens": input_tokens,
+        "total_tokens": _usage_int(usage, "total_tokens") or input_tokens,
+    }
+
+
 def extract_stream_usage(
     protocol: ProtocolKind,
     raw_content: str | None,
@@ -207,32 +230,6 @@ def extract_stream_usage(
         or not raw_content
     ):
         return dict(EMPTY_USAGE)
-
-    if protocol == ProtocolKind.GEMINI:
-        payloads = parse_sse_payloads(raw_content, errors=parse_errors)
-        merged: dict[str, int | str | None] = dict(EMPTY_USAGE)
-        int_keys = (
-            "input_tokens",
-            "image_input_tokens",
-            "cache_read_input_tokens",
-            "cache_write_input_tokens",
-            "output_tokens",
-            "total_tokens",
-        )
-        for payload in payloads:
-            parsed = extract_usage_from_payload(protocol, payload)
-            if parsed["resolved_model"]:
-                merged["resolved_model"] = parsed["resolved_model"]
-            for key in int_keys:
-                value = parsed[key]
-                assert isinstance(value, int)
-                if value:
-                    merged[key] = max(merged[key], value)
-        merged["total_tokens"] = max(
-            int(merged["total_tokens"] or 0),
-            int(merged["input_tokens"] or 0) + int(merged["output_tokens"] or 0),
-        )
-        return merged
 
     payloads = parse_sse_payloads(raw_content, errors=parse_errors)
     merged: dict[str, int | str | None] = dict(EMPTY_USAGE)
@@ -319,10 +316,7 @@ def extract_response_usage(
     if not isinstance(payload, dict):
         raise ValueError("Upstream response JSON must be an object")
     if protocol == ProtocolKind.RERANK:
-        empty = dict(EMPTY_USAGE)
-        if isinstance(fallback_model, str) and fallback_model.strip():
-            empty["resolved_model"] = fallback_model.strip()
-        return empty
+        return _rerank_usage(payload, model=payload.get("model") or fallback_model)
     if protocol == ProtocolKind.OPENAI_CHAT:
         return _openai_chat_usage(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:

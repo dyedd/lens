@@ -136,7 +136,11 @@ def test_plugins_cover_all_gateway_protocols_and_image_edits(
             "/v1/messages",
             {"messages": [{"role": "user", "content": "hi"}], "max_tokens": 10},
         ),
-        ("gemini", "/v1beta/interactions", {"input": "hi"}),
+        (
+            "gemini",
+            "/v1beta/models/plugin-model:generateContent",
+            {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]},
+        ),
         ("openai_embedding", "/v1/embeddings", {"input": "hi"}),
         ("openai_image", "/v1/images/generations", {"prompt": "hi"}),
         ("rerank", "/v1/rerank", {"query": "hi", "documents": ["hi"]}),
@@ -212,14 +216,14 @@ def test_plugin_events_cover_stream_protocols_and_conversion(
         "openai_chat": "/v1/chat/completions",
         "openai_responses": "/v1/responses",
         "anthropic": "/v1/messages",
-        "gemini": "/v1beta/interactions",
+        "gemini": "/v1beta/models/{model}:streamGenerateContent?alt=sse",
         "openai_image": "/v1/images/generations",
     }
     upstream_paths = {
         "openai_chat": "chat/completions",
         "openai_responses": "responses",
         "anthropic": "messages",
-        "gemini": "interactions",
+        "gemini": "models/plugin-model:streamGenerateContent",
         "openai_image": "images/generations",
     }
     create_site(valid_site_payload(protocols=list(paths), model_name="plugin-model"))
@@ -277,12 +281,13 @@ def test_plugin_events_cover_stream_protocols_and_conversion(
         "anthropic": [{"type": "message_stop"}],
         "gemini": [
             {
-                "event_type": "interaction.completed",
-                "interaction": {
-                    "model": "plugin-model",
-                    "status": "completed",
-                    "outputs": [],
-                },
+                "modelVersion": "plugin-model",
+                "candidates": [
+                    {
+                        "content": {"role": "model", "parts": [{"text": "hi"}]},
+                        "finishReason": "STOP",
+                    }
+                ],
             }
         ],
         "openai_image": [{"type": "image_generation.completed", "b64_json": "aGk="}],
@@ -301,7 +306,7 @@ def test_plugin_events_cover_stream_protocols_and_conversion(
         protocol = next(
             protocol
             for protocol, path in upstream_paths.items()
-            if upstream.url.endswith(path)
+            if httpx.URL(upstream.url).path.endswith(path)
         )
         events = payloads[protocol]
         if media_type == "text/event-stream":
@@ -322,17 +327,20 @@ def test_plugin_events_cover_stream_protocols_and_conversion(
     monkeypatch.setattr(proxy_upstream, "_send_upstream", upstream_reply)
 
     def check_events(protocol, model):
+        body = {
+            "model": model,
+            "stream": True,
+            "messages": [{"role": "user", "content": "hi"}],
+            "input": "hi",
+            "prompt": "hi",
+            "max_tokens": 10,
+        }
+        if protocol == "gemini":
+            body = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
         response = client.post(
-            paths[protocol],
+            paths[protocol].format(model=model),
             headers=headers,
-            json={
-                "model": model,
-                "stream": True,
-                "messages": [{"role": "user", "content": "hi"}],
-                "input": "hi",
-                "prompt": "hi",
-                "max_tokens": 10,
-            },
+            json=body,
         )
         assert response.status_code == 200, response.text
         events = [

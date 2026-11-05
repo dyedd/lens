@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import HTTPException, Request
 
+from ....core.protocol_reachability import CHAT_PROTOCOLS
 from ....core.upstream_rules import (
     RuleEvaluationError,
     apply_param_rules,
@@ -19,6 +20,7 @@ from ....models.protocols import ProtocolKind
 from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
 from ....plugins.contract import UpstreamCall
 from ....plugins.runtime import apply_credential_hooks, system_run
+from ...converters import spoke_for
 from ...upstream_request import (
     UpstreamRequest,
     build_upstream_request,
@@ -297,6 +299,8 @@ async def _run_site_model_probe_request(
             raw_payload = response.json()
             if not isinstance(raw_payload, dict):
                 raise ValueError("Expected JSON object")
+            if channel.protocol in CHAT_PROTOCOLS:
+                spoke_for(channel.protocol).parse_response(raw_payload)
             output_text = extract_site_model_output(channel.protocol, raw_payload)
         return SiteModelTestResult(
             success=True,
@@ -360,7 +364,6 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
             "query": query,
             "documents": documents,
             "top_n": min(3, len(documents)),
-            "return_documents": True,
         }
     if payload.protocol == ProtocolKind.ANTHROPIC:
         return {
@@ -372,15 +375,9 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
     if payload.protocol == ProtocolKind.GEMINI:
         return {
             "model": payload.model_name,
-            "input": [
-                {
-                    "type": "user_input",
-                    "content": [{"type": "text", "text": text}],
-                }
-            ],
-            "generation_config": {"max_output_tokens": 64},
+            "contents": [{"role": "user", "parts": [{"text": text}]}],
+            "generationConfig": {"maxOutputTokens": 64},
             "stream": False,
-            "store": False,
         }
     raise HTTPException(
         status_code=500, detail=f"Unsupported protocol={payload.protocol.value}"
