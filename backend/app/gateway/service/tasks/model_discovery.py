@@ -88,7 +88,7 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
         request = await _model_list_request(channel, runtime["upstream_headers_config"])
         response = await client.request(**request)
         response.raise_for_status()
-        return _parse_model_list(response.json())
+        return _parse_model_list(response.json(), protocol=channel.protocol)
     except httpx.HTTPStatusError as exc:
         detail = format_http_response_error(exc.response)
         raise ModelDiscoveryError(detail, status_code=exc.response.status_code) from exc
@@ -124,7 +124,13 @@ async def _model_list_request(
     return {"method": "GET", "url": hooked.url, "headers": hooked.headers}
 
 
-def _parse_model_list(payload: dict[str, Any]) -> list[UpstreamModel]:
+def _parse_model_list(
+    payload: dict[str, Any], *, protocol: ProtocolKind
+) -> list[UpstreamModel]:
+    if not isinstance(payload, dict):
+        raise ValueError("Model list response must be an object")
+    if payload.get("error") or payload.get("success") is False:
+        raise ValueError("Upstream model list request failed")
     models: list[UpstreamModel] = []
     seen: set[str] = set()
     if "data" in payload:
@@ -137,13 +143,23 @@ def _parse_model_list(payload: dict[str, Any]) -> list[UpstreamModel]:
         raise ValueError("Model list response data/models must be a list")
     for item in items:
         if not isinstance(item, dict):
+            raise ValueError("Model list entry must be an object")
+        methods = item.get("supportedGenerationMethods")
+        if (
+            protocol == ProtocolKind.GEMINI
+            and isinstance(methods, list)
+            and not any(
+                method in {"generateContent", "streamGenerateContent"}
+                for method in methods
+            )
+        ):
             continue
         value = str(item.get("id") or "").strip()
         if not value:
             # Gemini lists resource names such as "models/gemini-2.5-pro".
             value = str(item.get("name") or "").strip().removeprefix("models/")
         if not value:
-            continue
+            raise ValueError("Model list entry missing id/name")
         if value not in seen:
             seen.add(value)
             models.append(

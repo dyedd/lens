@@ -112,6 +112,29 @@ export function formatCredentialIdentity(
     .join(" · ");
 }
 
+/** 一行列出各把 Key，同一 Key 的多个出口不重复显示。 */
+export function formatMemberIdentity(
+  items: Array<CredentialIdentity & { credential_id: string }>,
+  locale: "zh-CN" | "en-US",
+  { includeSite = true }: { includeSite?: boolean } = {},
+) {
+  const credentials = new Map<string, CredentialIdentity>();
+  for (const item of items) {
+    if (!credentials.has(item.credential_id))
+      credentials.set(item.credential_id, item);
+  }
+  return [
+    includeSite ? items[0]?.channel_name : "",
+    Array.from(credentials.values())
+      .map((item) =>
+        formatCredentialIdentity(item, locale, { includeSite: false }),
+      )
+      .join(" / "),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** Format a model price for compact display. */
 export function formatMoney(value: number) {
   if (value === 0) return "0";
@@ -160,18 +183,15 @@ export function modelGroupItemKey(
   return `${item.channel_id}::${item.credential_id}::${item.model_name}`;
 }
 
-/** Build the stable key used to fold equivalent model members. */
+/** 同一渠道的同名模型合为一行，Key 和出口保留在子项中。 */
 export function modelFoldKey(
-  item: Pick<
-    FormItem,
-    "site_id" | "protocol_config_id" | "credential_id" | "model_name"
-  >,
+  item: Pick<FormItem, "site_id" | "protocol_config_id" | "model_name">,
 ): string {
   const channelKey = modelGroupChannelKey(
     item.site_id,
     item.protocol_config_id,
   );
-  return `${channelKey}::${item.credential_id}::${item.model_name}`;
+  return `${channelKey}::${item.model_name}`;
 }
 
 /** Build the shared channel identity used by failover ordering. */

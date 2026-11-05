@@ -5,6 +5,7 @@ from collections import Counter
 from typing import Any
 
 import httpx
+import pytest
 from conftest import gateway_headers, valid_site_payload
 
 from app.core.runtime_channel_ids import compose_runtime_channel_id
@@ -212,6 +213,168 @@ def test_rate_limit_retries_a_sibling_credential(
     assert response.status_code == 200, response.text
     assert len(seen_credentials) == 2
     assert seen_credentials[0] != seen_credentials[1]
+
+
+@pytest.mark.parametrize("endpoint_mode", ["default", "china", "dedicated", "owned"])
+def test_model_requests_follow_endpoint_priority_and_key_binding(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_gateway_key,
+    endpoint_mode,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    payload = _two_credential_site_payload()
+    payload["base_urls"][0]["url"] = "https://main.example"
+    for credential in payload["credentials"]:
+        payload["protocols"][0]["models"].extend(
+            [
+                {
+                    "credential_id": credential["id"],
+                    "model_name": "shared-model",
+                    "protocol": "anthropic",
+                },
+                {
+                    "credential_id": credential["id"],
+                    "model_name": f"only-{credential['id']}",
+                    "protocol": "openai_chat",
+                },
+            ]
+        )
+    if endpoint_mode != "default":
+        payload["base_urls"].append(
+            {"id": "china", "kind": "china", "url": "https://china.example"}
+        )
+        payload["protocols"].append(
+            {"id": "pc-china", "base_url_id": "china", "protocols": ["openai_chat"]}
+        )
+    if endpoint_mode in {"dedicated", "owned"}:
+        payload["base_urls"].append(
+            {"id": "claude", "kind": "anthropic", "url": "https://claude.example"}
+        )
+        payload["protocols"].append(
+            {"id": "pc-claude", "base_url_id": "claude", "protocols": ["anthropic"]}
+        )
+    if endpoint_mode == "owned":
+        payload["credentials"].append(
+            {
+                "id": "cred-owned",
+                "name": "owned-key",
+                "api_key": "test-owned",
+                "base_url_id": "claude",
+            }
+        )
+        payload["protocols"][-1]["models"] = [
+            {
+                "credential_id": "cred-owned",
+                "model_name": "shared-model",
+                "protocol": "anthropic",
+            }
+        ]
+    site = create_site(payload)
+    assert {
+        (model["credential_id"], model["model_name"])
+        for config in site["protocols"]
+        for model in config["models"]
+    } >= {
+        ("cred-primary", "shared-model"),
+        ("cred-secondary", "shared-model"),
+        ("cred-primary", "only-cred-primary"),
+        ("cred-secondary", "only-cred-secondary"),
+    }
+    group = next(
+        group
+        for group in client.get("/api/admin/model-groups", headers=admin_headers).json()
+        if group["name"] == "shared-model"
+    )
+    response = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"strategy": "round_robin"},
+    )
+    assert response.status_code == 200, response.text
+    seen: list[tuple[str, str, str]] = []
+
+    async def fake_send(_client, upstream, *, stream, body_bytes):
+        url = httpx.URL(upstream.url)
+        credential = (
+            upstream.headers.get("authorization") or upstream.headers["x-api-key"]
+        )
+        seen.append((url.host, url.path, credential.removeprefix("Bearer ")))
+        body = (
+            {
+                "id": "msg-test",
+                "type": "message",
+                "role": "assistant",
+                "model": "shared-model",
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+            if url.path.endswith("/messages")
+            else {
+                "id": "chat-test",
+                "model": "shared-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        )
+        return httpx.Response(
+            200, json=body, request=httpx.Request("POST", upstream.url)
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", fake_send)
+    headers = gateway_headers(create_gateway_key())
+    for path in ("chat/completions", "messages"):
+        seen.clear()
+        for _ in range(4):
+            response = client.post(
+                f"/v1/{path}",
+                headers=headers,
+                json={
+                    "model": "shared-model",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 16,
+                },
+            )
+            assert response.status_code == 200, response.text
+        expected_host = (
+            "claude.example"
+            if path == "messages" and endpoint_mode in {"dedicated", "owned"}
+            else "main.example"
+            if endpoint_mode == "default"
+            else "china.example"
+        )
+        assert {(host, sent_path) for host, sent_path, _ in seen} == {
+            (expected_host, f"/v1/{path}")
+        }
+        counts = Counter(credential for _, _, credential in seen)
+        if path == "messages" and endpoint_mode == "owned":
+            assert counts == {"test-owned": 4}
+        else:
+            assert counts == {
+                payload["credentials"][0]["api_key"]: 2,
+                payload["credentials"][1]["api_key"]: 2,
+            }
+    for credential in payload["credentials"][:2]:
+        seen.clear()
+        response = client.post(
+            "/v1/chat/completions",
+            headers=headers,
+            json={
+                "model": f"only-{credential['id']}",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert [key for _, _, key in seen] == [credential["api_key"]]
 
 
 def test_round_robin_counts_keys_once_and_keeps_protocol_fallbacks(

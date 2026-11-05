@@ -34,6 +34,12 @@ export function ModelGroupCandidateList({
       <div className="flex flex-col">
         {groupedCandidates.map((channelGroup) => {
           const isOpen = expandedChannels.includes(channelGroup.key);
+          const models = new Map<string, ModelGroupCandidateItem[]>();
+          for (const candidate of channelGroup.candidates) {
+            const candidates = models.get(candidate.model_name) ?? [];
+            candidates.push(candidate);
+            models.set(candidate.model_name, candidates);
+          }
           return (
             <div key={channelGroup.key} className="py-0.5">
               <Button
@@ -49,7 +55,7 @@ export function ModelGroupCandidateList({
                   </div>
                 </div>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {channelGroup.candidates.length}
+                  {models.size}
                 </span>
                 <ChevronDown
                   className={cn(
@@ -60,15 +66,17 @@ export function ModelGroupCandidateList({
               </Button>
               {isOpen ? (
                 <div className="flex flex-col gap-0.5 pt-0.5 pl-1">
-                  {channelGroup.candidates.map((candidate) => (
+                  {Array.from(models, ([modelName, candidates]) => (
                     <CandidateRow
-                      key={`${candidate.protocol_config_id}-${candidate.credential_id}-${candidate.model_name}`}
-                      candidate={candidate}
-                      active={candidate.items.every((item) =>
-                        existingItemKeys.has(modelGroupItemKey(item)),
+                      key={modelName}
+                      candidates={candidates}
+                      active={candidates.every((candidate) =>
+                        candidate.items.every((item) =>
+                          existingItemKeys.has(modelGroupItemKey(item)),
+                        ),
                       )}
                       locale={locale}
-                      onClick={() => addCandidate(candidate)}
+                      onClick={() => candidates.forEach(addCandidate)}
                     />
                   ))}
                 </div>

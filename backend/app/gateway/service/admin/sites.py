@@ -5,6 +5,7 @@ from typing import Any, Literal
 from fastapi import Depends, HTTPException, Query, Request, Response
 
 from ....core.errors import ModelDiscoveryError
+from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS, resolve_onboard_protocol
 from ....models.channels import (
     ChannelConfig,
     ChannelModelSyncRequest,
@@ -37,9 +38,12 @@ from ..tasks.litellm_sync_tasks import (
     fetch_context_windows,
     find_context_window,
 )
-from ..tasks.model_discovery import LISTING_PROTOCOLS, fetch_upstream_model_list
+from ..tasks.model_discovery import (
+    LISTING_PROTOCOLS,
+    NATIVE_LISTING_PROTOCOLS,
+    fetch_upstream_model_list,
+)
 from ..tasks.model_group_reconcile import run_model_group_reconcile
-from ..tasks.model_protocol_detection import detect_model_protocols
 from ..tasks.site_model_probe import run_site_model_probe
 from ..upstream_support import format_channel_error
 
@@ -160,9 +164,7 @@ async def fetch_site_models(
             param_override=[],
         )
         try:
-            upstream_models = (
-                await fetch_upstream_model_list(channel, listing_protocols)
-            ).models
+            model_list = await fetch_upstream_model_list(channel, listing_protocols)
         except (ModelDiscoveryError, HTTPException) as exc:
             detail = (
                 exc.public_message
@@ -172,7 +174,8 @@ async def fetch_site_models(
             errors.append(format_channel_error(detail))
             continue
 
-        for upstream_model in upstream_models:
+        pinned = ENDPOINT_KIND_PROTOCOLS.get(payload.endpoint_kind)
+        for upstream_model in model_list.models:
             key = (preview["credential_id"], upstream_model.name)
             if key in seen:
                 continue
@@ -182,6 +185,18 @@ async def fetch_site_models(
                     credential_id=preview["credential_id"],
                     credential_name=preview["credential_name"],
                     model_name=upstream_model.name,
+                    protocol=resolve_onboard_protocol(
+                        upstream_model.name,
+                        pinned=pinned,
+                        declared=(
+                            *upstream_model.protocols,
+                            *(
+                                (model_list.protocol,)
+                                if model_list.protocol in NATIVE_LISTING_PROTOCOLS
+                                else ()
+                            ),
+                        ),
+                    ),
                     context_window=upstream_model.context_window,
                 )
             )
@@ -215,8 +230,15 @@ async def detect_site_model_protocols(
     payload: SiteModelProtocolDetectionRequest,
     _: Any = Depends(get_current_admin),
 ) -> list[SiteModelProtocolDetectionResult]:
-    """Detect which upstream protocol serves each model."""
-    return await detect_model_protocols(payload)
+    """为模型生成默认协议预选值。"""
+    pinned = ENDPOINT_KIND_PROTOCOLS.get(payload.endpoint_kind)
+    return [
+        SiteModelProtocolDetectionResult(
+            model_name=name,
+            protocols=[resolve_onboard_protocol(name, pinned=pinned)],
+        )
+        for name in payload.model_names
+    ]
 
 
 async def test_site_model(

@@ -6,7 +6,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import type { FoldedMember } from "./groupTypes";
-import { formatCredentialIdentity } from "./modelGroupFormatting";
+import { formatMemberIdentity } from "./modelGroupFormatting";
 
 interface ModelGroupExcludedMembersProps {
   locale: "zh-CN" | "en-US";
@@ -38,7 +38,7 @@ export function ModelGroupExcludedMembers({
       </div>
       <ul className="flex flex-col rounded-md bg-muted/35 p-1">
         {excludedMembers.map((member) => {
-          const identity = formatCredentialIdentity(member, locale);
+          const identity = formatMemberIdentity(member.subItems, locale);
           return (
             <li
               key={member.key}

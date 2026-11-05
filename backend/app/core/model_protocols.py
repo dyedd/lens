@@ -1,13 +1,4 @@
-"""Which upstream protocol serves a channel model.
-
-Admins no longer pick a protocol per model. The facts that decide it, in
-order: an endpoint dedicated to one protocol, a name that only fits an
-embedding, rerank or image API, and the endpoint types a NewAPI-style model
-list declares. A chat model none of them settles is probed in
-``chat_protocol_order``: OpenAI Responses first, then Chat, Anthropic and
-Gemini, with Claude and Gemini models asked on their own API before the rest
-so their requests pass through unconverted.
-"""
+"""根据模型家族、用途和显式配置生成协议预选值。"""
 
 from __future__ import annotations
 
@@ -32,13 +23,20 @@ _CHAT_PROTOCOL_ORDER = (
     ProtocolKind.OPENAI_RESPONSES,
     ProtocolKind.OPENAI_CHAT,
     ProtocolKind.ANTHROPIC,
-    ProtocolKind.GEMINI,
 )
 _NON_CHAT_PROTOCOL_ORDER = (
     ProtocolKind.OPENAI_IMAGE,
     ProtocolKind.OPENAI_EMBEDDING,
     ProtocolKind.RERANK,
 )
+
+_RERANK_NAME_RE = re.compile(r"rerank")
+_EMBEDDING_NAME_RE = re.compile(r"embed|^(?:bge|gte|m3e|voyage)-")
+_IMAGE_NAME_RE = re.compile(
+    r"gpt-image|dall-e|imagen|flux|seedream|cogview|kolors|hidream"
+    r"|stable-diffusion|sdxl|wanx|qwen-image|grok-imagine-image"
+)
+_OPENAI_REASONING_NAME_RE = re.compile(r"^o[1-9](?:-|$)")
 
 _DECLARED_ENDPOINT_PROTOCOLS: dict[str, ProtocolKind] = {
     "openai": ProtocolKind.OPENAI_CHAT,
@@ -63,46 +61,6 @@ _DECLARED_ENDPOINT_PROTOCOLS: dict[str, ProtocolKind] = {
     "generatecontent": ProtocolKind.GEMINI,
     "streamgeneratecontent": ProtocolKind.GEMINI,
 }
-
-_RERANK_NAME_RE = re.compile(r"rerank")
-_EMBEDDING_NAME_RE = re.compile(r"embed|^(?:bge|gte|m3e|voyage)-")
-# Models served by an images API. Chat models that answer with pictures, such
-# as gemini-2.5-flash-image, stay chat.
-_IMAGE_NAME_RE = re.compile(
-    r"gpt-image|dall-e|imagen|flux|seedream|cogview|kolors|hidream"
-    r"|stable-diffusion|sdxl|wanx|qwen-image"
-)
-
-
-def _base_model_name(model_name: str) -> str:
-    """Drop vendor prefixes such as `openai/` or `models/`."""
-    return model_name.strip().lower().rsplit("/", 1)[-1]
-
-
-def _protocol_for_model_name(model_name: str) -> ProtocolKind | None:
-    name = _base_model_name(model_name)
-    if _RERANK_NAME_RE.search(name):
-        return ProtocolKind.RERANK
-    if _EMBEDDING_NAME_RE.search(name):
-        return ProtocolKind.OPENAI_EMBEDDING
-    if _IMAGE_NAME_RE.search(name):
-        return ProtocolKind.OPENAI_IMAGE
-    return None
-
-
-def chat_protocol_order(model_name: str) -> list[ProtocolKind]:
-    """Chat protocols to try for a model, most preferred first."""
-    name = _base_model_name(model_name)
-    native = (
-        ProtocolKind.ANTHROPIC
-        if "claude" in name
-        else ProtocolKind.GEMINI
-        if "gemini" in name
-        else None
-    )
-    if native is None:
-        return list(_CHAT_PROTOCOL_ORDER)
-    return [native, *(item for item in _CHAT_PROTOCOL_ORDER if item != native)]
 
 
 def parse_declared_protocols(entry: Mapping[str, Any]) -> list[ProtocolKind]:
@@ -135,20 +93,46 @@ def resolve_known_protocol(
     pinned: ProtocolKind | None = None,
     declared: Iterable[ProtocolKind] = (),
 ) -> ProtocolKind | None:
-    """Return the protocol the facts settle, or None when it must be probed."""
     if pinned is not None:
         return pinned
-    named = _protocol_for_model_name(model_name)
-    if named is not None:
-        return named
-    declared_set = set(declared)
-    for protocol in _NON_CHAT_PROTOCOL_ORDER:
-        if protocol in declared_set:
+    name = model_name.strip().lower().rsplit("/", 1)[-1]
+    for pattern, protocol in (
+        (_RERANK_NAME_RE, ProtocolKind.RERANK),
+        (_EMBEDDING_NAME_RE, ProtocolKind.OPENAI_EMBEDDING),
+        (_IMAGE_NAME_RE, ProtocolKind.OPENAI_IMAGE),
+    ):
+        if pattern.search(name):
             return protocol
+    if name.startswith(("gemini", "gemma", "nano-banana")):
+        return ProtocolKind.GEMINI
+    if name.startswith(
+        (
+            "claude",
+            "deepseek",
+            "glm-",
+            "qwen",
+            "qwq",
+            "qvq",
+            "kimi",
+            "moonshot",
+            "minimax",
+            "step-",
+        )
+    ):
+        return ProtocolKind.ANTHROPIC
+    if name.startswith(
+        ("gpt-", "chatgpt-", "grok-")
+    ) or _OPENAI_REASONING_NAME_RE.match(name):
+        return ProtocolKind.OPENAI_RESPONSES
+    declared_set = set(declared)
     return next(
         (
             protocol
-            for protocol in chat_protocol_order(model_name)
+            for protocol in (
+                *_NON_CHAT_PROTOCOL_ORDER,
+                *_CHAT_PROTOCOL_ORDER,
+                ProtocolKind.GEMINI,
+            )
             if protocol in declared_set
         ),
         None,
@@ -158,15 +142,10 @@ def resolve_known_protocol(
 def resolve_onboard_protocol(
     model_name: str,
     *,
-    pinned: ProtocolKind | None,
-    declared: Iterable[ProtocolKind],
-    configured: Iterable[ProtocolKind],
+    pinned: ProtocolKind | None = None,
+    declared: Iterable[ProtocolKind] = (),
+    configured: Iterable[ProtocolKind] = (),
 ) -> ProtocolKind:
-    """Pick the protocol a model sync stores for a newly matched model.
-
-    Syncs do not probe: a chat model the facts leave open takes the first
-    configured chat protocol in preference order, else OpenAI Chat.
-    """
     known = resolve_known_protocol(model_name, pinned=pinned, declared=declared)
     if known is not None:
         return known
@@ -174,7 +153,7 @@ def resolve_onboard_protocol(
     return next(
         (
             protocol
-            for protocol in chat_protocol_order(model_name)
+            for protocol in (*_CHAT_PROTOCOL_ORDER, ProtocolKind.GEMINI)
             if protocol in configured_set
         ),
         ProtocolKind.OPENAI_CHAT,
