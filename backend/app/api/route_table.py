@@ -88,7 +88,7 @@ from ..gateway.service.proxy_routes import (
     list_gateway_models,
     list_gemini_models,
     proxy_anthropic_messages,
-    proxy_gemini_interaction,
+    proxy_gemini_generate_content,
     proxy_openai_chat,
     proxy_openai_embeddings,
     proxy_openai_image_edits,
@@ -542,11 +542,12 @@ def register_proxy(app: FastAPI) -> None:
     app.add_api_route("/v1/messages", proxy_anthropic_messages, methods=["POST"])
     app.add_api_route("/v1/models", list_gateway_models, methods=["GET"])
     app.add_api_route("/v1beta/models", list_gemini_models, methods=["GET"])
-    app.add_api_route(
-        "/v1beta/interactions",
-        proxy_gemini_interaction,
-        methods=["POST"],
-    )
+    for method in ("generateContent", "streamGenerateContent"):
+        app.add_api_route(
+            f"/v1beta/models/{{model_name:path}}:{method}",
+            proxy_gemini_generate_content,
+            methods=["POST"],
+        )
 
 
 def include_routes(app: FastAPI, *, ui_static_dir: str = "") -> None:

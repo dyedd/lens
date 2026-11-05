@@ -23,7 +23,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Clients                                                              │
-│ OpenAI SDK / Anthropic SDK / Gemini Interactions / curl              │
+│ OpenAI SDK / Anthropic SDK / Gemini SDK / curl                       │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │ Lens Base URL + sk-lens-...
                                 ▼
@@ -34,7 +34,8 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  /v1/chat/completions        /v1/messages                            │
 │  /v1/responses               /v1/embeddings      /v1/rerank          │
 │  /v1/images/generations      /v1/images/edits                        │
-│  /v1beta/interactions                                               │
+│  /v1beta/models/{model}:generateContent                              │
+│  /v1beta/models/{model}:streamGenerateContent                        │
 │                                                                      │
 │  Request resolution                                                  │
 │  - Validate gateway key                                              │
@@ -46,8 +47,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  Routing plan                                                        │
 │  - Model group item: runtime channel + credential + upstream model   │
 │  - Strategy: round robin / failover                                  │
-│  - Default OpenAI Chat: other chat clients convert automatically       │
-│    upstream protocol is pinned                                       │
+│  - Use model protocols; convert chat requests as needed              │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │
                                 ▼
@@ -57,13 +57,12 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 │  Site                                                                │
 │  ├─ Base URLs: one site can keep multiple upstream URLs               │
 │  ├─ Credentials: one site can keep multiple API keys                  │
-│  └─ Models: OpenAI Chat by default, other clients convert             │
-│     upstream protocol only when conversion is required                │
+│  └─ Models: Configure upstream protocols and context                 │
 │                                                                      │
 │  Synced / manual models                                              │
 │  - Models belong to a URL and keep protocol, credential, and          │
 │    upstream model name                                                │
-│  - Model sync uses the upstream /v1/models endpoint                   │
+│  - Model sync reads the upstream model catalog                       │
 │                                                                      │
 │  Model groups                                                        │
 │  - Declare strategy and an optional execution group                  │
@@ -109,7 +108,7 @@ Self-hosted multi-protocol LLM gateway that organizes providers by site, Base UR
 - Site management: Configure multiple Base URLs and credentials per site, with model sync, manual models, batch import, and site tags
 - Model group routing: Build candidates from runtime channel + credential + upstream model, with round robin, failover, reusable execution groups, per-channel toggles, and multimodal fallback
 - Context awareness: The same model can have a different context window per channel (typed in the channel model table or while fetching models, otherwise read from the upstream model list), and a model group can set the default for members without one; requests estimated past a member's context skip it, and context-length errors keep failing over to the next member
-- Protocols: Models default to OpenAI Chat and convert other chat clients automatically. OpenAI Chat, OpenAI Responses, Anthropic, and Gemini can convert into each other; embeddings, images, and rerank stay native
+- Protocols: Convert between OpenAI Chat, OpenAI Responses, Anthropic, and Gemini chat protocols; forward embeddings, images, and rerank requests in their native protocols
 - Model testing: Single-model and batch model tests with configurable test prompts
 - Request logs: Track protocol, model, latency, tokens, cost, User-Agent, and every upstream attempt; optional request/response body capture
 - Health and cooldown: Model health page graded by success rate, built-in circuit-breaker cooldown with exponential backoff, and custom cooldown detection rules
@@ -248,8 +247,8 @@ Common Base URLs:
 | -------------- | ------------------------------------------- | ----------------------------------------------------- |
 | OpenAI         | `https://api.openai.com`                    | Pin Chat / Responses for the specific API             |
 | Anthropic      | `https://api.anthropic.com`                 | Anthropic                                             |
-| Gemini         | `https://generativelanguage.googleapis.com` | Gemini (upstream uses Interactions API)               |
-| Compatible API | `https://newapi.example.com`                | OpenAI Chat (Chat, Rerank, and other entries convert) |
+| Gemini         | `https://generativelanguage.googleapis.com` | Gemini generateContent                                |
+| Compatible API | `https://newapi.example.com`                | Set the protocol for each upstream API                |
 
 ### 2. Create Model Groups
 
@@ -261,7 +260,7 @@ Open `/groups`, create a model group, add upstream models, and choose a routing 
 - **Multimodal fallback**: Configure ordered backup model groups for a model group; for multimodal requests, backup groups are tried once the primary group's candidates are exhausted
 - **Context windows**: A channel model uses its manually set context window first (channel model table, fetch dialog, or the model group default), then the value its upstream model list reports. Members with no value anywhere are never filtered, so the request and the upstream decide. The gateway skips members too small for the estimated request tokens; if none fit, upstreams still decide, and context-length errors keep failing over
 
-**Protocol conversion**: Conversion runs only when a member's upstream protocol differs from the client protocol. Any two of the four chat protocols — OpenAI Chat, OpenAI Responses, Anthropic, and Gemini — can be converted into each other (12 client/upstream combinations); same-protocol requests pass through unchanged. Gemini clients and upstreams both use Google's recommended Interactions API.
+**Protocol conversion**: Lens converts between OpenAI Chat, OpenAI Responses, Anthropic, and Gemini chat protocols. Requests using the same client and upstream protocol pass through directly. Gemini uses `generateContent` for regular requests and `streamGenerateContent` for streaming.
 
 ### 3. Issue Gateway Keys
 
@@ -526,7 +525,7 @@ curl http://127.0.0.1:3000/v1/images/generations \
   }'
 ```
 
-The request body is forwarded to the upstream `/v1/images/generations`; `/v1/images/edits` works the same way (multipart upload). Images are billed per image, with the unit price configured in model prices.
+Image generation and editing support JSON requests and `stream: true` event streams. Image editing also supports multipart uploads. Images are billed per image, with the unit price configured in model prices.
 
 </details>
 
@@ -545,12 +544,11 @@ curl http://127.0.0.1:3000/v1/rerank \
       "Berlin is the capital of Germany.",
       "Madrid is the capital of Spain."
     ],
-    "top_n": 3,
-    "return_documents": true
+    "top_n": 3
   }'
 ```
 
-The request body is forwarded as-is to the upstream `/v1/rerank` endpoint (e.g. NewAPI, Jina, Cohere-compatible services). Responses are returned unmodified, including `results[*].relevance_score / index / document`.
+Requests are forwarded to the upstream `/v1/rerank` endpoint, which returns ranking results and usage data. Use an upstream Base URL ending in `/v2` for Cohere v2.
 
 </details>
 
@@ -558,12 +556,11 @@ The request body is forwarded as-is to the upstream `/v1/rerank` endpoint (e.g. 
 <summary>Gemini (curl)</summary>
 
 ```bash
-curl "http://127.0.0.1:3000/v1beta/interactions" \
+curl "http://127.0.0.1:3000/v1beta/models/your-gemini-model:generateContent" \
   -H "x-goog-api-key: sk-lens-..." \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "your-gemini-model",
-    "input": "hello"
+    "contents": [{"role": "user", "parts": [{"text": "hello"}]}]
   }'
 ```
 

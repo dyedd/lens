@@ -39,103 +39,40 @@ def distill_stream_response_content(
             return dump_log_json(restored_message) or raw_content
     if protocol == ProtocolKind.GEMINI:
         payloads = parse_sse_payloads(raw_content)
-        compact_payload = _restore_gemini_interaction_stream(payloads)
+        compact_payload = _restore_gemini_stream(payloads)
         if compact_payload is not None:
             return dump_log_json(compact_payload) or raw_content
 
     return raw_content
 
 
-def _restore_gemini_interaction_stream(
-    payloads: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    """Rebuild an Interactions response from its SSE events for logs."""
-    interaction: dict[str, Any] = {}
-    steps: dict[int, dict[str, Any]] = {}
-    arguments: dict[int, str] = {}
+def _restore_gemini_stream(payloads: list[dict[str, Any]]) -> dict[str, Any] | None:
+    response: dict[str, Any] = {}
+    candidates: dict[int, dict[str, Any]] = {}
     for payload in payloads:
-        event_type = payload.get("event_type")
-        if event_type == "interaction.created":
-            created = payload.get("interaction")
-            if isinstance(created, Mapping):
-                interaction.update(deepcopy(created))
-        elif event_type == "interaction.completed":
-            completed = payload.get("interaction")
-            if isinstance(completed, Mapping):
-                interaction.update(deepcopy(completed))
-        elif event_type == "step.start":
-            index = _event_index(payload)
-            step = payload.get("step")
-            if index is not None and isinstance(step, Mapping):
-                steps[index] = deepcopy(dict(step))
-                arguments[index] = ""
-        elif event_type == "step.delta":
-            index = _event_index(payload)
-            delta = payload.get("delta")
-            if index is None or not isinstance(delta, Mapping):
+        for key, value in payload.items():
+            if key != "candidates":
+                if key == "usageMetadata" and isinstance(value, Mapping):
+                    response.setdefault(key, {}).update(value)
+                else:
+                    response[key] = deepcopy(value)
+        for candidate in payload.get("candidates", []):
+            if not isinstance(candidate, Mapping):
                 continue
-            step = steps.setdefault(index, {"type": "model_output"})
-            delta_type = delta.get("type")
-            if delta_type == "text":
-                text = delta.get("text")
-                if isinstance(text, str):
-                    content = step.setdefault("content", [])
-                    if isinstance(content, list):
-                        text_block = next(
-                            (
-                                block
-                                for block in content
-                                if isinstance(block, dict)
-                                and block.get("type") == "text"
-                            ),
-                            None,
-                        )
-                        if text_block is None:
-                            text_block = {"type": "text", "text": ""}
-                            content.append(text_block)
-                        text_block["text"] = str(text_block.get("text") or "") + text
-            elif delta_type == "thought_summary":
-                content = delta.get("content")
-                text = (
-                    str(content.get("text") or "")
-                    if isinstance(content, Mapping)
-                    else ""
-                )
-                step["type"] = "thought"
-                summary = step.setdefault("summary", [])
-                if isinstance(summary, list):
-                    summary.append({"type": "text", "text": text})
-            elif delta_type == "thought_signature":
-                signature = delta.get("signature")
-                if isinstance(signature, str):
-                    step["signature"] = signature
-            elif delta_type == "arguments_delta":
-                value = delta.get("arguments")
-                if isinstance(value, str):
-                    arguments[index] = arguments.get(index, "") + value
-        elif event_type == "step.stop":
-            index = _event_index(payload)
-            value = arguments.get(index) if index is not None else None
-            step = steps.get(index) if index is not None else None
-            if step is not None and value:
-                try:
-                    step["arguments"] = json.loads(value)
-                except json.JSONDecodeError:
-                    step["arguments"] = value
-
-    if not interaction and not steps:
-        return None
-    if steps:
-        interaction["steps"] = [steps[index] for index in sorted(steps)]
-    interaction.setdefault("status", "completed")
-    return interaction
-
-
-def _event_index(payload: Mapping[str, Any]) -> int | None:
-    value = payload.get("index")
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
+            index = candidate.get("index", 0)
+            if isinstance(index, bool) or not isinstance(index, int):
+                continue
+            target = candidates.setdefault(index, {"index": index})
+            for key, value in candidate.items():
+                if key != "content":
+                    target[key] = deepcopy(value)
+            content = candidate.get("content")
+            if isinstance(content, Mapping):
+                merged = target.setdefault("content", {"role": "model", "parts": []})
+                merged["parts"].extend(deepcopy(content.get("parts", [])))
+    if candidates:
+        response["candidates"] = [candidates[index] for index in sorted(candidates)]
+    return response or None
 
 
 def _restore_anthropic_stream_message(

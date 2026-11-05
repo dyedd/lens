@@ -169,7 +169,7 @@ async def serialize_chat_stream(
         if isinstance(event, BlockStart):
             if event.kind == BlockKind.TOOL_CALL:
                 tool_calls[event.index] = ChatToolCall(
-                    index=event.index, call_id=event.call_id, name=event.name
+                    index=len(tool_calls), call_id=event.call_id, name=event.name
                 )
             continue
         if isinstance(event, TextDelta):
@@ -190,13 +190,14 @@ async def serialize_chat_stream(
             call = tool_calls.get(event.index)
             if call is None:
                 raise ValueError("Chat tool call arguments arrived before its block")
-            delta: dict[str, Any] = {"arguments": event.arguments}
+            function: dict[str, Any] = {"arguments": event.arguments}
+            delta: dict[str, Any] = {"function": function}
             if event.index not in announced:
                 announced.add(event.index)
                 delta["id"] = call.call_id
                 delta["type"] = call.call_type or "function"
-                delta["function"] = {"name": call.name, "arguments": ""}
-            yield chunk({"tool_calls": [{"index": event.index, **delta}]})
+                function["name"] = call.name
+            yield chunk({"tool_calls": [{"index": call.index, **delta}]})
             continue
         if isinstance(event, StreamFinish):
             finish_reason = _chat_wire_finish_reason(event.reason)
@@ -231,7 +232,7 @@ async def serialize_chat_stream(
             {
                 "tool_calls": [
                     {
-                        "index": index,
+                        "index": call.index,
                         "id": call.call_id,
                         "type": call.call_type or "function",
                         "function": {"name": call.name, "arguments": "{}"},

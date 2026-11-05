@@ -32,8 +32,10 @@ _SKIPPED_KEYS = frozenset(
         "signature",
         "encrypted_content",
         "thought_signature",
+        "thoughtSignature",
         "data",
         "file_data",
+        "fileData",
         "image_url",
         "file_id",
     }
@@ -85,10 +87,10 @@ def _count_text_chars(value: Any) -> tuple[int, int]:
 
 def _requested_output_tokens(body: Mapping[str, Any], protocol: ProtocolKind) -> int:
     if protocol == ProtocolKind.GEMINI:
-        config = body.get("generation_config")
+        config = body.get("generationConfig")
         if not isinstance(config, Mapping):
             return 0
-        return _positive_int(config.get("max_output_tokens"))
+        return _positive_int(config.get("maxOutputTokens"))
     for key in _OUTPUT_LIMIT_KEYS:
         tokens = _positive_int(body.get(key))
         if tokens:

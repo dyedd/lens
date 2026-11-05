@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import HTTPException
 
@@ -75,8 +75,14 @@ def build_upstream_request(
             raise HTTPException(status_code=400, detail="Gemini request requires model")
 
         payload = dict(body)
-        payload["model"] = model_name
-        url = append_url_path(_protocol_base_url(channel), "interactions")
+        payload.pop("model", None)
+        is_stream = payload.pop("stream", False) is True
+        method = "streamGenerateContent" if is_stream else "generateContent"
+        url = append_url_path(
+            _protocol_base_url(channel),
+            f"models/{quote(model_name, safe='')}:{method}",
+            query_params={"alt": "sse"} if is_stream else None,
+        )
         default_headers = {
             **build_upstream_auth_headers(channel, api_key),
             "content-type": "application/json",
@@ -158,6 +164,11 @@ def build_upstream_headers(
 def _protocol_base_url(channel: ChannelConfig) -> str:
     root = canonicalize_base_url(str(channel.base_url))
     parsed = urlsplit(root)
+
+    if channel.protocol == ProtocolKind.RERANK and parsed.path.rstrip("/").endswith(
+        "/v2"
+    ):
+        return root
 
     if (
         channel.protocol in _OPENAI_COMPATIBLE_PROTOCOLS

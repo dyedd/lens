@@ -41,6 +41,7 @@ function generateCurl(
     typeof window !== "undefined"
       ? window.location.origin
       : "http://localhost:3000";
+  const model = record.requested_group_name || "MODEL";
   let path = "/v1/chat/completions";
   if (record.protocol === "anthropic") {
     path = "/v1/messages";
@@ -48,10 +49,12 @@ function generateCurl(
     path = "/v1/responses";
   } else if (record.protocol === "openai_embedding") {
     path = "/v1/embeddings";
+  } else if (record.protocol === "openai_image") {
+    path = "/v1/images/generations";
   } else if (record.protocol === "rerank") {
     path = "/v1/rerank";
   } else if (record.protocol === "gemini") {
-    path = "/v1beta/interactions";
+    path = `/v1beta/models/${encodeURIComponent(model)}:${record.is_stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
   }
 
   const headers = [
@@ -64,10 +67,26 @@ function generateCurl(
     headers.push('  -H "anthropic-version: 2023-06-01"');
   }
 
-  const fallbackBody =
-    record.protocol === "gemini"
-      ? `{\n    "model": "${record.requested_group_name || ""}",\n    "input": "Hello"\n  }`
-      : `{\n    "model": "${record.requested_group_name || ""}",\n    "messages": [{"role": "user", "content": "Hello"}]\n  }`;
+  const messages = [{ role: "user", content: "Hello" }];
+  const fallbackPayload = {
+    openai_chat: { model, messages },
+    openai_responses: { model, input: "Hello" },
+    openai_embedding: { model, input: "Hello" },
+    openai_image: { model, prompt: "Hello" },
+    rerank: { model, query: "Hello", documents: ["Hello"] },
+    anthropic: { model, messages, max_tokens: 1024 },
+    gemini: { contents: [{ role: "user", parts: [{ text: "Hello" }] }] },
+  }[record.protocol];
+  const fallbackBody = JSON.stringify(
+    {
+      ...fallbackPayload,
+      ...(record.is_stream && record.protocol !== "gemini"
+        ? { stream: true }
+        : {}),
+    },
+    null,
+    2,
+  );
   const bodyStr = requestContent?.trim()
     ? `  -d '${requestContent.trim().replace(/'/g, "'\\''")}'`
     : `  -d '${fallbackBody}'`;

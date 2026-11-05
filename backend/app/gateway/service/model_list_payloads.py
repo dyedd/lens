@@ -54,7 +54,10 @@ def build_gemini_models_payload(
                 "baseModelId": name,
                 "version": "001",
                 "displayName": name,
-                "supportedGenerationMethods": ["interactions"],
+                "supportedGenerationMethods": [
+                    "generateContent",
+                    "streamGenerateContent",
+                ],
             }
             for name in names
         ]
