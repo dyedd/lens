@@ -65,6 +65,7 @@ export function ChannelsScreen() {
   const picker = useChannelModelPicker({
     form: editor.form,
     setForm: editor.setForm,
+    sessionKey: editor.isDialogOpen ? (editor.editingSiteId ?? "new") : null,
     locale,
   });
   const modelTest = useChannelModelTest(editor.form, locale);

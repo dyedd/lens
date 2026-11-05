@@ -23,7 +23,11 @@ def offline_model_metadata(monkeypatch):
     import app.gateway.service.tasks.litellm_sync_tasks as metadata
 
     async def fetch(_proxy):
-        return {}
+        return {
+            "text-embedding-3-small": {"mode": "embedding"},
+            "claude-sonnet-4-5": {"mode": "chat", "litellm_provider": "anthropic"},
+            "gpt-5-codex": {"mode": "responses"},
+        }
 
     monkeypatch.setattr(metadata, "_fetch_litellm_payload", fetch)
 
@@ -47,40 +51,68 @@ def test_fetch_site_models_uses_selected_credentials(
     admin_headers,
     monkeypatch,
 ) -> None:
-    from app.gateway.service.tasks.model_discovery import UpstreamModel
-
-    async def fake_fetch(channel: Any) -> list[UpstreamModel]:
-        assert channel.keys[0].id == "cred-a"
-        return [
-            UpstreamModel(name="gpt-4o", context_window=128_000),
-            UpstreamModel(name="gpt-4o-mini"),
-        ]
-
     import app.gateway.service.tasks.model_discovery as model_discovery
 
-    monkeypatch.setattr(model_discovery, "fetch_upstream_models", fake_fetch)
+    seen: list[str] = []
 
-    response = client.post(
-        "/api/admin/site-model-discoveries",
-        headers=admin_headers,
-        json={
-            "base_url": "https://upstream.example/v1",
-            "headers": [],
-            "credentials": [
-                {
-                    "id": "cred-a",
-                    "name": "primary",
-                    "api_key": "upstream-secret",
-                }
-            ],
-            "credential_ids": ["cred-a"],
-        },
-    )
+    async def handler(request: httpx.Request) -> httpx.Response:
+        credential = request.headers["authorization"].removeprefix("Bearer ")
+        seen.append(credential)
+        assert request.url.path == "/v1/models"
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "shared-model"},
+                    {"id": f"only-{credential}"},
+                    {"id": "gpt-5-codex", "supported_endpoint_types": ["openai"]},
+                    {"id": "claude-sonnet-4-5"},
+                    {"id": "gemini-2.5-pro"},
+                ]
+            },
+        )
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(model_discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        response = client.post(
+            "/api/admin/site-model-discoveries",
+            headers=admin_headers,
+            json={
+                "base_url": "https://upstream.example/v1",
+                "credentials": [
+                    {"id": f"cred-{key}", "name": key, "api_key": f"test-{key}"}
+                    for key in ("a", "b", "unused")
+                ],
+                "credential_ids": ["cred-a", "cred-b"],
+            },
+        )
+    finally:
+        run_async(upstream.aclose())
 
     assert response.status_code == 200
-    assert [
-        (item["model_name"], item["context_window"]) for item in response.json()
-    ] == [("gpt-4o", None), ("gpt-4o-mini", None)]
+    assert set(seen) == {"test-a", "test-b"}
+    assert {
+        (item["credential_id"], item["model_name"]) for item in response.json()
+    } == {
+        ("cred-a", "shared-model"),
+        ("cred-b", "shared-model"),
+        ("cred-a", "only-test-a"),
+        ("cred-b", "only-test-b"),
+        *(
+            (credential, name)
+            for credential in ("cred-a", "cred-b")
+            for name in ("gpt-5-codex", "claude-sonnet-4-5", "gemini-2.5-pro")
+        ),
+    }
+    assert {item["model_name"]: item["protocol"] for item in response.json()} == {
+        "shared-model": "openai_chat",
+        "only-test-a": "openai_chat",
+        "only-test-b": "openai_chat",
+        "gpt-5-codex": "openai_responses",
+        "claude-sonnet-4-5": "anthropic",
+        "gemini-2.5-pro": "gemini",
+    }
 
 
 @pytest.mark.parametrize(
@@ -107,7 +139,14 @@ def test_fetch_site_models_uses_selected_credentials(
             {
                 "models": [
                     {"name": "models/model-a", "inputTokenLimit": 200_000},
-                    {"name": "models/model-b"},
+                    {
+                        "name": "models/model-b",
+                        "supportedGenerationMethods": ["generateContent"],
+                    },
+                    {
+                        "name": "models/embedding-only",
+                        "supportedGenerationMethods": ["embedContent"],
+                    },
                 ]
             },
             id="gemini",
@@ -192,85 +231,66 @@ def test_fetch_site_models_falls_back_to_a_native_model_list(
     assert [item["model_name"] for item in response.json()] == ["claude-sonnet-4-5"]
 
 
-def test_detect_site_model_protocols_probes_only_open_chat_models(
+def test_model_protocol_defaults_do_not_call_upstream(
     client, admin_headers, monkeypatch
 ) -> None:
-    import app.gateway.service.tasks.model_discovery as model_discovery
-    import app.gateway.service.tasks.site_model_probe as probe
+    sent: list[httpx.Request] = []
 
-    probes: list[tuple[str, str]] = []
+    async def unexpected_request(
+        _client: httpx.AsyncClient, request: httpx.Request, **_kwargs: Any
+    ) -> httpx.Response:
+        sent.append(request)
+        raise AssertionError("协议预选不得发送上游请求")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET":
-            return httpx.Response(
-                200,
-                json={
-                    "data": [
-                        {"id": "deepseek-chat", "supported_endpoint_types": ["openai"]},
-                        {"id": "gpt-5"},
-                        {"id": "claude-sonnet-4-5"},
-                        {"id": "text-embedding-3-small"},
-                        {"id": "mystery-model"},
-                    ]
-                },
-            )
-        model = (
-            request.url.path.rsplit("/", 1)[-1].removesuffix(":generateContent")
-            if request.url.path.endswith(":generateContent")
-            else json.loads(request.content)["model"]
-        )
-        probes.append((model, request.url.path))
-        if model == "mystery-model":
-            return httpx.Response(404, json={"error": {"message": "no route"}})
-        if request.url.path == "/v1/messages":
-            return httpx.Response(
-                200, json={"content": [{"type": "text", "text": "hello"}]}
-            )
-        if request.url.path == "/v1/chat/completions":
-            return httpx.Response(
-                200, json={"choices": [{"message": {"content": "hello"}}]}
-            )
-        return httpx.Response(404, json={"error": {"message": "no route"}})
-
-    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(
-        model_discovery, "resolve_http_client", lambda _proxy: upstream_client
-    )
-    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream_client)
-
+    monkeypatch.setattr(httpx.AsyncClient, "send", unexpected_request)
+    expected = {
+        "gpt-5-codex": ["openai_responses"],
+        "openai/gpt-4o": ["openai_responses"],
+        "o3-mini": ["openai_responses"],
+        "grok-4.7": ["openai_responses"],
+        "claude-sonnet-4-5": ["anthropic"],
+        "deepseek-v4.1-flash": ["anthropic"],
+        "glm-5.3-flash": ["anthropic"],
+        "qwen3": ["anthropic"],
+        "kimi-k2": ["anthropic"],
+        "gemini-2.5-pro": ["gemini"],
+        "google/gemma-4-26b": ["gemini"],
+        "gemini-3-pro-image": ["gemini"],
+        "nano-banana-pro": ["gemini"],
+        "text-embedding-3-small": ["openai_embedding"],
+        "bge-m3": ["openai_embedding"],
+        "bge-reranker-v2-m3": ["rerank"],
+        "gpt-image-1": ["openai_image"],
+        "grok-imagine-image": ["openai_image"],
+        "unknown-model": ["openai_chat"],
+    }
     response = client.post(
         "/api/admin/site-model-protocol-detections",
         headers=admin_headers,
-        json={
-            "base_url": "https://upstream.example",
-            "credential": {"id": "cred-a", "api_key": "sk-test"},
-            "model_names": [
-                "deepseek-chat",
-                "gpt-5",
-                "claude-sonnet-4-5",
-                "text-embedding-3-small",
-                "mystery-model",
-            ],
-        },
+        json={"model_names": list(expected)},
     )
-
     assert response.status_code == 200, response.text
-    assert {item["model_name"]: item["protocol"] for item in response.json()} == {
-        "deepseek-chat": "openai_chat",
-        "gpt-5": "openai_chat",
-        "claude-sonnet-4-5": "anthropic",
-        "text-embedding-3-small": "openai_embedding",
-        "mystery-model": None,
-    }
-    assert {model for model, _path in probes} == {
-        "gpt-5",
-        "claude-sonnet-4-5",
-        "mystery-model",
-    }
-    assert [path for model, path in probes if model == "gpt-5"] == [
-        "/v1/responses",
-        "/v1/chat/completions",
+    assert {
+        item["model_name"]: item["protocols"] for item in response.json()
+    } == expected
+
+    pinned = client.post(
+        "/api/admin/site-model-protocol-detections",
+        headers=admin_headers,
+        json={"endpoint_kind": "openai_chat", "model_names": ["gpt-5-codex"]},
+    )
+    assert pinned.status_code == 200, pinned.text
+    assert pinned.json() == [
+        {"model_name": "gpt-5-codex", "protocols": ["openai_chat"]}
     ]
+    batch = client.post(
+        "/api/admin/site-model-protocol-detections",
+        headers=admin_headers,
+        json={"model_names": [f"custom-model-{index}" for index in range(1000)]},
+    )
+    assert batch.status_code == 200, batch.text
+    assert len(batch.json()) == 1000
+    assert sent == []
 
 
 def test_fetch_site_models_reports_missing_credentials(client, admin_headers) -> None:
@@ -1000,7 +1020,7 @@ def test_channel_model_sync_stores_a_protocol_per_new_model(
 ) -> None:
     from app.gateway.service.tasks.model_discovery import UpstreamModel
 
-    _create_sync_site(
+    site_id = _create_sync_site(
         client, admin_headers, _sync_site_payload(patterns={"cred-a": "*"})
     )
 
@@ -1008,6 +1028,7 @@ def test_channel_model_sync_stores_a_protocol_per_new_model(
         return [
             UpstreamModel(name="gpt-4o"),
             UpstreamModel(name="text-embedding-3-small"),
+            UpstreamModel(name="gpt-5-codex"),
             UpstreamModel(
                 name="claude-sonnet-4-5",
                 protocols=(ProtocolKind.OPENAI_CHAT, ProtocolKind.ANTHROPIC),
@@ -1023,10 +1044,38 @@ def test_channel_model_sync_stores_a_protocol_per_new_model(
         (model["model_name"], model["protocol"])
         for model in site["protocols"][0]["models"]
     } == {
-        ("gpt-4o", "openai_chat"),
+        ("gpt-4o", "openai_responses"),
         ("text-embedding-3-small", "openai_embedding"),
+        ("gpt-5-codex", "openai_responses"),
         ("claude-sonnet-4-5", "anthropic"),
     }
+
+    payload = _sync_site_payload(
+        patterns={"cred-a": "*"},
+        models=[
+            _model(
+                model["model_name"],
+                protocol="openai_chat"
+                if model["model_name"] == "gpt-5-codex"
+                else model["protocol"],
+            )
+            for model in site["protocols"][0]["models"]
+        ],
+    )
+    response = client.put(
+        f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+    )
+    assert response.status_code == 200, response.text
+    _run_model_sync(client, admin_headers, site_ids=[site_id])
+    site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert (
+        next(
+            model["protocol"]
+            for model in site["protocols"][0]["models"]
+            if model["model_name"] == "gpt-5-codex"
+        )
+        == "openai_chat"
+    )
 
 
 @pytest.mark.parametrize("china_mode", ["shared", "owned", "absent"])
@@ -1247,7 +1296,10 @@ def test_channel_model_sync_keeps_same_name_targets_for_distinct_protocols(
             "id": "pc-main",
             "base_url_id": "main",
             "protocols": ["openai_chat"],
-            "models": [_model("shared-model")],
+            "models": [
+                _model("shared-model"),
+                _model("shared-model", protocol="openai_responses"),
+            ],
         },
         {
             "id": "pc-anthropic",
@@ -1274,7 +1326,7 @@ def test_channel_model_sync_keeps_same_name_targets_for_distinct_protocols(
 
     assert all(not item["missing"] for item in result["items"])
     assert stored == {
-        "main": {("shared-model", "openai_chat")},
+        "main": {("shared-model", "openai_chat"), ("shared-model", "openai_responses")},
         "anthropic": {("shared-model", "anthropic")},
     }
 
@@ -1412,46 +1464,69 @@ def test_site_rejects_an_invalid_model_pattern(client, admin_headers) -> None:
 
 
 @pytest.mark.parametrize(
-    "failed_catalog",
+    "catalog_mode",
     [
-        pytest.param(
-            HTTPException(status_code=502, detail="credential failed"),
-            id="upstream-error",
-        ),
-        pytest.param([], id="empty-catalog"),
+        "upstream-error",
+        "error-envelope",
+        "failed-envelope",
+        "invalid-list",
+        "invalid-entry",
+        "empty",
     ],
 )
-def test_channel_model_sync_leaves_models_untouched_when_a_catalog_fails(
+def test_channel_model_sync_handles_each_key_catalog_independently(
     client,
     admin_headers,
     monkeypatch,
-    failed_catalog: Any,
+    catalog_mode: str,
 ) -> None:
+    import app.gateway.service.tasks.model_discovery as discovery
+
     payload = _sync_site_payload(
         patterns={"cred-a": "*", "cred-b": "*"},
         models=[_model("gpt-4o", credential_id="cred-a")],
     )
     _create_sync_site(client, admin_headers, payload)
 
-    async def fake_fetch(channel: Any) -> list[str]:
-        if channel.keys[0].id == "cred-b":
-            return ["gpt-4o"]
-        if isinstance(failed_catalog, Exception):
-            raise failed_catalog
-        return failed_catalog
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if (
+            request.headers["authorization"]
+            != f"Bearer {payload['credentials'][0]['api_key']}"
+        ):
+            return httpx.Response(200, json={"data": [{"id": "gpt-4o"}]})
+        if catalog_mode == "upstream-error":
+            return httpx.Response(503, json={"error": {"message": "unavailable"}})
+        if catalog_mode == "error-envelope":
+            return httpx.Response(
+                200, json={"error": {"message": "failed"}, "data": []}
+            )
+        if catalog_mode == "failed-envelope":
+            return httpx.Response(200, json={"success": False, "data": []})
+        if catalog_mode == "invalid-list":
+            return httpx.Response(200, json={"data": {}})
+        if catalog_mode == "invalid-entry":
+            return httpx.Response(200, json={"data": [{}]})
+        return httpx.Response(200, json={"data": []})
 
-    _patch_upstream_models(monkeypatch, fake_fetch)
-
-    result = _run_model_sync(client, admin_headers)
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        result = _run_model_sync(client, admin_headers)
+    finally:
+        run_async(upstream.aclose())
 
     assert {(item["credential_id"], item["status"]) for item in result["items"]} == {
-        ("cred-a", "failed"),
+        ("cred-a", "updated" if catalog_mode == "empty" else "failed"),
         ("cred-b", "updated"),
     }
-    # The failing key keeps the row an earlier sync stored.
-    assert _stored_models(client, admin_headers) == {
-        ("cred-a", "gpt-4o"),
-        ("cred-b", "gpt-4o"),
+    expected = {("cred-b", "gpt-4o")}
+    if catalog_mode != "empty":
+        expected.add(("cred-a", "gpt-4o"))
+    assert _stored_models(client, admin_headers) == expected
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    group = next(group for group in groups if group["name"] == "gpt-4o")
+    assert {item["credential_id"] for item in group["items"]} == {
+        credential_id for credential_id, _ in expected
     }
 
 

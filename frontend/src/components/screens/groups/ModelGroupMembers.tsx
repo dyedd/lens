@@ -23,19 +23,19 @@ import {
 } from "@/lib/contextWindow";
 import type { FoldedMember } from "./groupTypes";
 import {
-  formatCredentialIdentity,
+  formatMemberIdentity,
   modelGroupItemReasonLabel,
   modelGroupReasonsForState,
 } from "./modelGroupFormatting";
 
 /** Render a selectable model group candidate. */
 export function CandidateRow({
-  candidate,
+  candidates,
   active,
   locale,
   onClick,
 }: {
-  candidate: ModelGroupCandidateItem;
+  candidates: ModelGroupCandidateItem[];
   active: boolean;
   locale: "zh-CN" | "en-US";
   onClick: () => void;
@@ -53,10 +53,10 @@ export function CandidateRow({
     >
       <div className="min-w-0 flex-1">
         <div className="truncate font-mono text-xs font-medium text-foreground">
-          {candidate.model_name}
+          {candidates[0].model_name}
         </div>
         <div className="truncate text-xs font-normal text-muted-foreground">
-          {formatCredentialIdentity(candidate, locale, { includeSite: false })}
+          {formatMemberIdentity(candidates, locale, { includeSite: false })}
         </div>
       </div>
       <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5">
@@ -98,7 +98,7 @@ export function FoldedMemberRow({
   showChannelName?: boolean;
   locale: "zh-CN" | "en-US";
 }) {
-  const sourceLabel = formatCredentialIdentity(member, locale, {
+  const sourceLabel = formatMemberIdentity(member.subItems, locale, {
     includeSite: showChannelName,
   });
   const enabled = member.ready_item_count > 0;

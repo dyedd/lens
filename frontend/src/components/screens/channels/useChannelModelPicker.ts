@@ -1,27 +1,22 @@
-import { type Dispatch, type SetStateAction, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
   SiteModelFetchItem,
   SiteModelFetchPayload,
   SiteModelProtocolDetectionPayload,
   SiteModelProtocolDetectionResult,
 } from "@/lib/api/sites";
-import {
-  headerDraftToRules,
-  paramOverrideDraftToRules,
-} from "@/lib/upstreamRules";
-import {
-  headerDraftsFromJson,
-  paramDraftsFromJson,
-} from "./channelAdvancedJson";
-import { activeBaseUrlValue, formHeaders } from "./channelForm";
-import {
-  endpointPriority,
-  protocolForEndpointKind,
-  rebuildProtocolConfigs,
-} from "./channelFormConversion";
+import { headerDraftToRules } from "@/lib/upstreamRules";
+import { headerDraftsFromJson } from "./channelAdvancedJson";
+import { activeBaseUrlValue } from "./channelForm";
+import { rebuildProtocolConfigs } from "./channelFormConversion";
 import {
   acceptApiKeyDrafts,
   activeSelectedCredentialIds,
@@ -31,13 +26,9 @@ import {
   fallbackCredentialName,
   formatCredentialTitle,
   mergeModelPatterns,
+  protocolConfigModelKey,
 } from "./channelModels";
-import type {
-  FormProtocolConfig,
-  FormState,
-  Locale,
-  PickerModelItem,
-} from "./channelTypes";
+import type { FormState, Locale, PickerModelItem } from "./channelTypes";
 
 export type RemoteModelItem = PickerModelItem & {
   credentialName: string;
@@ -54,124 +45,32 @@ export type RemoteModelCatalog = {
   hasMultipleBaseUrls: boolean;
 };
 
-// Models per detection request; each one may probe several protocols.
-const DETECTION_CHUNK_SIZE = 8;
-
-type ProtocolDetection = {
-  /** Detected protocol by aggregate model key. */
-  protocols: Map<string, ProtocolKind>;
-  /** First reason a model or request went undetected. */
-  error: string;
-};
-
-/** Detects the upstream protocol of each config × model, once per model name. */
-async function detectProtocols(
-  form: FormState,
-  entries: Array<{
-    protocolConfigId: string;
-    credentialId: string;
-    modelName: string;
-  }>,
-): Promise<ProtocolDetection> {
-  const requests = new Map<
-    string,
-    { config: FormProtocolConfig; credentialId: string; modelNames: string[] }
-  >();
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    const groupKey = aggregateModelGroupKey(
-      { id: entry.protocolConfigId },
-      entry.modelName,
-    );
-    const config = form.protocolConfigs.find(
-      (item) => item.id === entry.protocolConfigId,
-    );
-    if (!config || seen.has(groupKey)) continue;
-    seen.add(groupKey);
-    const requestKey = JSON.stringify([config.id, entry.credentialId]);
-    const request = requests.get(requestKey) ?? {
-      config,
-      credentialId: entry.credentialId,
-      modelNames: [],
-    };
-    request.modelNames.push(entry.modelName);
-    requests.set(requestKey, request);
-  }
-
-  const detection: ProtocolDetection = { protocols: new Map(), error: "" };
-  for (const { config, credentialId, modelNames } of requests.values()) {
-    const credentialIndex = form.credentials.findIndex(
-      (item) => item.id === credentialId,
-    );
-    const credential = form.credentials[credentialIndex];
-    const baseUrl = activeBaseUrlValue(form, config).trim();
-    if (!credential?.api_key.trim() || !baseUrl) continue;
-    const base = {
-      base_url: baseUrl,
-      endpoint_kind:
-        form.base_urls.find((item) => item.id === config.base_url_id)?.kind ??
-        "default",
-      headers: formHeaders(form),
-      proxy_mode: form.proxy_mode,
-      channel_proxy: form.channel_proxy.trim(),
-      param_override: paramOverrideDraftToRules(
-        paramDraftsFromJson(form.paramsJson) ?? [],
-      ),
-      credential: {
-        id: credential.id,
-        name: credential.name.trim() || fallbackCredentialName(credentialIndex),
-        api_key: credential.api_key.trim(),
-      },
-    } satisfies Omit<SiteModelProtocolDetectionPayload, "model_names">;
-    for (
-      let start = 0;
-      start < modelNames.length;
-      start += DETECTION_CHUNK_SIZE
-    ) {
-      try {
-        const results = await apiRequest<SiteModelProtocolDetectionResult[]>(
-          "/admin/site-model-protocol-detections",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              ...base,
-              model_names: modelNames.slice(
-                start,
-                start + DETECTION_CHUNK_SIZE,
-              ),
-            } satisfies SiteModelProtocolDetectionPayload),
-          },
-        );
-        for (const result of results) {
-          if (result.protocol) {
-            detection.protocols.set(
-              aggregateModelGroupKey(config, result.model_name),
-              result.protocol,
-            );
-          } else {
-            detection.error ||= result.error_message;
-          }
-        }
-      } catch (error) {
-        detection.error ||= getApiErrorMessage(error, "");
-      }
-    }
-  }
-  return detection;
-}
+const DETECTION_CHUNK_SIZE = 1000;
 
 /** Owns upstream catalog discovery and import into the channel form. */
 export function useChannelModelPicker({
   form,
   setForm,
+  sessionKey,
   locale,
 }: {
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
+  sessionKey: string | null;
   locale: Locale;
 }) {
   const [fetching, setFetching] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const detectionController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (sessionKey === null) return;
+    return () => {
+      detectionController.current?.abort();
+      detectionController.current = null;
+      setDetecting(false);
+    };
+  }, [sessionKey]);
 
   /** Fetches every base URL with each of its keys; failures only warn. */
   async function discoverRemoteCatalog(): Promise<RemoteModelCatalog | null> {
@@ -193,6 +92,9 @@ export function useChannelModelPicker({
       if (!credentialIds.size || !baseUrl) return [];
       const payload: SiteModelFetchPayload = {
         base_url: baseUrl,
+        endpoint_kind:
+          editor.base_urls.find((item) => item.id === config.base_url_id)
+            ?.kind ?? "default",
         headers,
         proxy_mode: editor.proxy_mode,
         channel_proxy: editor.channel_proxy.trim(),
@@ -238,6 +140,7 @@ export function useChannelModelPicker({
                 protocol_config_id: targets[index].protocolConfigId,
                 credential_id: item.credential_id,
                 model_name: item.model_name,
+                protocol: item.protocol,
                 context_window: item.context_window,
                 credentialName: credential
                   ? credentialLabel(credential, credentialIndex, locale)
@@ -284,10 +187,10 @@ export function useChannelModelPicker({
     }
   }
 
-  /** 识别选中模型的上游协议后写入表格，并为对应 Key 追加精确规则。 */
-  async function importRemoteModels(items: PickerModelItem[]) {
+  function importRemoteModels(items: PickerModelItem[]) {
+    if (detectionController.current || !items.length) return;
     const editor = { ...form, protocolConfigs: rebuildProtocolConfigs(form) };
-    // 同一密钥只检测一次，避免专用地址把整个目录都判成自己的协议。
+    // 优先使用通用目录，避免专用地址把整个目录都归为同一协议。
     const sources = new Map<string, PickerModelItem>();
     const sourcePriority = (item: PickerModelItem) => {
       const config = editor.protocolConfigs.find(
@@ -296,7 +199,11 @@ export function useChannelModelPicker({
       const kind = editor.base_urls.find(
         (url) => url.id === config?.base_url_id,
       )?.kind;
-      return kind ? endpointPriority(kind) : 0;
+      return kind === "china"
+        ? 2
+        : kind === "default" || kind === "protocol"
+          ? 1
+          : 0;
     };
     for (const item of items) {
       const key = JSON.stringify([item.credential_id, item.model_name]);
@@ -305,129 +212,251 @@ export function useChannelModelPicker({
         sources.set(key, item);
     }
     items = [...sources.values()];
-    setDetecting(true);
-    const detection = await detectProtocols(
-      editor,
-      items.map((item) => ({
-        protocolConfigId: item.protocol_config_id,
-        credentialId: item.credential_id,
-        modelName: item.model_name,
-      })),
-    ).finally(() => setDetecting(false));
-    const undetected = new Set(
-      items
-        .map((item) =>
-          aggregateModelGroupKey(
-            { id: item.protocol_config_id },
-            item.model_name,
-          ),
-        )
-        .filter((key) => !detection.protocols.has(key)),
-    ).size;
-    if (undetected) {
-      toast.warning(
-        locale === "zh-CN"
-          ? `${undetected} 个模型未识别出协议，已按默认协议加入，可在模型列表中修改`
-          : `${undetected} models got the default protocol; change it in the model list`,
-        { description: detection.error || undefined },
-      );
-    }
     const additionsByCredential = new Map<string, string[]>();
     for (const item of items) {
-      const list = additionsByCredential.get(item.credential_id) ?? [];
-      list.push(escapeModelName(item.model_name));
-      additionsByCredential.set(item.credential_id, list);
+      const names = additionsByCredential.get(item.credential_id) ?? [];
+      names.push(escapeModelName(item.model_name));
+      additionsByCredential.set(item.credential_id, names);
     }
+    const selectedContexts = new Map(
+      items.map((item) => [
+        JSON.stringify([item.credential_id, item.model_name]),
+        item.context_window,
+      ]),
+    );
     setForm((current) => {
+      const existing = new Set(
+        current.protocolConfigs.flatMap((config) =>
+          config.models.map((model) =>
+            JSON.stringify([model.credential_id, model.model_name]),
+          ),
+        ),
+      );
       const next = {
         ...current,
         credentials: current.credentials.map((credential) => {
           const additions = additionsByCredential.get(credential.id);
-          if (!additions) return credential;
-          return {
-            ...credential,
-            model_pattern: mergeModelPatterns(
-              credential.model_pattern,
-              additions,
-            ),
-          };
+          return additions
+            ? {
+                ...credential,
+                model_pattern: mergeModelPatterns(
+                  credential.model_pattern,
+                  additions,
+                ),
+              }
+            : credential;
         }),
         protocolConfigs: rebuildProtocolConfigs(current).map((config) => {
-          const configItems = items.filter(
-            (item) => item.protocol_config_id === config.id,
-          );
-          if (!configItems.length) return config;
-          const fallbackProtocol = protocolForEndpointKind(
-            current.base_urls.find((item) => item.id === config.base_url_id)
-              ?.kind,
-          );
-          const existing = new Set(
-            config.models.map((model) =>
+          const models = config.models.map((model) => {
+            const contextWindow = selectedContexts.get(
               JSON.stringify([model.credential_id, model.model_name]),
-            ),
-          );
-          const models = configItems.flatMap((item) => {
+            );
+            return model.context_window === null && contextWindow != null
+              ? { ...model, context_window: contextWindow }
+              : model;
+          });
+          const additions = items.flatMap((item) => {
             const key = JSON.stringify([item.credential_id, item.model_name]);
-            if (existing.has(key)) return [];
+            if (item.protocol_config_id !== config.id || existing.has(key))
+              return [];
             existing.add(key);
             return [
               {
                 credential_id: item.credential_id,
                 model_name: item.model_name,
                 enabled: true,
-                protocols: [
-                  detection.protocols.get(
-                    aggregateModelGroupKey(config, item.model_name),
-                  ) ?? fallbackProtocol,
-                ],
+                protocols: [item.protocol],
                 protocolIds: {},
                 context_window: item.context_window,
                 upstream_context_window: null,
               },
             ];
           });
-          return { ...config, models: [...config.models, ...models] };
+          return { ...config, models: [...models, ...additions] };
         }),
       };
       return { ...next, protocolConfigs: rebuildProtocolConfigs(next) };
     });
+
+    const contextNames = [
+      ...new Set(
+        items
+          .filter((item) => item.context_window === null)
+          .map((item) => item.model_name),
+      ),
+    ];
+    if (!contextNames.length) return;
+    const controller = new AbortController();
+    detectionController.current = controller;
+    setDetecting(true);
+    const { signal } = controller;
+    const progress = toast.loading(
+      locale === "zh-CN"
+        ? "正在后台识别上下文"
+        : "Detecting context windows in the background",
+    );
+    const requests = Array.from(
+      { length: Math.ceil(contextNames.length / DETECTION_CHUNK_SIZE) },
+      (_, index) =>
+        apiRequest<Record<string, number | null>>(
+          "/admin/model-context-detections",
+          {
+            method: "POST",
+            signal,
+            body: JSON.stringify({
+              model_names: contextNames.slice(
+                index * DETECTION_CHUNK_SIZE,
+                (index + 1) * DETECTION_CHUNK_SIZE,
+              ),
+            }),
+          },
+        ).then((windows) => {
+          if (signal.aborted) return;
+          setForm((current) => {
+            if (signal.aborted) return current;
+            return {
+              ...current,
+              protocolConfigs: current.protocolConfigs.map((config) => ({
+                ...config,
+                models: config.models.map((model) => {
+                  const key = JSON.stringify([
+                    model.credential_id,
+                    model.model_name,
+                  ]);
+                  const contextWindow = windows[model.model_name];
+                  return sources.has(key) &&
+                    model.context_window === null &&
+                    contextWindow != null
+                    ? { ...model, context_window: contextWindow }
+                    : model;
+                }),
+              })),
+            };
+          });
+        }),
+    );
+    void Promise.allSettled(requests)
+      .then((results) => {
+        if (signal.aborted) return;
+        const failure = results.find((result) => result.status === "rejected");
+        if (failure)
+          toast.warning(
+            locale === "zh-CN"
+              ? "部分上下文未能自动识别，可稍后重试"
+              : "Some context windows could not be detected; retry later",
+            { description: getApiErrorMessage(failure.reason, "") },
+          );
+      })
+      .finally(() => {
+        toast.dismiss(progress);
+        if (detectionController.current === controller) {
+          detectionController.current = null;
+          setDetecting(false);
+        }
+      });
   }
 
-  /** Re-detects the protocol of overview rows; undetected rows keep theirs. */
+  /** 用默认预选值更新所选模型，保留请求期间的手动修改。 */
   async function detectModelProtocols(keys: string[]) {
-    if (detecting || !keys.length) return;
+    if (detectionController.current || !keys.length) return;
     const selected = new Set(keys);
-    const entries = form.protocolConfigs.flatMap((config) =>
-      config.models
-        .filter(
+    const targets = form.protocolConfigs.flatMap((config) => {
+      const names = [
+        ...new Set(
+          config.models
+            .filter((model) =>
+              selected.has(aggregateModelGroupKey(model.model_name)),
+            )
+            .map((model) => model.model_name),
+        ),
+      ];
+      if (!names.length) return [];
+      return [
+        {
+          config,
+          names,
+          kind:
+            form.base_urls.find((url) => url.id === config.base_url_id)?.kind ??
+            "default",
+        },
+      ];
+    });
+    if (!targets.length) return;
+    const originals = new Map(
+      form.protocolConfigs.flatMap((config) =>
+        config.models.map(
           (model) =>
-            selected.has(aggregateModelGroupKey(config, model.model_name)) &&
-            form.credentials.some(
-              (item) => item.id === model.credential_id && item.api_key.trim(),
-            ),
-        )
-        .map((model) => ({
-          protocolConfigId: config.id,
-          credentialId: model.credential_id,
-          modelName: model.model_name,
-        })),
+            [protocolConfigModelKey(config, model), model.protocols] as const,
+        ),
+      ),
     );
+    const controller = new AbortController();
+    detectionController.current = controller;
     setDetecting(true);
-    const detection = await detectProtocols(form, entries).finally(() =>
-      setDetecting(false),
+    const { signal } = controller;
+    const requests = targets.flatMap(({ config, names, kind }) =>
+      Array.from(
+        { length: Math.ceil(names.length / DETECTION_CHUNK_SIZE) },
+        (_, index) =>
+          apiRequest<SiteModelProtocolDetectionResult[]>(
+            "/admin/site-model-protocol-detections",
+            {
+              method: "POST",
+              signal,
+              body: JSON.stringify({
+                endpoint_kind: kind,
+                model_names: names.slice(
+                  index * DETECTION_CHUNK_SIZE,
+                  (index + 1) * DETECTION_CHUNK_SIZE,
+                ),
+              } satisfies SiteModelProtocolDetectionPayload),
+            },
+          ).then((values) => ({ configId: config.id, values })),
+      ),
     );
-    const detected = detection.protocols.size;
-    if (detected) {
+    const results = await Promise.allSettled(requests).finally(() => {
+      if (detectionController.current === controller) {
+        detectionController.current = null;
+        setDetecting(false);
+      }
+    });
+    if (signal.aborted) return;
+    const defaults = new Map<
+      string,
+      SiteModelProtocolDetectionResult["protocols"]
+    >();
+    const names = new Set<string>();
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      for (const item of result.value.values) {
+        defaults.set(
+          JSON.stringify([result.value.configId, item.model_name]),
+          item.protocols,
+        );
+        names.add(item.model_name);
+      }
+    }
+    if (defaults.size) {
       setForm((current) => {
+        if (signal.aborted) return current;
         const next = {
           ...current,
           protocolConfigs: current.protocolConfigs.map((config) => ({
             ...config,
             models: config.models.map((model) => {
-              const protocol = detection.protocols.get(
-                aggregateModelGroupKey(config, model.model_name),
+              const key = protocolConfigModelKey(config, model);
+              const original = originals.get(key);
+              const protocols = defaults.get(
+                JSON.stringify([config.id, model.model_name]),
               );
-              return protocol ? { ...model, protocols: [protocol] } : model;
+              if (
+                !original ||
+                !protocols ||
+                model.protocols.length !== original.length ||
+                model.protocols.some((protocol) => !original.includes(protocol))
+              )
+                return model;
+              return { ...model, protocols };
             }),
           })),
         };
@@ -435,19 +464,18 @@ export function useChannelModelPicker({
       });
       toast.success(
         locale === "zh-CN"
-          ? `已识别 ${detected} 个模型的协议，保存后生效`
-          : `Detected protocols for ${detected} models; they apply after saving`,
+          ? `已预选 ${names.size} 个模型的默认协议，保存后生效`
+          : `Selected default protocols for ${names.size} models; save to apply`,
       );
     }
-    const undetected = selected.size - detected;
-    if (undetected) {
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure)
       toast.warning(
         locale === "zh-CN"
-          ? `${undetected} 个模型未识别出协议，保持原协议`
-          : `${undetected} models were not detected and keep their protocol`,
-        { description: detection.error || undefined },
+          ? "部分模型协议未能自动预选，保留当前配置"
+          : "Some default protocols could not be selected; current settings were kept",
+        { description: getApiErrorMessage(failure.reason, "") },
       );
-    }
   }
 
   return {

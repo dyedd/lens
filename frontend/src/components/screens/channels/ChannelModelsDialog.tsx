@@ -123,7 +123,7 @@ function ChannelModelsBody({
   const [removeRequest, setRemoveRequest] = useState<string[] | null>(null);
 
   const hasMultipleBaseUrls = useMemo(
-    () => new Set(models.map((model) => model.baseUrl)).size > 1,
+    () => new Set(models.flatMap((model) => model.baseUrls)).size > 1,
     [models],
   );
 
@@ -138,7 +138,8 @@ function ChannelModelsBody({
         model.protocols.some((protocol) =>
           protocolLabel(protocol, locale).toLowerCase().includes(keyword),
         ) ||
-        (hasMultipleBaseUrls && model.baseUrl.toLowerCase().includes(keyword))
+        (hasMultipleBaseUrls &&
+          model.baseUrls.some((url) => url.toLowerCase().includes(keyword)))
       );
     });
     return filtered.sort((left, right) => {
@@ -184,7 +185,13 @@ function ChannelModelsBody({
 
   return (
     <>
-      <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSave}>
+      <form
+        className="flex min-h-0 flex-1 flex-col"
+        onSubmit={(event) => {
+          if (detecting) event.preventDefault();
+          else onSave(event);
+        }}
+      >
         <DialogHeader className="shrink-0 px-4 py-4">
           <DialogTitle>
             {locale === "zh-CN"
@@ -334,7 +341,7 @@ function ChannelModelsBody({
               <ProtocolDropdown
                 value={bulkProtocols}
                 locale={locale}
-                className="h-7 min-w-0 flex-1 px-2 py-0 text-sm has-[>svg]:px-2"
+                className="h-auto min-h-7 min-w-0 flex-1 px-2 py-1 text-sm leading-4 has-[>svg]:px-2"
                 onChange={setBulkProtocols}
               />
             </div>
@@ -371,12 +378,14 @@ function ChannelModelsBody({
             hasMultipleBaseUrls={hasMultipleBaseUrls}
             selected={selection.selected}
             testing={testing}
+            detecting={detecting}
             onSelectAll={(checked) =>
               selection.toggleRows(visibleModels, checked)
             }
             onSelectOne={selection.toggleId}
             onToggleEnabled={onToggleEnabled}
             onUpdateProtocols={onUpdateProtocols}
+            onDetectProtocols={onDetectProtocols}
             onUpdateContextWindow={onUpdateContextWindow}
             onDelete={(key) => requestRemoval([key])}
             onTest={onTest}
@@ -392,14 +401,18 @@ function ChannelModelsBody({
           >
             {locale === "zh-CN" ? "关闭" : "Close"}
           </Button>
-          <Button type="submit" size="sm" disabled={saving}>
+          <Button type="submit" size="sm" disabled={saving || detecting}>
             {saving
               ? locale === "zh-CN"
                 ? "保存中..."
                 : "Saving..."
-              : locale === "zh-CN"
-                ? "保存"
-                : "Save"}
+              : detecting
+                ? locale === "zh-CN"
+                  ? "后台识别中..."
+                  : "Detecting in background..."
+                : locale === "zh-CN"
+                  ? "保存"
+                  : "Save"}
           </Button>
         </DialogFooter>
       </form>

@@ -36,10 +36,12 @@ type Props = {
   hasMultipleBaseUrls: boolean;
   selected: ReadonlySet<string>;
   testing: boolean;
+  detecting: boolean;
   onSelectAll: (checked: boolean) => void;
   onSelectOne: (key: string, checked: boolean) => void;
   onToggleEnabled: (key: string, enabled: boolean) => void;
   onUpdateProtocols: (key: string, protocols: ProtocolKind[]) => void;
+  onDetectProtocols: (keys: string[]) => Promise<void>;
   onUpdateContextWindow: (key: string, contextWindow: number | null) => void;
   onDelete: (key: string) => void;
   onTest: (key: string) => void;
@@ -52,10 +54,12 @@ export function ChannelModelsTable({
   hasMultipleBaseUrls,
   selected,
   testing,
+  detecting,
   onSelectAll,
   onSelectOne,
   onToggleEnabled,
   onUpdateProtocols,
+  onDetectProtocols,
   onUpdateContextWindow,
   onDelete,
   onTest,
@@ -89,10 +93,10 @@ export function ChannelModelsTable({
           <TableHead className="w-[150px]">
             {locale === "zh-CN" ? "API Key" : "Keys"}
           </TableHead>
-          <TableHead className="w-[180px]">
+          <TableHead className="w-[160px]">
             {locale === "zh-CN" ? "上游协议" : "Upstream protocol"}
           </TableHead>
-          <TableHead className="w-[128px]">
+          <TableHead className="w-[128px] min-w-[128px]">
             {locale === "zh-CN" ? "上下文" : "Context"}
           </TableHead>
           <TableHead className="w-[72px]" />
@@ -161,11 +165,11 @@ export function ChannelModelsTable({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <p className="truncate text-xs leading-4">
-                        {formatBaseUrlLabel(model.baseUrl)}
+                        {model.baseUrls.map(formatBaseUrlLabel).join(" · ")}
                       </p>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-sm break-all">
-                      {model.baseUrl}
+                      {model.baseUrls.join(" · ")}
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
@@ -177,17 +181,44 @@ export function ChannelModelsTable({
                   locale={locale}
                 />
               </TableCell>
-              <TableCell className="w-[180px] py-1.5">
-                <ProtocolDropdown
-                  value={model.protocols}
-                  locale={locale}
-                  className="h-7 px-2 py-0 text-xs has-[>svg]:px-2"
-                  onChange={(protocols) =>
-                    onUpdateProtocols(model.key, protocols)
-                  }
-                />
+              <TableCell className="w-[160px] py-1.5">
+                <div className="flex items-center gap-0.5">
+                  <ProtocolDropdown
+                    value={model.protocols}
+                    locale={locale}
+                    disabled={detecting}
+                    className="h-7 min-h-7 min-w-0 max-w-[110px] flex-1 gap-1 px-1.5 py-0 text-xs leading-4 has-[>svg]:px-1.5"
+                    onChange={(protocols) =>
+                      onUpdateProtocols(model.key, protocols)
+                    }
+                  />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className="shrink-0 text-muted-foreground"
+                          disabled={detecting}
+                          aria-label={
+                            locale === "zh-CN"
+                              ? `自动识别 ${model.modelName} 上游协议`
+                              : `Detect ${model.modelName} upstream protocol`
+                          }
+                          onClick={() => void onDetectProtocols([model.key])}
+                        >
+                          <Wand2 className="size-3 stroke-1" />
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {locale === "zh-CN" ? "自动识别协议" : "Detect protocol"}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               </TableCell>
-              <TableCell className="w-[128px] py-1.5">
+              <TableCell className="w-[128px] min-w-[128px] py-1.5">
                 <ContextWindowInput
                   // 保存值变化后重建输入框，更新草稿。
                   key={model.contextWindow ?? "auto"}
@@ -396,7 +427,7 @@ function ModelKeyBadges({
       details={model.members.map((member) =>
         [
           member.credentialTitle,
-          showBaseUrl ? formatBaseUrlLabel(model.baseUrl) : "",
+          showBaseUrl ? formatBaseUrlLabel(member.baseUrl) : "",
         ]
           .filter(Boolean)
           .join(" · "),

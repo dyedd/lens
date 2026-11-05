@@ -164,12 +164,11 @@ export function useChannelForm(locale: Locale) {
     const nextProtocols = Array.from(new Set(protocols));
     setForm((current) => ({
       ...current,
-      // A collapsed overview row is keyed by model name, so protocol changes
-      // cover every credential carrying that model.
+      // 同一行的修改覆盖该模型的各把 Key，保存时再按协议分配地址。
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
         models: config.models.map((model) =>
-          aggregateModelGroupKey(config, model.model_name) === key
+          aggregateModelGroupKey(model.model_name) === key
             ? { ...model, protocols: nextProtocols }
             : model,
         ),
@@ -180,14 +179,12 @@ export function useChannelForm(locale: Locale) {
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => {
-        // Group keys delete every same-name model in this config; per-member
-        // keys (from an expanded row) delete just that credential's copy.
         const isGroupKey = isAggregateModelGroupKey(key);
         return {
           ...config,
           models: config.models.filter((model) =>
             isGroupKey
-              ? aggregateModelGroupKey(config, model.model_name) !== key
+              ? aggregateModelGroupKey(model.model_name) !== key
               : protocolConfigModelKey(config, model) !== key,
           ),
         };
@@ -264,7 +261,7 @@ export function useChannelForm(locale: Locale) {
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
         models: config.models.map((model) =>
-          aggregateModelGroupKey(config, model.model_name) === key
+          aggregateModelGroupKey(model.model_name) === key
             ? { ...model, enabled }
             : model,
         ),
@@ -272,14 +269,14 @@ export function useChannelForm(locale: Locale) {
     }));
   }
 
-  /** Sets the context window override for every key's copy of a model. */
+  /** 同一行的上下文修改覆盖该模型的各把 Key。 */
   function updateModelContextWindow(key: string, contextWindow: number | null) {
     setForm((current) => ({
       ...current,
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
         models: config.models.map((model) =>
-          aggregateModelGroupKey(config, model.model_name) === key
+          aggregateModelGroupKey(model.model_name) === key
             ? { ...model, context_window: contextWindow }
             : model,
         ),

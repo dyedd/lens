@@ -14,6 +14,7 @@ from .validation import ContextWindow, StrictBaseModel
 
 class SiteModelFetchRequest(StrictBaseModel):
     base_url: HttpUrl
+    endpoint_kind: SiteBaseUrlKind = "default"
     # Omitted: try each listing protocol until the upstream answers.
     protocol: ProtocolKind | None = None
     headers: list[HeaderRule] = Field(default_factory=list)
@@ -31,6 +32,7 @@ class SiteModelFetchItem(StrictBaseModel):
     credential_id: str
     credential_name: str = ""
     model_name: str
+    protocol: ProtocolKind
     context_window: ContextWindow | None = None
 
 
@@ -66,26 +68,14 @@ class SiteModelTestRequest(StrictBaseModel):
 
 
 class SiteModelProtocolDetectionRequest(StrictBaseModel):
-    base_url: HttpUrl
     endpoint_kind: SiteBaseUrlKind = "default"
-    headers: list[HeaderRule] = Field(default_factory=list)
-    proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
-    channel_proxy: str = ""
-    param_override: list[ParamOverrideRule] = Field(default_factory=list)
-    credential: SiteModelTestCredential
-    model_names: list[str] = Field(min_length=1, max_length=50)
-
-    _canonicalize_base_url = field_validator("base_url", mode="before")(
-        canonicalize_base_url
-    )
+    model_names: list[str] = Field(min_length=1, max_length=1000)
     _canonicalize_model_names = field_validator("model_names")(canonicalize_text_list)
 
 
 class SiteModelProtocolDetectionResult(StrictBaseModel):
     model_name: str
-    # None when no protocol answered; the error says why.
-    protocol: ProtocolKind | None = None
-    error_message: str = ""
+    protocols: list[ProtocolKind] = Field(default_factory=list)
 
 
 class SiteModelTestResult(StrictBaseModel):
