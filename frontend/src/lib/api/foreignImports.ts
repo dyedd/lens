@@ -29,12 +29,16 @@ export type ForeignSiteImportPreview = {
 };
 
 /** Uploads a foreign backup file and previews the sites it would import. */
-export async function previewForeignSiteImport(file: File) {
+export async function previewForeignSiteImport(
+  file: File,
+  signal: AbortSignal,
+) {
   const formData = new FormData();
   formData.append("file", file);
   return apiRequest<ForeignSiteImportPreview>("/admin/sites/import/preview", {
     method: "POST",
     body: formData,
+    signal,
   });
 }
 

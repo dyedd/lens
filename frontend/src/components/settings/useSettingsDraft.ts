@@ -39,6 +39,7 @@ export function useSettingsDraft(locale: Locale) {
   const [draft, setDraft] = useState(createEmptySettingsDraft);
   const [isSaving, setIsSaving] = useState(false);
   const savedDraftRef = useRef<string | null>(null);
+  const submittedDraftRef = useRef<string | null>(null);
   const [isNumericValidationVisible, setIsNumericValidationVisible] =
     useState(false);
   const actions = useSettingsDraftActions(setDraft);
@@ -49,7 +50,12 @@ export function useSettingsDraft(locale: Locale) {
   useEffect(() => {
     if (settingsQuery.isSuccess) {
       const nextDraft = createSettingsDraft(settingsQuery.data);
-      setDraft(nextDraft);
+      const previousSaved = savedDraftRef.current;
+      setDraft((current) =>
+        previousSaved === null || JSON.stringify(current) === previousSaved
+          ? nextDraft
+          : current,
+      );
       savedDraftRef.current = JSON.stringify(nextDraft);
       setIsNumericValidationVisible(false);
     }
@@ -84,7 +90,7 @@ export function useSettingsDraft(locale: Locale) {
   }, [queryClient]);
 
   const submitSettings = useCallback(async () => {
-    if (!settingsQuery.isSuccess) {
+    if (!settingsQuery.isSuccess || isSaving) {
       return;
     }
     const numericErrors = validateNumericSettings(draft, locale);
@@ -110,6 +116,7 @@ export function useSettingsDraft(locale: Locale) {
       toast.error(upstreamParamOverrideError);
       return;
     }
+    submittedDraftRef.current = JSON.stringify(draft);
     setIsSaving(true);
     try {
       await apiRequest<SettingItem[]>("/admin/settings", {
@@ -128,14 +135,16 @@ export function useSettingsDraft(locale: Locale) {
     } finally {
       setIsSaving(false);
     }
-  }, [draft, locale, refresh, settingsQuery.isSuccess]);
+  }, [draft, isSaving, locale, refresh, settingsQuery.isSuccess]);
 
   useEffect(() => {
-    if (!settingsQuery.isSuccess || savedDraftRef.current === null) return;
+    if (!settingsQuery.isSuccess || savedDraftRef.current === null || isSaving)
+      return;
     if (JSON.stringify(draft) === savedDraftRef.current) return;
+    if (JSON.stringify(draft) === submittedDraftRef.current) return;
     const timer = window.setTimeout(() => void submitSettings(), 500);
     return () => window.clearTimeout(timer);
-  }, [draft, settingsQuery.isSuccess, submitSettings]);
+  }, [draft, isSaving, settingsQuery.isSuccess, submitSettings]);
 
   return {
     draft,

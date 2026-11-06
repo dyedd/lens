@@ -2,7 +2,6 @@ import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site } from "@/lib/api/sites";
 import { formatCredentialDisplayName } from "@/lib/credentialLabels";
 import { protocolConfigSelectedCredentialIds } from "./channelForm";
-import { formBaseUrlsForPayload } from "./channelFormConversion";
 import type {
   FormCredential,
   FormModel,
@@ -347,7 +346,7 @@ export const emptyForm = (): FormState => {
 /** Counts protocol configurations bound to unavailable base URLs. */
 export function invalidProtocolBaseUrlCount(form: FormState) {
   const baseUrlIds = new Set(
-    formBaseUrlsForPayload(form).map((item) => item.id),
+    form.base_urls.filter((item) => item.url.trim()).map((item) => item.id),
   );
   return form.protocolConfigs.filter(
     (item) =>
