@@ -83,16 +83,24 @@ const I18nContext = createContext<I18nValue | null>(null);
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(() => {
     if (typeof window === "undefined") return "zh-CN";
-    const stored = window.localStorage.getItem("lens_locale") as Locale | null;
-    return stored === "zh-CN" || stored === "en-US" ? stored : "zh-CN";
+    try {
+      const stored = window.localStorage.getItem("lens_locale");
+      return stored === "zh-CN" || stored === "en-US" ? stored : "zh-CN";
+    } catch {
+      return "zh-CN";
+    }
   });
 
   const value = useMemo<I18nValue>(
     () => ({
       locale,
       setLocale: (nextLocale) => {
-        window.localStorage.setItem("lens_locale", nextLocale);
         setLocaleState(nextLocale);
+        try {
+          window.localStorage.setItem("lens_locale", nextLocale);
+        } catch {
+          // 存储不可用时仍允许切换当前页面的语言。
+        }
       },
       t: MESSAGES[locale],
     }),

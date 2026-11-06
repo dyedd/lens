@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LockKeyhole, Pencil, RefreshCw, Search, Unlock } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -36,7 +37,7 @@ import {
 } from "@/components/ui/Tooltip";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
-import { apiRequest } from "@/lib/api/client";
+import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ModelGroup } from "@/lib/api/groups";
 import { type Locale, useI18n } from "@/lib/I18nContext";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
@@ -484,7 +485,17 @@ export function ModelPricesScreen() {
           </div>
         );
       })}
-      {!groups.isLoading && rows.length === 0 ? (
+      {groups.isError && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {getApiErrorMessage(
+              groups.error,
+              isChinese ? "价格加载失败" : "Failed to load prices",
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+      {!groups.isLoading && !groups.isError && rows.length === 0 ? (
         <Table>
           <TableBody>
             <TableRow>

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/Alert";
 import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
@@ -28,7 +29,7 @@ const GatewayApiKeyDialog = lazyComponent(() =>
 export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   const queryClient = useQueryClient();
   const timeZone = useAppTimeZone();
-  const { data: gatewayKeys = [] } = useQuery({
+  const { data: gatewayKeys = [], error: keysError } = useQuery({
     queryKey: ["gateway-api-keys"],
     queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
     staleTime: 5_000,
@@ -255,19 +256,36 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
           </>
         }
       >
-        <GatewayApiKeyTable
-          locale={locale}
-          gatewayKeys={gatewayKeys}
-          timeZone={timeZone}
-          selected={selection.selected}
-          busyId={busyId}
-          copiedKey={copiedKey}
-          onSelectAll={(checked) => selection.toggleRows(gatewayKeys, checked)}
-          onSelectOne={selection.toggleId}
-          onCopy={copyGatewayKey}
-          onEdit={openEditDialog}
-          onToggle={toggleGatewayKeyEnabled}
-        />
+        {keysError ? (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {getApiErrorMessage(
+                keysError,
+                titleForLocale(
+                  locale,
+                  "网关密钥加载失败",
+                  "Failed to load gateway keys",
+                ),
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <GatewayApiKeyTable
+            locale={locale}
+            gatewayKeys={gatewayKeys}
+            timeZone={timeZone}
+            selected={selection.selected}
+            busyId={busyId}
+            copiedKey={copiedKey}
+            onSelectAll={(checked) =>
+              selection.toggleRows(gatewayKeys, checked)
+            }
+            onSelectOne={selection.toggleId}
+            onCopy={copyGatewayKey}
+            onEdit={openEditDialog}
+            onToggle={toggleGatewayKeyEnabled}
+          />
+        )}
       </SettingsSection>
 
       <ConfirmDeleteDialog

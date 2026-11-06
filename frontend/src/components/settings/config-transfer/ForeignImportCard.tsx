@@ -85,6 +85,7 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
+            disabled={isImporting}
             onClick={() => fileInputRef.current?.click()}
           >
             <RotateCcw className="size-3.5" />
@@ -256,11 +257,7 @@ export function ForeignImportCard({ locale }: { locale: Locale }) {
                     : null}
                 </p>
                 {importResult.items
-                  .filter(
-                    (item) =>
-                      item.status !== "created" &&
-                      item.status !== "not_committed",
-                  )
+                  .filter((item) => item.status !== "created")
                   .map((item) => (
                     <p
                       key={item.index}

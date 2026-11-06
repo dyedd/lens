@@ -1,5 +1,5 @@
 import { RotateCcw } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { ApiKeysScreen } from "@/components/screens/ApiKeysScreen";
 import { BackupsScreen } from "@/components/screens/BackupsScreen";
@@ -66,16 +66,20 @@ export function SettingsScreen() {
   const settings = useSettingsDraft(locale);
   const account = useAccountSettings(locale);
   const settingsTabs = useMemo(() => createSettingsTabs(locale), [locale]);
+  const [activeTab, setActiveTab] = useState("general");
 
   return (
     <>
-      <SettingsHeaderActions locale={locale} settings={settings} />
+      {activeTab !== "cronjobs" && activeTab !== "plugins" && (
+        <SettingsHeaderActions locale={locale} settings={settings} />
+      )}
       <section className="mx-auto min-w-0 max-w-[1256px]">
         <h1 className="page-title mb-5 px-1">
           {titleForLocale(locale, "设置", "Settings")}
         </h1>
         <Tabs
-          defaultValue="general"
+          value={activeTab}
+          onValueChange={setActiveTab}
           orientation="vertical"
           className="grid min-w-0 gap-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start"
         >

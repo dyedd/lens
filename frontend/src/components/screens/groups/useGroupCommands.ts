@@ -254,9 +254,9 @@ export function useGroupCommands({
           });
         }
         setDeleteTarget(null);
-        await invalidateGroupData();
       },
     );
+    await invalidateGroupData();
     if (!removed) return;
     toast.success(
       locale === "zh-CN"
@@ -299,6 +299,7 @@ export function useGroupCommands({
           method: "POST",
           body: JSON.stringify({ model_names: modelNames, group_id: groupId }),
         });
+        await invalidateGroupData();
       },
     );
     if (added) {
@@ -360,6 +361,7 @@ export function useGroupCommands({
           method: "POST",
           body: JSON.stringify({ model_names: modelNames, group_id: group.id }),
         });
+        await invalidateGroupData();
       },
     );
     if (created) {

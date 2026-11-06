@@ -126,7 +126,6 @@ export function useChannelPersistence({
             ? `已停用 ${targets.length} 个渠道`
             : `Disabled ${targets.length} channels`,
       );
-      await invalidateChannelData();
     } catch (error) {
       toast.error(
         getApiErrorMessage(
@@ -137,6 +136,7 @@ export function useChannelPersistence({
         ),
       );
     } finally {
+      await invalidateChannelData();
       setBusyId(null);
     }
   }
@@ -144,22 +144,18 @@ export function useChannelPersistence({
   async function removeSites(sites: Site[]) {
     if (!sites.length) return;
     setBusyId("bulk");
+    const removedIds = new Set<string>();
     try {
-      const removedIds = new Set<string>();
       for (const site of sites) {
         await apiRequest<void>(`/admin/sites/${site.id}`, { method: "DELETE" });
         removedIds.add(site.id);
       }
-      queryClient.setQueryData<Site[]>(["sites"], (current) =>
-        (current ?? []).filter((item) => !removedIds.has(item.id)),
-      );
       setDeleteTarget(null);
       toast.success(
         locale === "zh-CN"
           ? `已删除 ${sites.length} 个渠道`
           : `Deleted ${sites.length} channels`,
       );
-      await invalidateChannelData();
     } catch (error) {
       toast.error(
         getApiErrorMessage(
@@ -168,6 +164,10 @@ export function useChannelPersistence({
         ),
       );
     } finally {
+      queryClient.setQueryData<Site[]>(["sites"], (current) =>
+        (current ?? []).filter((item) => !removedIds.has(item.id)),
+      );
+      await invalidateChannelData();
       setBusyId(null);
     }
   }
