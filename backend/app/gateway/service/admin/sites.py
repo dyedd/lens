@@ -197,7 +197,6 @@ async def fetch_site_models(
                             ),
                         ),
                     ),
-                    context_window=upstream_model.context_window,
                 )
             )
     if not items and errors:
@@ -205,13 +204,6 @@ async def fetch_site_models(
             status_code=502,
             detail="Model discovery failed: " + "; ".join(errors),
         )
-    if items:
-        try:
-            windows = await fetch_context_windows(app_state)
-        except ModelPriceSyncError:
-            windows = {}
-        for item in items:
-            item.context_window = find_context_window(windows, item.model_name)
     return items
 
 

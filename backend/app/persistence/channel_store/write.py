@@ -11,7 +11,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.model_endpoints import build_model_endpoint_configs
+from app.core.model_endpoints import (
+    build_model_endpoint_configs,
+    credential_ids_for_url,
+)
 from app.models.sites import (
     SiteBaseUrl,
     SiteCreate,
@@ -30,7 +33,6 @@ from app.persistence.entities import (
 
 from ..site_loader import credential_pairs
 from .cleanup import SiteConfigurationCleanupMixin
-from .endpoint_credentials import credential_ids_for_url
 
 
 def _naive_utc_now() -> datetime:

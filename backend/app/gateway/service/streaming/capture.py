@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ...router.cooldown import ErrorCategory
+from ....core.cooldown_rules import CompiledCooldownDetectionRule
+from ...router.cooldown import ErrorCategory, ErrorClassification, classify_error
 
 if TYPE_CHECKING:
     from ..runtime_types import RequestDeadline
@@ -66,9 +68,9 @@ class StreamCapture:
     route_cursor_key: str = ""
     route_was_probe: bool = False
     error_status_code: int | None = None
-    error_category: ErrorCategory | None = None
-    error_cooldown_seconds: float | None = None
-    error_retry_action: str | None = None
+    error_classification: ErrorClassification | None = None
+    detection_rules: tuple[CompiledCooldownDetectionRule, ...] = ()
+    response_headers: Mapping[str, str] = field(default_factory=dict)
     skip_route_failure: bool = False
     content_decoder: codecs.IncrementalDecoder = field(
         default_factory=_new_incremental_utf8_decoder
@@ -121,19 +123,22 @@ def record_stream_error(
     status_code: int | None = None,
     category: ErrorCategory | None = None,
     cooldown_seconds: float | None = None,
+    error_body: str | None = None,
     skip_route_failure: bool = False,
 ) -> None:
     if status_code is not None:
         capture.error_status_code = status_code
-    if category is not None and capture.error_category is None:
-        capture.error_category = category
-        capture.error_retry_action = (
-            "retry_key"
-            if category in (ErrorCategory.AUTH, ErrorCategory.RATE_LIMIT)
-            else "retry_channel"
+    if capture.error_classification is None:
+        classification = classify_error(
+            status_code,
+            error_body or message,
+            capture.detection_rules,
+            capture.response_headers,
+            fallback_category=category,
         )
-    if cooldown_seconds is not None and capture.error_cooldown_seconds is None:
-        capture.error_cooldown_seconds = cooldown_seconds
+        if classification is not None and classification.cooldown_seconds is None:
+            classification = classification._replace(cooldown_seconds=cooldown_seconds)
+        capture.error_classification = classification
     if skip_route_failure:
         capture.skip_route_failure = True
     append_error_sample(capture.errors, message)

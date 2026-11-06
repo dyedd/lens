@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.errors import ResourceNotFoundError
+from app.core.model_endpoints import credential_ids_for_url
 from app.core.model_names import (
     ModelPatternKind,
     classify_model_pattern,
@@ -35,7 +36,6 @@ from app.models.sites import (
     SiteEnabledUpdate,
     SiteUpdate,
 )
-from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,

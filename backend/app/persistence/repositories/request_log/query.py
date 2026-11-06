@@ -9,6 +9,8 @@ from sqlalchemy import Select, String, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceNotFoundError
+from app.core.model_endpoints import credential_ids_for_url
+from app.core.model_name_parser import clean_reasoning_effort
 from app.models.health import (
     HealthBucket,
     HealthItem,
@@ -28,7 +30,6 @@ from app.models.request_logs import (
     RequestLogItem,
     RequestLogPage,
 )
-from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.entities import (
     GatewayApiKeyEntity,
     ModelGroupEntity,
@@ -47,7 +48,6 @@ from .types import (
     HydratorPort,
     RuntimeTimeZone,
     SettingsPort,
-    clean_reasoning_effort,
     extract_reasoning_effort,
     group_channel_ids_by_protocol_config,
 )

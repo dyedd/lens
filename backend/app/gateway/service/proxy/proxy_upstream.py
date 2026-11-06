@@ -332,6 +332,8 @@ async def _build_stream_result(
         capture_body=context.log_body_enabled,
         chat_expected_choices=chat_expected_choices,
         deadline=context.deadline,
+        detection_rules=app_state.router.cooldown_detection_rules,
+        response_headers=response.headers,
         event_format=(
             "ndjson" if _response_media_type(response) in _NDJSON_MEDIA_TYPES else None
         ),

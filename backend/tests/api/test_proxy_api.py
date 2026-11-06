@@ -233,6 +233,34 @@ def test_native_openai_stream_errors_are_logged_as_failed(
 ) -> None:
     import app.gateway.service.proxy.proxy_upstream as proxy_upstream
 
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={
+            "items": [
+                {"key": "circuit_breaker_threshold", "value": "1"},
+                {
+                    "key": "cooldown_detection_rules",
+                    "value": json.dumps(
+                        {
+                            "rules": [
+                                {
+                                    "name": "stream provider limit",
+                                    "status_code": 200,
+                                    "body_regex": "rate_limit_exceeded",
+                                    "scope": "channel",
+                                    "action": "retry_channel",
+                                    "category": "not_found",
+                                    "cooldown_seconds": 41,
+                                }
+                            ]
+                        }
+                    ),
+                },
+            ]
+        },
+    )
+    assert settings.status_code == 200, settings.text
     create_site(valid_site_payload(protocols=[protocol], model_name="native-model"))
     create_model_group(
         name="public-model",
@@ -258,7 +286,7 @@ def test_native_openai_stream_errors_are_logged_as_failed(
         return httpx.Response(
             200,
             content=content,
-            headers={"content-type": "text/event-stream"},
+            headers={"content-type": "text/event-stream", "Retry-After": "67"},
             request=httpx.Request("POST", upstream.url),
         )
 
@@ -276,3 +304,10 @@ def test_native_openai_stream_errors_are_logged_as_failed(
     ]
     assert logs[0]["success"] is False
     assert "rate limit exceeded" in logs[0]["error_message"]
+    routes = client.get("/api/admin/routes", headers=admin_headers)
+    assert routes.status_code == 200, routes.text
+    health = routes.json()["health"][0]
+    assert health["last_error_category"] == "not_found"
+    assert health["last_cooldown_seconds"] == 67
+    assert all(item["available"] for item in health["credential_health"])
+    assert any(item["model_name"] is None for item in health["model_health"])

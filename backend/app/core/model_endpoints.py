@@ -67,3 +67,20 @@ def build_model_endpoint_configs(
         )
         for config in configs
     ]
+
+
+def credential_ids_for_url(
+    credentials: Sequence[tuple[str, str]],
+    url_id: str,
+) -> list[str]:
+    """优先使用地址绑定的密钥；没有绑定时使用共享密钥。"""
+    owned = [
+        credential_id
+        for credential_id, bound_url_id in credentials
+        if bound_url_id == url_id
+    ]
+    if owned:
+        return list(dict.fromkeys(owned))
+    return [
+        credential_id for credential_id, bound_url_id in credentials if not bound_url_id
+    ]

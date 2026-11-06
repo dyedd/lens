@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.model_endpoints import credential_ids_for_url
 from app.models.protocols import ChannelProxyMode, ProtocolKind
 from app.models.sites import (
     SiteBaseUrl,
@@ -17,7 +18,6 @@ from app.models.sites import (
     SiteProtocolConfig,
 )
 from app.models.upstream_rules import HeaderRule, ParamOverrideRule
-from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,

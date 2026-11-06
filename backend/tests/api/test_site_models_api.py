@@ -779,14 +779,15 @@ def test_model_context_defaults_and_manual_detection(
         ]
     }
     client_type = httpx.AsyncClient
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(
-            200,
-            json=catalog
-            if str(request.url) == metadata.LITELLM_PRICE_URL
-            else upstream,
-        )
-    )
+    catalog_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == metadata.LITELLM_PRICE_URL:
+            catalog_requests.append(request)
+            return httpx.Response(200, json=catalog)
+        return httpx.Response(200, json=upstream)
+
+    transport = httpx.MockTransport(handler)
     monkeypatch.setattr(
         metadata.httpx,
         "AsyncClient",
@@ -809,6 +810,7 @@ def test_model_context_defaults_and_manual_detection(
         return {model["model_name"]: model for model in site["protocols"][0]["models"]}
 
     try:
+        catalog_requests.clear()
         response = client.post(
             "/api/admin/site-model-discoveries",
             headers=admin_headers,
@@ -823,7 +825,16 @@ def test_model_context_defaults_and_manual_detection(
         assert response.status_code == 200, response.text
         assert {
             item["model_name"]: item["context_window"] for item in response.json()
-        } == {"gpt-4o": 128_000, "unknown-128k": None}
+        } == {"gpt-4o": None, "unknown-128k": None}
+        assert not catalog_requests
+        response = client.post(
+            "/api/admin/model-context-detections",
+            headers=admin_headers,
+            json={"model_names": ["gpt-4o", "unknown-128k"]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"gpt-4o": 128_000, "unknown-128k": None}
+        assert len(catalog_requests) == 1
         _run_model_sync(client, admin_headers, site_ids=[site_id])
         assert models()["gpt-4o"]["context_window"] == 128_000
         assert models()["unknown-128k"]["context_window"] is None

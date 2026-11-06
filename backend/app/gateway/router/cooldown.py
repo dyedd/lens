@@ -145,6 +145,8 @@ def classify_error(
     error_body: str | None = None,
     detection_rules: tuple[CompiledCooldownDetectionRule, ...] = (),
     error_headers: Mapping[str, str] | None = None,
+    *,
+    fallback_category: ErrorCategory | None = None,
 ) -> ErrorClassification | None:
     """Classify an upstream error using configured rules before status defaults."""
     body = error_body or ""
@@ -163,7 +165,7 @@ def classify_error(
             rule.action,
         )
 
-    category = _status_category(status_code)
+    category = fallback_category or _status_category(status_code)
     if category is None:
         return None
     return ErrorClassification(category, default_scope(category), header_cooldown)

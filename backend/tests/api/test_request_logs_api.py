@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 from conftest import run_async, seed_request_log
@@ -95,6 +96,24 @@ def test_request_log_detail_returns_saved_content(
     assert payload["id"] == log.id
     assert payload["request_content"] == '{"model":"gpt-4o"}'
     assert payload["response_content"] == '{"ok":true}'
+
+    async def store_gemini_request():
+        async with app_state.session_factory.begin() as session:
+            row = await session.get(RequestLogEntity, log.id)
+            row.request_content = json.dumps(
+                {
+                    "model": "gemini-test",
+                    "generationConfig": {"thinkingConfig": {"thinkingLevel": "HIGH"}},
+                    "reasoning_effort": "low",
+                }
+            )
+
+    run_async(store_gemini_request())
+    detail = client.get(f"/api/admin/request-logs/{log.id}", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["reasoning_effort"] == "high"
+    page = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    assert page.json()["items"][0]["reasoning_effort"] == "high"
 
 
 def test_clear_request_logs_removes_saved_logs(

@@ -8,6 +8,8 @@ from typing import Any
 from fastapi import HTTPException, Response
 from starlette.background import BackgroundTask
 
+from app.core.model_name_parser import extract_request_reasoning_effort
+
 from ....core.upstream_rules import (
     RuleEvaluationError,
     apply_param_rules,
@@ -57,7 +59,7 @@ from .proxy_upstream import (
     prepare_upstream_request,
 )
 from .routing_plan import elapsed_ms
-from .routing_request import apply_reasoning_intent, extract_request_reasoning_effort
+from .routing_request import apply_reasoning_intent
 
 
 @dataclass(slots=True)
@@ -245,7 +247,6 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
     if request.protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
         upstream_body.pop("stream", None)
 
-    reasoning_effort = extract_request_reasoning_effort(request.body, upstream_body)
     try:
         upstream, body_bytes, upstream_request_content = await prepare_upstream_request(
             channel,
@@ -287,13 +288,21 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
             upstream_body=upstream_body,
         )
 
+    if channel.protocol == ProtocolKind.GEMINI:
+        upstream_body = {
+            **upstream.json_body,
+            "model": upstream_body.get("model"),
+            "stream": bool(upstream_body.get("stream")),
+        }
+    else:
+        upstream_body = upstream.json_body
     return _PreparedAttempt(
         channel=channel,
         upstream_body=upstream_body,
         upstream=upstream,
         body_bytes=body_bytes,
         request_content=upstream_request_content,
-        reasoning_effort=reasoning_effort,
+        reasoning_effort=extract_request_reasoning_effort(request.body, upstream_body),
     )
 
 
@@ -490,7 +499,7 @@ async def _finalize_stream_request(
             )
         elif was_probe and not (
             result.stream_capture is not None
-            and result.stream_capture.error_category is not None
+            and result.stream_capture.error_classification is not None
         ):
             app_state.router.record_failure(
                 channel.id,
@@ -542,35 +551,25 @@ async def _record_stream_route_health(
     if capture is not None and capture.skip_route_failure:
         return
 
-    status_code = capture.error_status_code if capture is not None else None
-    category = capture.error_category if capture is not None else None
-    cooldown_seconds = capture.error_cooldown_seconds if capture is not None else None
-    scope: str | None = None
-    if category is None:
-        classification = classify_error(status_code)
-        if classification is not None:
-            category, scope, classified_cooldown, classified_action = classification
-            cooldown_seconds = cooldown_seconds or classified_cooldown
-        else:
-            classified_action = None
-    else:
-        classified_action = None
-    category = category or ErrorCategory.SERVER
+    classification = capture.error_classification if capture is not None else None
+    category = (
+        classification.category if classification is not None else ErrorCategory.SERVER
+    )
     app_state.router.record_failure(
         channel.id,
         format_channel_error(capture_issue),
         category=category,
-        scope=scope or default_scope(category),
-        cooldown_seconds=cooldown_seconds,
+        scope=classification.scope
+        if classification is not None
+        else default_scope(category),
+        cooldown_seconds=classification.cooldown_seconds
+        if classification is not None
+        else None,
         credential_id=target.credential_id,
         model_name=target.model_name,
         fault_protocol=fault_protocol,
         was_probe=capture.route_was_probe if capture is not None else False,
-        retry_action=(
-            capture.error_retry_action
-            if capture is not None and capture.error_retry_action is not None
-            else classified_action
-        ),
+        retry_action=classification.action if classification is not None else None,
     )
 
 

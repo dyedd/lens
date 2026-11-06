@@ -208,12 +208,12 @@ async def dynamic_cors_middleware(
                 return await _cors_preflight_response(request)
             except OperationalError as exc:
                 return build_database_error_response(exc, request)
-        response = await call_next(request)
         try:
             runtime = await app_state.settings_repo.get_runtime_settings()
             apply_router_runtime_settings(runtime)
         except OperationalError as exc:
             return build_database_error_response(exc, request)
+        response = await call_next(request)
         allow_origins = runtime["cors_allow_origins"]
         origin = request.headers.get("origin", "")
         if allow_origins == ["*"]:
