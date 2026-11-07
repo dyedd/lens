@@ -1,10 +1,5 @@
 import type { ComponentType } from "react";
 import { Link } from "react-router";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
 import { cn } from "@/lib/classNames";
 
 export type OverviewStatDetail = {
@@ -19,7 +14,6 @@ export type OverviewStatView = {
   value: string;
   details?: OverviewStatDetail[];
   detailsColumns?: 2;
-  description?: string;
 };
 
 type Props = {
@@ -39,21 +33,7 @@ export function OverviewStatCard({ view }: Props) {
     >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-4 text-foreground/55" />
-        {view.description ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="cursor-help underline decoration-dotted underline-offset-4"
-              >
-                {view.title}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{view.description}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <span>{view.title}</span>
-        )}
+        <span>{view.title}</span>
       </div>
       <p className="mt-2 truncate text-base font-semibold tabular-nums text-foreground md:text-lg">
         {view.value}
