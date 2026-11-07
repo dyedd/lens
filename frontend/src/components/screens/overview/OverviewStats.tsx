@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Check,
   CircleCheck,
+  DatabaseZap,
   DollarSign,
   RefreshCw,
   Timer,
@@ -21,6 +22,7 @@ import {
   formatCompact,
   formatDuration,
   formatMoney,
+  formatRate,
   requestLogsHref,
   TIME_RANGE_OPTIONS,
   type TimeRange,
@@ -122,10 +124,6 @@ export function OverviewStats(props: Props) {
       icon: Braces,
       title: isChineseLocale ? "Token 用量" : "Token usage",
       value: display(formatCompact(totalTokens)),
-      detailsColumns: 2,
-      description: isChineseLocale
-        ? "总量 = 输入 + 输出；输入包含缓存 Token，缓存读取和写入不重复累加。"
-        : "Total = input + output. Input includes cache tokens; cache reads and writes are not added again.",
       details: [
         {
           label: isChineseLocale ? "输入" : "Input",
@@ -135,6 +133,15 @@ export function OverviewStats(props: Props) {
           label: isChineseLocale ? "输出" : "Output",
           value: display(formatCompact(outputTokens)),
         },
+      ],
+    },
+    {
+      icon: DatabaseZap,
+      title: isChineseLocale ? "Token 缓存命中率" : "Token cache hit rate",
+      value: display(
+        formatRate(inputTokens > 0 ? cacheReadTokens / inputTokens : null),
+      ),
+      details: [
         {
           label: isChineseLocale ? "缓存读取" : "Cache read",
           value: display(formatCompact(cacheReadTokens)),
@@ -220,7 +227,7 @@ export function OverviewStats(props: Props) {
           </Button>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
         {metricCards.map((view) => (
           <OverviewStatCard key={view.title} view={view} />
         ))}
