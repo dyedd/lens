@@ -4,7 +4,13 @@ from typing import Any
 
 from ....models.protocols import ProtocolKind
 from ..payload_serialization import stringify_text_content
-from ..streaming.types import parse_sse_payloads
+from ..streaming.detect import _stream_payload_has_output
+from ..streaming.events import _stream_payload_error_message
+from ..streaming.types import (
+    parse_anthropic_stream_payload,
+    parse_chat_stream_payload,
+    parse_sse_payloads,
+)
 
 
 def extract_site_model_output(
@@ -30,23 +36,37 @@ def extract_site_model_output(
 
 def extract_site_model_stream_output(protocol: ProtocolKind, raw_content: str) -> str:
     """Extract display text from a streaming model-probe response."""
-    if protocol != ProtocolKind.OPENAI_CHAT:
-        return ""
-
+    errors: list[str] = []
+    payloads = parse_sse_payloads(raw_content, errors=errors)
+    if errors:
+        raise ValueError(errors[0])
     parts: list[str] = []
-    for payload in parse_sse_payloads(raw_content):
-        choices = payload.get("choices")
-        if not isinstance(choices, list):
-            continue
-        for choice in choices:
-            if not isinstance(choice, dict):
-                continue
-            delta = choice.get("delta")
-            if not isinstance(delta, dict):
-                continue
-            text = stringify_text_content(delta.get("content"))
-            if text:
-                parts.append(text)
+    has_output = False
+    for payload in payloads:
+        error = _stream_payload_error_message(protocol, payload)
+        if error:
+            raise ValueError(error[0])
+        has_output |= _stream_payload_has_output(protocol, payload)
+        if protocol == ProtocolKind.OPENAI_CHAT:
+            for choice in parse_chat_stream_payload(payload):
+                parts.append(choice.delta.content or "")
+        elif protocol == ProtocolKind.OPENAI_RESPONSES:
+            if payload.get("type") == "response.output_text.delta":
+                parts.append(stringify_text_content(payload.get("delta")))
+            elif not any(parts) and payload.get("type") == "response.completed":
+                response = payload.get("response")
+                if isinstance(response, dict):
+                    parts.append(_extract_openai_responses_output(response))
+        elif protocol == ProtocolKind.ANTHROPIC:
+            block = parse_anthropic_stream_payload(payload)
+            if block and block.type == "content_block_delta" and block.delta:
+                parts.append(stringify_text_content(block.delta.get("text")))
+            elif block and block.type == "content_block_start" and block.content_block:
+                parts.append(stringify_text_content(block.content_block.get("text")))
+        elif protocol == ProtocolKind.GEMINI:
+            parts.append(_extract_gemini_output(payload))
+    if not has_output and not any(part.strip() for part in parts):
+        raise ValueError("Upstream stream ended without model output")
     return "".join(parts).strip()
 
 

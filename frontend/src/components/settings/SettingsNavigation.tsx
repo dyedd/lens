@@ -4,7 +4,6 @@ import {
   Puzzle,
   ServerCog,
   ShieldAlert,
-  TestTubeDiagonal,
   TimerReset,
   UserRound,
 } from "lucide-react";
@@ -16,7 +15,6 @@ export interface SettingsTabDefinition {
   value:
     | "general"
     | "gateway"
-    | "model-test"
     | "circuit-breaker"
     | "api-keys"
     | "cronjobs"
@@ -40,11 +38,6 @@ export function createSettingsTabs(
       value: "gateway",
       label: titleForLocale(locale, "网关", "Gateway"),
       icon: ServerCog,
-    },
-    {
-      value: "model-test",
-      label: titleForLocale(locale, "模型测试", "Model Testing"),
-      icon: TestTubeDiagonal,
     },
     {
       value: "circuit-breaker",

@@ -167,11 +167,8 @@ export function ChannelsDialogs({
       {modelTest.modelTestDialogTarget ? (
         <ModelTestDialog
           locale={locale}
-          prompts={modelTest.modelTestPrompts}
-          promptMode={modelTest.modelTestPromptMode}
-          prompt={modelTest.modelTestPrompt}
-          onPromptModeChange={modelTest.changeModelTestPromptMode}
-          onPromptChange={modelTest.changeModelTestPrompt}
+          mode={modelTest.modelTestMode}
+          onModeChange={modelTest.changeModelTestMode}
           onRun={() => void modelTest.runModelTest()}
           credentialOptions={modelTest.modelTestCredentialOptions}
           credentialValue={modelTest.modelTestDeleteKey ?? undefined}

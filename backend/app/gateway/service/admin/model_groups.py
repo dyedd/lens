@@ -89,7 +89,7 @@ async def test_model_group_model(
             "api_key": credential.key,
         },
         model_name=member.model_name,
-        prompt=payload.prompt,
+        test_mode=payload.test_mode,
     )
     return await run_site_model_probe(
         probe_payload,

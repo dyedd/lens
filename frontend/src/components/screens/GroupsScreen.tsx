@@ -219,11 +219,8 @@ export function GroupsScreen() {
           targetName={modelTest.targetName}
           rows={modelTest.batchTestRows}
           testing={modelTest.isBatchModelTestRunning}
-          prompts={modelTest.prompts}
-          promptMode={modelTest.batchTestPromptMode}
-          prompt={modelTest.batchTestPrompt}
-          onPromptModeChange={modelTest.changeBatchTestPromptMode}
-          onPromptChange={modelTest.changeBatchTestPrompt}
+          mode={modelTest.batchTestMode}
+          onModeChange={modelTest.changeBatchTestMode}
           onProtocolChange={modelTest.changeBatchTestProtocol}
           onRun={() => void modelTest.runBatchModelTests()}
           onClose={() => modelTest.changeBatchModelTestOpen(false)}

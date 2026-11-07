@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import HTTPException, Request
 
+from ....core.errors import LensError
 from ....core.protocol_reachability import CHAT_PROTOCOLS
 from ....core.upstream_rules import (
     RuleEvaluationError,
@@ -18,7 +19,11 @@ from ....core.upstream_rules import (
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
 from ....models.settings import RuntimeSettings
-from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
+from ....models.site_model_test import (
+    ModelTestMode,
+    SiteModelTestRequest,
+    SiteModelTestResult,
+)
 from ....models.upstream_rules import (
     HeaderRule,
     ParamOverrideRule,
@@ -56,7 +61,17 @@ def _probe_debug(
     request_headers = {
         key: value
         for key, value in upstream.headers.items()
-        if key.lower() in {"content-type", "accept", "anthropic-version"}
+        if key.lower()
+        in {
+            "content-type",
+            "accept",
+            "anthropic-version",
+            "user-agent",
+            "originator",
+            "version",
+            "x-app",
+            "x-stainless-lang",
+        }
     }
     response_headers = (
         {
@@ -119,6 +134,21 @@ async def run_site_model_probe(
 
     `timeout_seconds` caps the wait below the configured first-token timeout.
     """
+    if payload.test_mode == "codex" and payload.protocol not in {
+        ProtocolKind.OPENAI_CHAT,
+        ProtocolKind.OPENAI_RESPONSES,
+    }:
+        raise LensError(
+            "Codex tests require OpenAI Chat or Responses protocol",
+            status_code=400,
+            error_type="invalid_request_error",
+        )
+    if payload.test_mode == "claude" and payload.protocol != ProtocolKind.ANTHROPIC:
+        raise LensError(
+            "Claude tests require Anthropic protocol",
+            status_code=400,
+            error_type="invalid_request_error",
+        )
     channel = channel or _site_model_probe_channel(payload)
     runtime = await app_state.settings_repo.get_runtime_settings()
     if timeout_seconds is not None:
@@ -141,6 +171,7 @@ async def run_site_model_probe(
         body=prepared_body,
         model_name=payload.model_name,
         credential_id=payload.credential.id,
+        test_mode=payload.test_mode,
         runtime=runtime,
         model_group_headers=model_group_headers,
     )
@@ -153,6 +184,7 @@ async def _call_site_model_probe_for_request(
     body: dict[str, Any],
     model_name: str,
     credential_id: str,
+    test_mode: ModelTestMode,
     runtime: RuntimeSettings,
     model_group_headers: Sequence[HeaderRule],
 ) -> SiteModelTestResult:
@@ -161,6 +193,7 @@ async def _call_site_model_probe_for_request(
         body=body,
         model_name=model_name,
         credential_id=credential_id,
+        test_mode=test_mode,
         runtime=runtime,
         model_group_headers=model_group_headers,
     )
@@ -201,15 +234,41 @@ async def _call_site_model_probe_channel(
     body: dict[str, Any],
     model_name: str,
     credential_id: str,
+    test_mode: ModelTestMode,
     runtime: RuntimeSettings,
     model_group_headers: Sequence[HeaderRule],
 ) -> SiteModelTestResult:
+    # shortcut: 固定 CLI 标识用于兼容性探测；上游要求新版特征时更新。
+    client_headers: dict[str, str] = {}
+    if test_mode == "codex":
+        client_headers = {
+            "user-agent": "codex_cli_rs/0.159.0",
+            "originator": "codex_cli_rs",
+            "version": "0.159.0",
+            "accept": "application/json, text/event-stream",
+        }
+    elif test_mode == "claude":
+        client_headers = {
+            "user-agent": "claude-cli/2.1.90 (external, cli)",
+            "x-app": "cli",
+            "x-stainless-lang": "js",
+            "accept": "application/json, text/event-stream",
+        }
+    headers_config = runtime["upstream_headers_config"].model_copy(
+        update={
+            "rules": [
+                HeaderRule(name=name, action="override", value=value)
+                for name, value in client_headers.items()
+            ]
+            + runtime["upstream_headers_config"].rules
+        }
+    )
     upstream = build_upstream_request(
         channel,
         body,
         credential_id=credential_id,
         user_agent=default_lens_user_agent(),
-        upstream_headers_config=runtime["upstream_headers_config"],
+        upstream_headers_config=headers_config,
         model_group_headers=list(model_group_headers),
     )
     # 探测与真实请求一样经过凭据插件，测通的才是实际会发出的鉴权。
@@ -340,7 +399,7 @@ async def _run_site_model_probe_request(
 
 
 def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
-    text = payload.prompt.strip()
+    text = "hi"
     if payload.protocol == ProtocolKind.OPENAI_CHAT:
         return {
             "model": payload.model_name,
@@ -350,7 +409,13 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
     if payload.protocol == ProtocolKind.OPENAI_RESPONSES:
         return {
             "model": payload.model_name,
-            "input": text,
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": text}],
+                }
+            ],
             "max_output_tokens": 64,
             "stream": False,
         }
@@ -359,17 +424,16 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
     if payload.protocol == ProtocolKind.OPENAI_IMAGE:
         return {
             "model": payload.model_name,
-            "prompt": text,
+            "prompt": "a dot",
             "n": 1,
             "size": "1024x1024",
         }
     if payload.protocol == ProtocolKind.RERANK:
-        query, documents = _rerank_test_prompt(text)
         return {
             "model": payload.model_name,
-            "query": query,
-            "documents": documents,
-            "top_n": min(3, len(documents)),
+            "query": text,
+            "documents": [text],
+            "top_n": 1,
         }
     if payload.protocol == ProtocolKind.ANTHROPIC:
         return {
@@ -423,13 +487,10 @@ def _apply_site_model_probe_param_override(
     }:
         prepared_body.pop("stream", None)
     else:
-        prepared_body["stream"] = False
+        prepared_body["stream"] = payload.test_mode != "direct"
+    if (
+        payload.test_mode == "codex"
+        and payload.protocol == ProtocolKind.OPENAI_RESPONSES
+    ):
+        prepared_body["store"] = False
     return prepared_body
-
-
-def _rerank_test_prompt(text: str) -> tuple[str, list[str]]:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if len(lines) >= 2:
-        return lines[0], lines[1:]
-    query = lines[0] if lines else text.strip()
-    return query, [query]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -41,7 +42,6 @@ def _model_test_payload(protocol: ProtocolKind) -> dict[str, Any]:
             "api_key": "upstream-secret",
         },
         "model_name": "test-model",
-        "prompt": "ping",
     }
 
 
@@ -455,8 +455,8 @@ def test_test_site_model_returns_probe_result(
         if protocol == ProtocolKind.RERANK:
             assert body == {
                 "model": "test-model",
-                "query": "ping",
-                "documents": ["ping"],
+                "query": "hi",
+                "documents": ["hi"],
                 "top_n": 1,
             }
         return httpx.Response(200, json=upstream_payload, request=request)
@@ -514,10 +514,182 @@ def test_test_site_model_returns_sanitized_probe_debug(
     assert result["success"] is True
     assert result["debug"]["request"]["path"] == "/v1/chat/completions"
     assert result["debug"]["request"]["body"]["messages"] == [
-        {"role": "user", "content": "ping"}
+        {"role": "user", "content": "hi"}
     ]
     assert result["debug"]["response"]["headers"]["x-request-id"] == "probe-1"
     assert "upstream-secret" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("protocol", "test_mode", "event"),
+    [
+        (
+            ProtocolKind.OPENAI_CHAT,
+            "codex",
+            {"choices": [{"index": 0, "delta": {"content": "hello"}}]},
+        ),
+        (
+            ProtocolKind.OPENAI_RESPONSES,
+            "codex",
+            {"type": "response.output_text.delta", "delta": "hello"},
+        ),
+        (
+            ProtocolKind.ANTHROPIC,
+            "claude",
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "hello"},
+            },
+        ),
+    ],
+)
+def test_model_test_uses_client_identity_and_reads_stream(
+    client, admin_headers, monkeypatch, protocol, test_mode, event
+) -> None:
+    class ProbeStream(httpx.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            yield b": connected\n\n"
+            await asyncio.sleep(0.02)
+            yield f"data: {json.dumps(event)}\n\ndata: [DONE]\n\n".encode()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["stream"] is True
+        assert body["temperature"] == 0.2
+        assert request.headers["accept"] == "application/json, text/event-stream"
+        assert request.headers["x-test"] == "configured"
+        if test_mode == "codex":
+            assert request.headers["user-agent"].startswith("codex_cli_rs/")
+            assert request.headers["originator"] == "codex_cli_rs"
+            assert request.headers["authorization"] == "Bearer upstream-secret"
+        else:
+            assert request.headers["user-agent"].startswith("claude-cli/")
+            assert request.headers["x-app"] == "cli"
+            assert request.headers["x-stainless-lang"] == "js"
+            assert request.headers["x-api-key"] == "upstream-secret"
+        if protocol == ProtocolKind.OPENAI_RESPONSES:
+            assert request.url.path == "/v1/responses"
+            assert body["store"] is False
+            assert body["input"][0]["content"] == [{"type": "input_text", "text": "hi"}]
+        else:
+            assert request.url.path == (
+                "/v1/messages" if test_mode == "claude" else "/v1/chat/completions"
+            )
+            assert body["messages"] == [{"role": "user", "content": "hi"}]
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=ProbeStream(),
+        )
+
+    import app.gateway.service.tasks.site_model_probe as probe
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json={
+                **_model_test_payload(protocol),
+                "test_mode": test_mode,
+                "headers": [
+                    {"name": "X-Test", "action": "override", "value": "configured"}
+                ],
+                "param_override": [
+                    {"path": "temperature", "action": "set", "value": 0.2}
+                ],
+            },
+        )
+    finally:
+        run_async(upstream.aclose())
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["success"] is True
+    assert result["output_text"] == "hello"
+    assert result["latency_ms"] >= 15
+    assert "upstream-secret" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("protocol", "test_mode", "events", "error"),
+    [
+        (
+            ProtocolKind.OPENAI_CHAT,
+            "codex",
+            [{"error": {"message": "overloaded"}}],
+            "overloaded",
+        ),
+        (
+            ProtocolKind.OPENAI_RESPONSES,
+            "codex",
+            [
+                {"type": "response.output_text.delta", "delta": "partial"},
+                {
+                    "type": "response.failed",
+                    "response": {"error": {"message": "overloaded"}},
+                },
+            ],
+            "overloaded",
+        ),
+        (
+            ProtocolKind.ANTHROPIC,
+            "claude",
+            [{"type": "error", "error": {"message": "overloaded"}}],
+            "overloaded",
+        ),
+        (ProtocolKind.OPENAI_RESPONSES, "codex", [], "without model output"),
+    ],
+)
+def test_model_test_reports_failed_or_empty_stream(
+    client, admin_headers, monkeypatch, protocol, test_mode, events, error
+) -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(f"data: {json.dumps(event)}\n\n" for event in events)
+            + "data: [DONE]\n\n",
+        )
+
+    import app.gateway.service.tasks.site_model_probe as probe
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json={**_model_test_payload(protocol), "test_mode": test_mode},
+        )
+    finally:
+        run_async(upstream.aclose())
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["success"] is False
+    assert result["status_code"] == 502
+    assert error in result["error_message"]
+
+
+@pytest.mark.parametrize(
+    ("protocol", "test_mode", "message"),
+    [
+        (ProtocolKind.ANTHROPIC, "codex", "Codex tests require OpenAI"),
+        (ProtocolKind.OPENAI_CHAT, "claude", "Claude tests require Anthropic"),
+    ],
+)
+def test_model_test_rejects_incompatible_client_protocol(
+    client, admin_headers, protocol, test_mode, message
+) -> None:
+    response = client.post(
+        "/api/admin/site-model-tests",
+        headers=admin_headers,
+        json={**_model_test_payload(protocol), "test_mode": test_mode},
+    )
+    assert_error(response, 400, message)
 
 
 def test_test_gemini_probe_debug_hides_api_key(

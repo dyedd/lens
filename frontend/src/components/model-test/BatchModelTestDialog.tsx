@@ -1,5 +1,6 @@
 import type { BatchModelTestRow } from "@/components/model-test/batchModelTestSession";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import type { ModelTestMode } from "@/lib/api/sites";
 import type { Locale } from "@/lib/I18nContext";
 import { ModelTestDialog } from "./ModelTestDialog";
 
@@ -9,11 +10,8 @@ type Props = {
   rows: BatchModelTestRow[];
   testing: boolean;
   onClose: () => void;
-  prompts: string[];
-  promptMode: string;
-  prompt: string;
-  onPromptModeChange: (value: string) => void;
-  onPromptChange: (value: string) => void;
+  mode: ModelTestMode;
+  onModeChange: (mode: ModelTestMode) => void;
   onProtocolChange: (key: string, protocol: ProtocolKind) => void;
   onRun: () => void;
 };
@@ -24,11 +22,8 @@ export function BatchModelTestDialog({
   rows,
   testing,
   onClose,
-  prompts,
-  promptMode,
-  prompt,
-  onPromptModeChange,
-  onPromptChange,
+  mode,
+  onModeChange,
   onProtocolChange,
   onRun,
 }: Props) {
@@ -36,11 +31,8 @@ export function BatchModelTestDialog({
     <ModelTestDialog
       locale={locale}
       targetName={targetName}
-      prompts={prompts}
-      promptMode={promptMode}
-      prompt={prompt}
-      onPromptModeChange={onPromptModeChange}
-      onPromptChange={onPromptChange}
+      mode={mode}
+      onModeChange={onModeChange}
       onRun={onRun}
       onProtocolChangeAll={(protocol) => {
         for (const row of rows) {
