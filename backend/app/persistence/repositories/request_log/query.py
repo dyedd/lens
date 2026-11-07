@@ -601,6 +601,7 @@ class RequestLogQueries:
         async with self.session_factory() as session:
             if mode == "model":
                 item_stmt = select(
+                    ModelGroupEntity.id.label("id"),
                     ModelGroupEntity.name.label("key"),
                     ModelGroupEntity.name.label("name"),
                 ).where(ModelGroupEntity.route_group_id == "")
@@ -621,7 +622,9 @@ class RequestLogQueries:
                 )
             else:
                 item_stmt = select(
-                    SiteEntity.id.label("key"), SiteEntity.name.label("name")
+                    SiteEntity.id.label("id"),
+                    SiteEntity.id.label("key"),
+                    SiteEntity.name.label("name"),
                 ).where(SiteEntity.enabled == 1)
                 if trimmed_query:
                     item_stmt = item_stmt.where(
@@ -644,6 +647,7 @@ class RequestLogQueries:
             rows = item_rows.all()
             has_next_page = len(rows) > bounded_limit
             rows = rows[:bounded_limit]
+            ids_by_key = {str(row.key).strip(): row.id for row in rows}
             items_by_key = {
                 str(row.key).strip(): str(row.name).strip()
                 for row in rows
@@ -697,6 +701,7 @@ class RequestLogQueries:
             next_offset=bounded_offset + bounded_limit if has_next_page else None,
             items=[
                 HealthItem(
+                    id=ids_by_key[key],
                     name=items_by_key[key],
                     success_count=sum(item["success_count"] for item in counts),
                     total_count=sum(item["total_count"] for item in counts),

@@ -116,7 +116,9 @@ export type HealthBucket = {
   tier: HealthTier;
 };
 export type HealthItem = {
+  id: string;
   name: string;
+  cooldown_remaining_seconds: number;
   success_count: number;
   total_count: number;
   tier: HealthTier;

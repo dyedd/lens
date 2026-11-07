@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import ceil
 from threading import Lock
 from time import monotonic
 
@@ -10,7 +11,7 @@ from ...models.routing import RouterSnapshot
 from .cooldown import ClaimDecision, CooldownPolicy, ErrorCategory
 from .health import HealthTracker
 from .routing import RoutePlanner, RouteSelection, SeatOrderer
-from .targets import RouteTarget
+from .targets import RouteTarget, TargetKey, target_key
 
 # 冷却到期后的探测在该目标上独占多久，避免全部请求同时涌入。
 PROBE_LEASE_SECONDS = 60.0
@@ -182,6 +183,23 @@ class GatewayRouter:
         """Return how long the target stays unusable; 0 when available."""
         with self._lock:
             return self._health.cooldown_remaining_seconds(target, now=monotonic())
+
+    def reset_cooldowns(self, targets: list[RouteTarget]) -> None:
+        with self._lock:
+            self._health.reset_cooldowns(targets)
+
+    def cooldown_remaining_by_target(
+        self, channels: list[ChannelConfig], targets: list[RouteTarget]
+    ) -> dict[TargetKey, int]:
+        with self._lock:
+            self._routes.discard_channels(self._health.reconcile_channels(channels))
+            now = monotonic()
+            return {
+                target_key(target): ceil(
+                    self._health.cooldown_remaining_seconds(target, now=now)
+                )
+                for target in targets
+            }
 
     def cooldown_reason(self, target: RouteTarget) -> str:
         """Name the fault domain and remaining cooldown of a cooling target."""

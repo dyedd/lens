@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
+import httpx
 import pytest
-from conftest import run_async, seed_request_log
+from conftest import gateway_headers, run_async, seed_request_log, valid_site_payload
 
 from app.persistence.entities import RequestLogEntity
 
@@ -30,6 +31,130 @@ def test_request_health_summarizes_success_and_failure(
     assert item["tier"] == "major"
     assert sum(bucket["total_count"] for bucket in item["buckets"]) == 2
     assert sum(bucket["success_count"] for bucket in item["buckets"]) == 1
+
+
+@pytest.mark.parametrize("mode", ["model", "channel"])
+@pytest.mark.parametrize("scope", ["key", "model", "channel"])
+def test_health_cooldown_reset_restores_selected_routes(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site_group_and_key,
+    create_site,
+    mode,
+    scope,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    site, group, key = create_site_group_and_key()
+    other_site = create_site(
+        valid_site_payload(
+            name="Other Site",
+            base_id="base-2",
+            credential_id="cred-2",
+            protocol_config_id="pc-2",
+            model_name="other-model",
+        )
+    )
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={
+            "items": [
+                {"key": "failover_cooled_wait_seconds", "value": "0"},
+                {
+                    "key": "cooldown_detection_rules",
+                    "value": json.dumps(
+                        {
+                            "rules": [
+                                {
+                                    "name": "provider cooldown",
+                                    "status_code": 429,
+                                    "scope": scope,
+                                    "action": "retry_key"
+                                    if scope == "key"
+                                    else "retry_channel",
+                                    "category": "rate_limit",
+                                    "cooldown_seconds": 120,
+                                }
+                            ]
+                        }
+                    ),
+                },
+            ]
+        },
+    )
+    assert settings.status_code == 200, settings.text
+    is_recovered = False
+    upstream_calls = 0
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        nonlocal upstream_calls
+        upstream_calls += 1
+        return httpx.Response(
+            200 if is_recovered else 429,
+            json=(
+                {
+                    "choices": [
+                        {
+                            "message": {"role": "assistant", "content": "ok"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+                if is_recovered
+                else {"error": {"message": "provider cooldown"}}
+            ),
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    for model in (group["name"], "other-model"):
+        response = client.post(
+            "/v1/chat/completions",
+            headers=gateway_headers(key),
+            json={"model": model, "messages": [{"role": "user", "content": "hello"}]},
+        )
+        assert response.status_code == 429, response.text
+
+    response = client.get(
+        "/api/admin/model-health", headers=admin_headers, params={"mode": mode}
+    )
+    assert response.status_code == 200, response.text
+    item_id = group["id"] if mode == "model" else site["id"]
+    item = next(item for item in response.json()["items"] if item["id"] == item_id)
+    assert 0 < item["cooldown_remaining_seconds"] <= 120
+    assert item["total_count"] == 1
+
+    reset = client.post(
+        f"/api/admin/model-health/{item_id}/reset-cooldown",
+        headers=admin_headers,
+        params={"mode": mode},
+    )
+    assert reset.status_code == 204, reset.text
+    items = client.get(
+        "/api/admin/model-health", headers=admin_headers, params={"mode": mode}
+    ).json()["items"]
+    restored = next(item for item in items if item["id"] == item_id)
+    assert restored["cooldown_remaining_seconds"] == 0
+    assert restored["total_count"] == item["total_count"]
+    assert restored["buckets"] != []
+    other = next(item for item in items if item["id"] != item_id)
+    assert other["cooldown_remaining_seconds"] > 0
+    if mode == "channel":
+        assert other["id"] == other_site["id"]
+
+    is_recovered = True
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": group["name"],
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert upstream_calls == 3
 
 
 def test_request_log_page_returns_seeded_logs(client, admin_headers, app_state) -> None:

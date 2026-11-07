@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import {
   Table,
   TableBody,
@@ -31,6 +32,8 @@ type Props = {
   loading: boolean;
   emptyLabel: string;
   timeZone: string;
+  isResettingCooldown: boolean;
+  onResetCooldown: (id: string) => void;
 };
 
 function HealthTimeline({
@@ -106,6 +109,8 @@ export function HealthTable({
   loading,
   emptyLabel,
   timeZone,
+  isResettingCooldown,
+  onResetCooldown,
 }: Props) {
   const formatter = useMemo(
     () =>
@@ -130,6 +135,22 @@ export function HealthTable({
             {titleForLocale(locale, "状态", "Status")}
           </TableHead>
           <TableHead className="min-w-[88px]">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  {titleForLocale(locale, "剩余冷却", "Cooldown left")}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {titleForLocale(
+                  locale,
+                  "当前行内最长的剩余冷却时间。",
+                  "The longest remaining cooldown in this row.",
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TableHead>
+          <TableHead className="min-w-[88px]">
             {titleForLocale(locale, "成功率", "Success")}
           </TableHead>
           <TableHead className="min-w-[72px]">
@@ -144,7 +165,7 @@ export function HealthTable({
         {loading && items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={5}
+              colSpan={6}
               className="h-32 text-center text-muted-foreground"
             >
               {titleForLocale(locale, "加载中...", "Loading...")}
@@ -154,7 +175,7 @@ export function HealthTable({
         {!loading && items.length === 0 ? (
           <TableRow className="hover:bg-transparent">
             <TableCell
-              colSpan={5}
+              colSpan={6}
               className="h-32 text-center text-muted-foreground"
             >
               {emptyLabel}
@@ -162,7 +183,7 @@ export function HealthTable({
           </TableRow>
         ) : null}
         {items.map((item) => (
-          <TableRow key={item.name} className="hover:bg-transparent">
+          <TableRow key={item.id} className="hover:bg-transparent">
             <TableCell className="w-[16rem] max-w-[16rem]">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -182,6 +203,48 @@ export function HealthTable({
               >
                 {healthTierLabel(item.tier, locale)}
               </Badge>
+            </TableCell>
+            <TableCell>
+              {item.cooldown_remaining_seconds > 0 ? (
+                <div className="flex items-center gap-2">
+                  <span className="tabular-nums">
+                    {titleForLocale(
+                      locale,
+                      `${item.cooldown_remaining_seconds} 秒`,
+                      `${item.cooldown_remaining_seconds}s`,
+                    )}
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          disabled={isResettingCooldown}
+                          onClick={() => onResetCooldown(item.id)}
+                          aria-label={titleForLocale(
+                            locale,
+                            `重置 ${item.name} 的冷却`,
+                            `Reset cooldown for ${item.name}`,
+                          )}
+                        >
+                          {titleForLocale(locale, "重置冷却", "Reset cooldown")}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {titleForLocale(
+                        locale,
+                        "共享 Key 或渠道的模型也会解除对应冷却。",
+                        "Also clears the same cooldown for models sharing a key or channel.",
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              ) : (
+                <span className="text-muted-foreground">-</span>
+              )}
             </TableCell>
             <TableCell className="tabular-nums">
               {formatSuccessRate(item.success_count, item.total_count)}
