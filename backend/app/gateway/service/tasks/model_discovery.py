@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from fastapi import HTTPException
 
 from ....core.context_windows import parse_upstream_model_context_window
 from ....core.errors import ModelDiscoveryError
@@ -13,6 +11,7 @@ from ....core.model_protocols import parse_declared_protocols
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
+from ....models.upstream_rules import UpstreamHeadersConfig
 from ....plugins.contract import UpstreamCall
 from ....plugins.runtime import apply_credential_hooks, system_run
 from ...upstream_request import (
@@ -57,25 +56,27 @@ async def fetch_upstream_model_list(
     channel: ChannelConfig, protocols: tuple[ProtocolKind, ...] = LISTING_PROTOCOLS
 ) -> UpstreamModelList:
     """List models with the first listing protocol the upstream accepts."""
-    errors: list[HTTPException | ModelDiscoveryError] = []
+    errors: list[ModelDiscoveryError] = []
     for protocol in protocols:
         try:
             models = await fetch_upstream_models(
                 channel.model_copy(update={"protocol": protocol})
             )
-        except (HTTPException, ModelDiscoveryError) as exc:
+        except ModelDiscoveryError as exc:
             errors.append(exc)
             continue
         return UpstreamModelList(protocol=protocol, models=models)
     if len(errors) == 1:
         raise errors[0]
-    raise HTTPException(
+    if not errors:
+        raise ModelDiscoveryError("No model listing protocol is available")
+    raise ModelDiscoveryError(
         status_code=errors[0].status_code,
-        detail="; ".join(
-            f"{protocol.value}: {exc.public_message if isinstance(exc, ModelDiscoveryError) else exc.detail}"
+        message="; ".join(
+            f"{protocol.value}: {exc.public_message}"
             for protocol, exc in zip(protocols, errors, strict=True)
         ),
-    )
+    ) from errors[-1]
 
 
 async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
@@ -86,7 +87,7 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
 
     try:
         request = await _model_list_request(channel, runtime["upstream_headers_config"])
-        response = await client.request(**request)
+        response = await client.request(**request, timeout=30)
         response.raise_for_status()
         return _parse_model_list(response.json(), protocol=channel.protocol)
     except httpx.HTTPStatusError as exc:
@@ -99,7 +100,7 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
 
 
 async def _model_list_request(
-    channel: ChannelConfig, upstream_headers_config: Mapping[str, Any] | None = None
+    channel: ChannelConfig, upstream_headers_config: UpstreamHeadersConfig | None = None
 ) -> dict[str, Any]:
     api_key = resolve_channel_api_key(channel)
     url = resolve_channel_model_list_url(channel, api_key)

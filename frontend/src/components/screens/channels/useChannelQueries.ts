@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { apiRequest } from "@/lib/api/client";
 import type { Site } from "@/lib/api/sites";
-import { siteEndpointSummary, siteModelCounts } from "./channelModels";
+import { siteEndpointSummary, siteModelCounts } from "./channelDisplay";
 import type {
   ChannelSort,
   ChannelStatusFilter,

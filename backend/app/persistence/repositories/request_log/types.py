@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
-from typing import Any, Protocol
-from zoneinfo import ZoneInfo
+from collections.abc import Iterable
+from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +10,7 @@ from app.core.model_name_parser import extract_request_reasoning_effort
 
 from ....core.runtime_channel_ids import split_runtime_channel_id
 from ....models.protocols import ProtocolKind, RequestLogLifecycleStatus
+from ....models.settings import RuntimeSettings
 
 
 class GatewayKeyPort(Protocol):
@@ -24,26 +24,7 @@ class GatewayKeyPort(Protocol):
 
 
 class SettingsPort(Protocol):
-    async def get_runtime_settings(self) -> dict[str, Any]: ...
-
-
-RuntimeTimeZone = Callable[[dict[str, Any]], ZoneInfo]
-
-
-class HydratorPort(Protocol):
-    async def hydrate_request_logs(
-        self,
-        session: AsyncSession,
-        entities: list[Any],
-        *,
-        gateway_has_multiple_keys: bool | None = None,
-    ) -> list[Any]: ...
-
-    async def gateway_has_multiple_keys(self, session: AsyncSession) -> bool: ...
-
-    async def request_log_channel_credentials(
-        self, session: AsyncSession, channel_ids: list[str | None]
-    ) -> tuple[dict[str, int], dict[tuple[str, str], tuple[str, int]]]: ...
+    async def get_runtime_settings(self) -> RuntimeSettings: ...
 
 
 def extract_reasoning_effort(request_content: str | None) -> str | None:

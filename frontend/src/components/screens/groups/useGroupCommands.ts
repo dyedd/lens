@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { apiRequest } from "@/lib/api/client";
+import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type {
   ModelGroup,
   ModelGroupMergeRequest,
@@ -24,11 +24,7 @@ import {
   type SimilarGroupView,
 } from "./groupTypes";
 import { formToModelGroupPayload, modelGroupToForm } from "./groupView";
-import {
-  isGroupEnabled,
-  modelGroupErrorMessage,
-  strategyLabel,
-} from "./modelGroupFormatting";
+import { isGroupEnabled, strategyLabel } from "./modelGroupFormatting";
 
 type GroupCommandOptions = {
   editingId: string | null;
@@ -79,7 +75,7 @@ export function useGroupCommands({
       await action();
       return true;
     } catch (error) {
-      toast.error(modelGroupErrorMessage(error, failureMessage));
+      toast.error(getApiErrorMessage(error, failureMessage));
       return false;
     } finally {
       setBusyId(null);
@@ -112,7 +108,7 @@ export function useGroupCommands({
       setForm(EMPTY_FORM);
     } catch (error) {
       toast.error(
-        modelGroupErrorMessage(
+        getApiErrorMessage(
           error,
           locale === "zh-CN" ? "保存模型组失败" : "Failed to save group",
         ),
@@ -125,7 +121,7 @@ export function useGroupCommands({
       group.id,
       locale === "zh-CN" ? "删除模型组失败" : "Failed to delete group",
       async () => {
-        await apiRequest<void>(`/admin/model-groups/${group.id}`, {
+        await apiFetch(`/admin/model-groups/${group.id}`, {
           method: "DELETE",
         });
         setDeleteTarget(null);
@@ -249,7 +245,7 @@ export function useGroupCommands({
       locale === "zh-CN" ? "批量删除模型组失败" : "Failed to delete groups",
       async () => {
         for (const group of targetGroups) {
-          await apiRequest<void>(`/admin/model-groups/${group.id}`, {
+          await apiFetch(`/admin/model-groups/${group.id}`, {
             method: "DELETE",
           });
         }
@@ -279,12 +275,13 @@ export function useGroupCommands({
         await invalidateGroupData();
       },
     );
-    if (!merged) return;
+    if (!merged) return false;
     toast.success(
       locale === "zh-CN"
         ? `已将「${source.name}」合并到「${target.name}」`
         : `Merged "${source.name}" into "${target.name}"`,
     );
+    return true;
   }
 
   /** Save unplaced model names as members of an existing group. */
@@ -339,7 +336,7 @@ export function useGroupCommands({
     } catch (error) {
       if (created) await invalidateGroupData();
       toast.error(
-        modelGroupErrorMessage(
+        getApiErrorMessage(
           error,
           locale === "zh-CN" ? "创建模型组失败" : "Failed to create groups",
         ),
@@ -391,7 +388,7 @@ export function useGroupCommands({
       );
     } catch (error) {
       toast.error(
-        modelGroupErrorMessage(
+        getApiErrorMessage(
           error,
           locale === "zh-CN" ? "自动分配失败" : "Automatic assignment failed",
         ),

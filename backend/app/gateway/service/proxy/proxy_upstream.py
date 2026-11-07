@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from time import perf_counter
@@ -14,6 +14,7 @@ from fastapi import Response
 from ....core.context_windows import is_context_window_exceeded_error
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
+from ....models.upstream_rules import HeaderRule, UpstreamHeadersConfig
 from ....plugins.contract import UpstreamCall, UpstreamResponse
 from ....plugins.runtime import (
     PluginRun,
@@ -27,6 +28,7 @@ from ...converters import (
     needs_protocol_conversion,
     repair_chat_tool_call_stream,
 )
+from ...converters.unified import ToolDefinition
 from ...router.cooldown import (
     ErrorCategory,
     classify_error,
@@ -86,6 +88,7 @@ class UpstreamResponseContext:
     log_body_enabled: bool
     deadline: RequestDeadline
     plugin_run: PluginRun
+    tool_mapping: dict[str, ToolDefinition] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -292,7 +295,11 @@ async def _build_anthropic_sse_to_json_result(
         # their own protocol's shape.
         try:
             content = convert_response(
-                client_protocol, ProtocolKind.ANTHROPIC, content, ""
+                client_protocol,
+                ProtocolKind.ANTHROPIC,
+                content,
+                "",
+                tool_mapping=context.tool_mapping,
             )
         except ValueError as exc:
             raise _invalid_upstream("Invalid upstream response", exc) from exc
@@ -313,7 +320,7 @@ async def _build_anthropic_sse_to_json_result(
     )
 
 
-async def _build_stream_result(
+def _build_stream_result(
     response: httpx.Response,
     context: UpstreamResponseContext,
     stream_started_at: float,
@@ -361,6 +368,7 @@ async def _build_stream_result(
             channel.protocol,
             raw_iter,
             body.get("model", ""),
+            tool_mapping=context.tool_mapping,
         )
         converted_iter = capture_converted_stream_iterator(converted_iter, capture)
         stream_media = "text/event-stream"
@@ -460,7 +468,11 @@ async def _build_json_result(
     ):
         try:
             content = convert_response(
-                client_protocol, channel.protocol, content, body.get("model", "")
+                client_protocol,
+                channel.protocol,
+                content,
+                body.get("model", ""),
+                tool_mapping=context.tool_mapping,
             )
         except ValueError as exc:
             raise _invalid_upstream("Invalid upstream response", exc) from exc
@@ -494,14 +506,14 @@ async def prepare_upstream_request(
     credential_id: str | None,
     user_agent: str | None,
     forwarded_headers: Mapping[str, str] | None,
-    upstream_headers_config: Mapping[str, Any] | None,
-    model_group_headers: Mapping[str, str] | None,
+    upstream_headers_config: UpstreamHeadersConfig | None,
+    model_group_headers: list[HeaderRule] | None,
     log_body_enabled: bool,
     max_request_body_bytes: int,
     plugin_run: PluginRun,
     path_suffix: str | None = None,
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
-) -> tuple[Any, bytes, str | None]:
+) -> tuple[UpstreamRequest, bytes, str | None]:
     upstream = build_upstream_request(
         channel,
         body,
@@ -629,7 +641,7 @@ async def _build_channel_result(
             result.first_token_latency_ms = elapsed_ms(stream_started_at)
             return result, response
         if is_event_stream or is_ndjson_stream:
-            result = await _build_stream_result(
+            result = _build_stream_result(
                 response,
                 context,
                 stream_started_at,
@@ -735,7 +747,7 @@ async def execute_upstream_request(
 
 async def _send_upstream(
     client: httpx.AsyncClient,
-    upstream: Any,
+    upstream: UpstreamRequest,
     *,
     stream: bool,
     body_bytes: bytes,

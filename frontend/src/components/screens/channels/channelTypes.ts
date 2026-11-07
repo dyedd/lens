@@ -26,7 +26,7 @@ export type { Locale };
 
 export type FormModel = Omit<SiteModelInput, "id" | "protocol"> & {
   protocols: ProtocolKind[];
-  protocolIds: Partial<Record<ProtocolKind, string>>;
+  modelIdsByProtocol: Partial<Record<ProtocolKind, string>>;
 };
 
 export type FormProtocolConfig = {

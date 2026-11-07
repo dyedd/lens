@@ -43,7 +43,7 @@ export function AppearanceSettings({
         <Combobox
           className="w-full"
           value={timeZone || "Asia/Shanghai"}
-          onChange={(event) => onTimeZoneChange(event.target.value)}
+          onValueChange={onTimeZoneChange}
         >
           {TIME_ZONE_OPTIONS.map((option) => (
             <ComboboxOption key={option.value} value={option.value}>

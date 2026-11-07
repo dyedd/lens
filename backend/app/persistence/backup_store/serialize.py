@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
+
+from pydantic import TypeAdapter
 
 from ...models.backups import ConfigBackupRequestLogAttempt
 from ..cronjob_store import decode_weekdays
+from ..json_columns import load_json_column
+
+_ATTEMPTS = TypeAdapter(list[ConfigBackupRequestLogAttempt])
 
 
 def parse_backup_datetime(value: str) -> datetime:
@@ -32,24 +36,6 @@ def format_optional_datetime(value: datetime | None) -> str | None:
     return value.replace(tzinfo=UTC).isoformat()
 
 
-def parse_allowed_models(raw_value: str | None) -> list[str]:
-    """Load and canonicalize allowed model names from stored JSON."""
-    if not raw_value:
-        return []
-    payload = json.loads(raw_value)
-    if not isinstance(payload, list):
-        raise ValueError("Invalid gateway API key allowed models JSON")
-    models: list[str] = []
-    seen: set[str] = set()
-    for item in payload:
-        trimmed_item = str(item).strip()
-        if not trimmed_item or trimmed_item in seen:
-            continue
-        seen.add(trimmed_item)
-        models.append(trimmed_item)
-    return models
-
-
 def parse_weekdays(raw_value: str | None) -> list[int]:
     """Load canonical/sorted cron job weekdays from stored JSON."""
     return list(decode_weekdays(raw_value))
@@ -57,12 +43,4 @@ def parse_weekdays(raw_value: str | None) -> list[int]:
 
 def parse_attempts(raw_value: str | None) -> list[ConfigBackupRequestLogAttempt]:
     """Parse request log attempts from stored JSON."""
-    if not raw_value:
-        return []
-    payload = json.loads(raw_value)
-    if not isinstance(payload, list):
-        raise ValueError("Invalid request log attempts JSON")
-    attempts: list[ConfigBackupRequestLogAttempt] = []
-    for item in payload:
-        attempts.append(ConfigBackupRequestLogAttempt.model_validate(item))
-    return attempts
+    return load_json_column(raw_value or "[]", _ATTEMPTS, "attempts_json")

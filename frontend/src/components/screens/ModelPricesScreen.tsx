@@ -41,10 +41,7 @@ import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ModelGroup } from "@/lib/api/groups";
 import { type Locale, useI18n } from "@/lib/I18nContext";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
-import {
-  formatMoney,
-  modelGroupErrorMessage,
-} from "./groups/modelGroupFormatting";
+import { formatMoney } from "./groups/modelGroupFormatting";
 
 const PRICE_FIELDS = [
   ["input_price_per_million", "输入", "Input"],
@@ -118,7 +115,6 @@ function PriceEditor({
         {
           method: "PUT",
           body: JSON.stringify({
-            model_key: group.name,
             display_name: group.name,
             ...parsed,
             pricing_mode: mode,
@@ -129,7 +125,7 @@ function PriceEditor({
       onClose();
     } catch (error) {
       toast.error(
-        modelGroupErrorMessage(
+        getApiErrorMessage(
           error,
           isChinese ? "保存价格失败" : "Failed to save price",
         ),
@@ -299,7 +295,7 @@ export function ModelPricesScreen() {
       toast.success(isChinese ? "模型价格已同步" : "Model prices synced");
     } catch (error) {
       toast.error(
-        modelGroupErrorMessage(
+        getApiErrorMessage(
           error,
           isChinese ? "同步价格失败" : "Failed to sync prices",
         ),
@@ -453,7 +449,7 @@ export function ModelPricesScreen() {
                                 );
                               } catch (error) {
                                 toast.error(
-                                  modelGroupErrorMessage(
+                                  getApiErrorMessage(
                                     error,
                                     isChinese
                                       ? "恢复自动同步失败"

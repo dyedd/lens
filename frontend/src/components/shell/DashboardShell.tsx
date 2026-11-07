@@ -18,7 +18,7 @@ import { SidebarProvider } from "@/components/ui/SidebarContext";
 import { SidebarInset } from "@/components/ui/SidebarLayout";
 import type { AppInfo, VersionCheckResult } from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
-import { clearStoredToken } from "@/lib/auth";
+import { signOut } from "@/lib/auth";
 import { useI18n } from "@/lib/I18nContext";
 import {
   BillingIcon,
@@ -125,11 +125,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     document.title = `${activeLabel} - ${siteName}`;
   }, [activeLabel, siteName]);
 
-  function handleSignOut() {
-    clearStoredToken();
-    window.location.href = "/login";
-  }
-
   return (
     <DashboardHeaderActionsContext.Provider value={headerActionsContext}>
       <SidebarProvider className="h-dvh max-h-dvh overflow-hidden bg-background">
@@ -143,7 +138,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           updateTitle={updateTitle}
           updateReleaseUrl={versionCheck?.release_url}
           locale={locale}
-          onSignOut={handleSignOut}
+          onSignOut={signOut}
         />
 
         <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">

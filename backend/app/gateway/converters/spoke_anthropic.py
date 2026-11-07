@@ -37,6 +37,7 @@ from .unified import (
     ReasoningKind,
     ReasoningPart,
     Refusal,
+    ResponseFormat,
     ServerToolDefinition,
     ServerToolKind,
     ServerToolPart,
@@ -68,15 +69,6 @@ from .validation import required_string
 
 _ORIGIN = ProtocolKind.ANTHROPIC
 DEFAULT_MAX_TOKENS = 4096
-_REASONING_BUDGET_TOKENS = {
-    "minimal": 1024,
-    "low": 2048,
-    "medium": 4096,
-    "high": 8192,
-    "xhigh": 16384,
-    "max": 32768,
-    "auto": 4096,
-}
 
 
 def build_anthropic_request(request: UnifiedRequest) -> dict[str, Any]:
@@ -171,11 +163,9 @@ def build_anthropic_request(request: UnifiedRequest) -> dict[str, Any]:
         request.response_format is not None
         and request.response_format.kind == "json_schema"
     ):
-        body["output_config"] = {
-            "format": {
-                "type": "json_schema",
-                "schema": request.response_format.schema or {},
-            }
+        body.setdefault("output_config", {})["format"] = {
+            "type": "json_schema",
+            "schema": request.response_format.schema or {},
         }
     if request.user_id:
         body.setdefault("metadata", {})["user_id"] = request.user_id
@@ -196,6 +186,20 @@ def parse_anthropic_request(body: Mapping[str, Any]) -> UnifiedRequest:
             value for value in stop if isinstance(value, str)
         )
     request.reasoning = _anthropic_reasoning_intent(body)
+    output_config = body.get("output_config")
+    output_format = (
+        output_config.get("format") if isinstance(output_config, Mapping) else None
+    )
+    if (
+        isinstance(output_format, Mapping)
+        and output_format.get("type") == "json_schema"
+    ):
+        schema = output_format.get("schema")
+        if not isinstance(schema, Mapping):
+            raise ValueError("Anthropic output_config format must contain schema")
+        request.response_format = ResponseFormat(
+            kind="json_schema", schema=dict(schema)
+        )
     metadata = body.get("metadata")
     if isinstance(metadata, Mapping):
         request.user_id = _text(metadata.get("user_id"))
@@ -917,13 +921,11 @@ def _reasoning_to_anthropic(part: ReasoningPart) -> dict[str, Any]:
 def _tool_call_to_anthropic(part: ToolCallPart) -> dict[str, Any]:
     name = capabilities.namespaced_name(part.namespace, part.name)
     if part.kind is ToolKind.CUSTOM:
-        # Anthropic has no free-form tool, so the raw input is carried in the
-        # single-string argument shape :func:`render_custom_tool` declared.
         return {
             "type": "tool_use",
             "id": part.call_id,
             "name": name,
-            "input": {"input": capabilities.unwrap_custom_tool_input(part.arguments)},
+            "input": {"input": part.arguments},
         }
     arguments = part.arguments or "{}"
     try:
@@ -1007,15 +1009,16 @@ def _anthropic_server_type(kind: ServerToolKind) -> str:
 
 def _tool_choice_to_anthropic(choice: ToolChoice) -> dict[str, Any]:
     if choice.mode == ToolChoiceMode.FUNCTION:
-        return {
+        result: dict[str, Any] = {
             "type": "tool",
             "name": capabilities.namespaced_name(choice.namespace, choice.name),
         }
-    if choice.mode == ToolChoiceMode.REQUIRED:
-        return {"type": "any"}
-    if choice.mode == ToolChoiceMode.NONE:
+    elif choice.mode == ToolChoiceMode.REQUIRED:
+        result = {"type": "any"}
+    elif choice.mode == ToolChoiceMode.NONE:
         return {"type": "none"}
-    result: dict[str, Any] = {"type": "auto"}
+    else:
+        result = {"type": "auto"}
     if choice.allow_parallel is not None:
         result["disable_parallel_tool_use"] = not choice.allow_parallel
     return result
@@ -1029,9 +1032,7 @@ def _apply_reasoning_intent(body: dict[str, Any], intent: ReasoningIntent) -> No
         body.setdefault("output_config", {})["effort"] = intent.effort
         body["thinking"] = {"type": "adaptive"}
         return
-    budget = intent.budget_tokens or _REASONING_BUDGET_TOKENS.get(
-        intent.effort or "", DEFAULT_MAX_TOKENS
-    )
+    budget = intent.budget_tokens or DEFAULT_MAX_TOKENS
     body["thinking"] = {"type": "enabled", "budget_tokens": max(budget, 1024)}
 
 
@@ -1276,7 +1277,6 @@ class _AnthropicParseState:
         self.model = ""
         self.started = False
         self.block_index: dict[int, int] = {}
-        self.block_kind: dict[int, Any] = {}
         self.next_index = 0
         self.stop_reason: Any = None
         self.usage = Usage()
@@ -1303,7 +1303,7 @@ class _AnthropicParseState:
             if not isinstance(block, Mapping):
                 raise ValueError("Anthropic content_block_start must contain a block")
             block_type = block.get("type")
-            unified_index = self._allocate(index, block_type)
+            unified_index = self._allocate(index)
             if block_type == "text":
                 events.append(
                     BlockStart(index=unified_index, kind=self._block_kind.TEXT)
@@ -1385,11 +1385,10 @@ class _AnthropicParseState:
             return events
         return events
 
-    def _allocate(self, index: int, block_type: Any) -> int:
+    def _allocate(self, index: int) -> int:
         unified_index = self.next_index
         self.next_index += 1
         self.block_index[index] = unified_index
-        self.block_kind[index] = block_type
         return unified_index
 
     def finish_events(self) -> list[Any]:
@@ -1414,12 +1413,7 @@ async def _anthropic_serializer(
     events: AsyncIterator[Any],
     original_model: str,
 ) -> AsyncIterator[bytes]:
-    from .unified_stream import (
-        StreamFinish,
-    )
-
     kind_by_index: dict[int, Any] = {}
-    call_by_index: dict[int, tuple[str, str]] = {}
     started = False
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
     model = original_model
@@ -1471,7 +1465,6 @@ async def _anthropic_serializer(
                 # client as ordinary text.
                 yield anthropic_block_start(event.index, {"type": "text", "text": ""})
             elif event.kind == BlockKind.SERVER_TOOL:
-                call_by_index[event.index] = (event.call_id, event.name)
                 yield anthropic_block_start(
                     event.index,
                     {
@@ -1482,7 +1475,6 @@ async def _anthropic_serializer(
                     },
                 )
             else:
-                call_by_index[event.index] = (event.call_id, event.name)
                 yield anthropic_block_start(
                     event.index,
                     {

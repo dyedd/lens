@@ -26,7 +26,8 @@ import {
 } from "@/components/ui/Tooltip";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { SiteCredential } from "@/lib/api/sites";
-import { addApiKeyDraft, credentialLabel } from "./channelModels";
+import { credentialLabel } from "@/lib/credentialLabels";
+import { addApiKeyDraft } from "./channelForm";
 import type { FormCredential, FormState, Locale } from "./channelTypes";
 
 type Props = {

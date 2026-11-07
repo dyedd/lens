@@ -1,5 +1,5 @@
+import { formatCredentialTitle } from "@/lib/credentialLabels";
 import { lazyComponent } from "@/lib/lazyComponent";
-import { formatCredentialTitle } from "./channelModels";
 import type {
   AggregatedModel,
   Locale,
@@ -24,7 +24,9 @@ const BatchImportDialog = lazyComponent(() =>
   import("./BatchImportDialog").then((module) => module.BatchImportDialog),
 );
 const ModelTestDialog = lazyComponent(() =>
-  import("./ModelTestDialog").then((module) => module.ModelTestDialog),
+  import("@/components/model-test/ModelTestDialog").then(
+    (module) => module.ModelTestDialog,
+  ),
 );
 const ChannelModelsDialog = lazyComponent(() =>
   import("./ChannelModelsDialog").then((module) => module.ChannelModelsDialog),

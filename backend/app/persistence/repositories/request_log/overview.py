@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.time_zone import load_time_zone
 from app.models.overview import (
     OverviewDailyPoint,
     OverviewModelAnalytics,
@@ -32,7 +33,7 @@ from .query import (
     select_request_log_models,
 )
 from .statistics import RequestLogStatistics
-from .types import RuntimeTimeZone, SettingsPort
+from .types import SettingsPort
 
 
 class RequestLogOverview:
@@ -41,17 +42,15 @@ class RequestLogOverview:
         session_factory: async_sessionmaker[AsyncSession],
         settings_repo: SettingsPort,
         statistics: RequestLogStatistics,
-        runtime_time_zone: RuntimeTimeZone,
     ) -> None:
         self.session_factory = session_factory
         self.settings_repo = settings_repo
         self.statistics: RequestLogStatistics = statistics
-        self.runtime_time_zone = runtime_time_zone
 
     async def list_overview_daily(self, days: int = 0) -> list[OverviewDailyPoint]:
         """Return merged daily overview metrics for the requested period."""
-        time_zone = self.runtime_time_zone(
-            await self.settings_repo.get_runtime_settings()
+        time_zone = load_time_zone(
+            (await self.settings_repo.get_runtime_settings())["time_zone"]
         )
         async with self.session_factory() as session:
             return await self.merged_daily_points(
@@ -237,8 +236,8 @@ class RequestLogOverview:
         """Return model distribution and trend analytics for a metric."""
         model_metric = metric if metric in {"cost", "requests", "tokens"} else "cost"
         gateway_key_id_value = prepare_gateway_key_id(gateway_key_id)
-        time_zone = self.runtime_time_zone(
-            await self.settings_repo.get_runtime_settings()
+        time_zone = load_time_zone(
+            (await self.settings_repo.get_runtime_settings())["time_zone"]
         )
         async with self.session_factory() as session:
             archived_model_rows = []
@@ -410,8 +409,8 @@ class RequestLogOverview:
 
     async def get_overview_summary(self, days: int = 7) -> OverviewSummary:
         """Return aggregate request metrics and period-over-period deltas."""
-        time_zone = self.runtime_time_zone(
-            await self.settings_repo.get_runtime_settings()
+        time_zone = load_time_zone(
+            (await self.settings_repo.get_runtime_settings())["time_zone"]
         )
         async with self.session_factory() as session:
             if days != 0:

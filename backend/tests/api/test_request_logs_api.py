@@ -3,9 +3,33 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
+import pytest
 from conftest import run_async, seed_request_log
 
 from app.persistence.entities import RequestLogEntity
+
+
+@pytest.mark.parametrize("mode", ["model", "channel"])
+def test_request_health_summarizes_success_and_failure(
+    client, admin_headers, app_state, create_site_group_and_key, mode
+) -> None:
+    site, group, _ = create_site_group_and_key()
+    seed_request_log(app_state, success=True)
+    seed_request_log(app_state, success=False)
+
+    response = client.get(
+        "/api/admin/model-health",
+        headers=admin_headers,
+        params={"mode": mode, "hours": 1},
+    )
+    assert response.status_code == 200, response.text
+    name = group["name"] if mode == "model" else site["name"]
+    item = next(item for item in response.json()["items"] if item["name"] == name)
+    assert item["success_count"] == 1
+    assert item["total_count"] == 2
+    assert item["tier"] == "major"
+    assert sum(bucket["total_count"] for bucket in item["buckets"]) == 2
+    assert sum(bucket["success_count"] for bucket in item["buckets"]) == 1
 
 
 def test_request_log_page_returns_seeded_logs(client, admin_headers, app_state) -> None:

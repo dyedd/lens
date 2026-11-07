@@ -25,7 +25,7 @@ import {
   parseContextWindowInput,
 } from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
-import { formatBaseUrlLabel } from "./channelModels";
+import { formatBaseUrlLabel } from "./channelDisplay";
 import type { AggregatedModel, Locale } from "./channelTypes";
 import { ProtocolDropdown } from "./ProtocolDropdown";
 

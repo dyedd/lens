@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import Lock
 from time import monotonic
 
+from ...core.cooldown_rules import CompiledCooldownDetectionRule
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouterSnapshot
@@ -128,7 +129,7 @@ class GatewayRouter:
             return self._health.failure_revision
 
     @property
-    def cooldown_detection_rules(self):
+    def cooldown_detection_rules(self) -> tuple[CompiledCooldownDetectionRule, ...]:
         """Return the compiled upstream error detection rules."""
         with self._lock:
             return self._health.cooldown_detection_rules

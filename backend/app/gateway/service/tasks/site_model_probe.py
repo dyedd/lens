@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from time import perf_counter
 from typing import Any
 from urllib.parse import urlsplit
@@ -17,7 +17,13 @@ from ....core.upstream_rules import (
 )
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
+from ....models.settings import RuntimeSettings
 from ....models.site_model_test import SiteModelTestRequest, SiteModelTestResult
+from ....models.upstream_rules import (
+    HeaderRule,
+    ParamOverrideRule,
+    UpstreamParamOverrideConfig,
+)
 from ....plugins.contract import UpstreamCall
 from ....plugins.runtime import apply_credential_hooks, system_run
 from ...converters import spoke_for
@@ -105,8 +111,8 @@ async def run_site_model_probe(
     request: Request | None,
     *,
     channel: ChannelConfig | None = None,
-    model_group_headers: Sequence[Any] = (),
-    model_group_param_override: Sequence[Any] = (),
+    model_group_headers: Sequence[HeaderRule] = (),
+    model_group_param_override: Sequence[ParamOverrideRule] = (),
     timeout_seconds: float | None = None,
 ) -> SiteModelTestResult:
     """Run a model probe, ending it early when `request` disconnects.
@@ -147,8 +153,8 @@ async def _call_site_model_probe_for_request(
     body: dict[str, Any],
     model_name: str,
     credential_id: str,
-    runtime: Mapping[str, Any],
-    model_group_headers: Sequence[Any],
+    runtime: RuntimeSettings,
+    model_group_headers: Sequence[HeaderRule],
 ) -> SiteModelTestResult:
     probe = _call_site_model_probe_channel(
         channel=channel,
@@ -195,8 +201,8 @@ async def _call_site_model_probe_channel(
     body: dict[str, Any],
     model_name: str,
     credential_id: str,
-    runtime: Mapping[str, Any],
-    model_group_headers: Sequence[Any],
+    runtime: RuntimeSettings,
+    model_group_headers: Sequence[HeaderRule],
 ) -> SiteModelTestResult:
     upstream = build_upstream_request(
         channel,
@@ -388,9 +394,9 @@ def _apply_site_model_probe_param_override(
     channel: ChannelConfig,
     body: dict[str, Any],
     payload: SiteModelTestRequest,
-    global_config: Mapping[str, Any] | None,
+    global_config: UpstreamParamOverrideConfig | None,
     *,
-    model_group_param_override: Sequence[Any] = (),
+    model_group_param_override: Sequence[ParamOverrideRule] = (),
 ) -> dict[str, Any] | SiteModelTestResult:
     try:
         prepared_body = apply_param_rules(

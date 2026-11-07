@@ -5,35 +5,24 @@ from datetime import UTC, datetime
 from math import ceil
 from threading import BoundedSemaphore, Lock
 from time import monotonic
-from typing import Any
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from packaging import version
 from starlette.concurrency import run_in_threadpool
 
 from ...core.auth import create_access_token, decode_access_token
 from ...core.config import settings
-from ...core.version import read_system_version
 from ...models.auth import (
     AdminLoginRequest,
     AdminPasswordChangeRequest,
     AdminProfile,
     AdminProfileUpdateRequest,
     AdminProfileUpdateResponse,
-    AppInfo,
     AuthTokenResponse,
-    PublicBranding,
-    VersionCheckResult,
 )
 from ...models.gateway_keys import GatewayApiKey
 from ...persistence.entities import AdminUserEntity
-from ...persistence.settings_keys import (
-    SETTING_LATEST_VERSION,
-    SETTING_LATEST_VERSION_URL,
-    SETTING_VERSION_CHECK_AT,
-)
-from .app_state import app_state, logger
+from .app_state import app_state
 from .lifecycle import auth_scheme
 
 _LOGIN_FAILURE_LIMIT = 5
@@ -188,64 +177,9 @@ def gateway_key_allows_model(
     if not model_name:
         return True
     allowed_models_set = {
-        item.strip().lower() for item in gateway_key.allowed_models if item.strip()
+        item.strip() for item in gateway_key.allowed_models if item.strip()
     }
-    return model_name.strip().lower() in allowed_models_set
-
-
-def _has_version_update(latest_version: str, current_version: str) -> bool:
-    if not latest_version:
-        return False
-    try:
-        return version.parse(latest_version) > version.parse(current_version)
-    except version.InvalidVersion:
-        logger.warning(
-            "Invalid version string when comparing %r vs %r",
-            latest_version,
-            current_version,
-        )
-        return False
-
-
-async def get_public_branding() -> PublicBranding:
-    """Return public site branding settings."""
-    branding = await app_state.settings_repo.get_branding_settings()
-    return PublicBranding(
-        site_name=branding["site_name"], logo_url=branding["site_logo_url"]
-    )
-
-
-async def get_app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
-    """Return administrative application metadata and capabilities."""
-    runtime = await app_state.settings_repo.get_runtime_settings()
-    return AppInfo(
-        system_version=read_system_version(),
-        site_name=str(runtime["site_name"]),
-        logo_url=str(runtime["site_logo_url"]),
-        time_zone=str(runtime["time_zone"]),
-    )
-
-
-async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResult:
-    """Return the latest stored application update status."""
-    current_version = read_system_version()
-
-    settings = await app_state.settings_repo.list_settings()
-    settings_dict = {setting.key: setting.value for setting in settings}
-
-    latest_version = settings_dict.get(SETTING_LATEST_VERSION, "")
-    latest_url = settings_dict.get(SETTING_LATEST_VERSION_URL, "")
-    checked_at = settings_dict.get(SETTING_VERSION_CHECK_AT, "")
-
-    has_update = _has_version_update(latest_version, current_version)
-
-    return VersionCheckResult(
-        current_version=current_version,
-        latest_version=latest_version if has_update else "",
-        release_url=latest_url if has_update else "",
-        has_update=has_update,
-        checked_at=checked_at,
-    )
+    return model_name.strip() in allowed_models_set
 
 
 async def login(payload: AdminLoginRequest, request: Request) -> AuthTokenResponse:

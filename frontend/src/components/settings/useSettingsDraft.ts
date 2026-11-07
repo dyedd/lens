@@ -25,7 +25,7 @@ const REFRESH_QUERY_KEYS = [
   ["groups"],
   ["overview-summary"],
   ["overview-daily"],
-  ["overview-models"],
+  ["overview-attribution"],
 ] as const;
 
 /** Manage loading, editing, refreshing, and saving application settings. */

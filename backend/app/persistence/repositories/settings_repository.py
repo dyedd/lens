@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
 from time import monotonic
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.cooldown_rules import compile_detection_rules
 from app.core.time_zone import validate_time_zone_name
-from app.models.settings import SettingItem
+from app.models.settings import RuntimeSettings, SettingItem
 from app.persistence.entities import SettingEntity
 from app.persistence.settings_keys import (
     SETTING_AUTH_ACCESS_TOKEN_MINUTES,
@@ -58,21 +56,6 @@ from ...models.upstream_rules import (
 from ..editable_settings import effective_editable_setting_items
 
 
-def _parse_upstream_config(
-    value: str | None,
-    config_type: type[UpstreamHeadersConfig] | type[UpstreamParamOverrideConfig],
-) -> dict[str, Any]:
-    raw_value = (value or "").strip()
-    if not raw_value:
-        config = config_type()
-    else:
-        try:
-            config = config_type.model_validate(json.loads(raw_value))
-        except (TypeError, ValueError):
-            config = config_type()
-    return config.model_dump(mode="json", by_alias=True)
-
-
 class SettingsRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         import asyncio
@@ -82,7 +65,7 @@ class SettingsRepository:
         self._settings_cache_at = 0.0
         self._settings_cache_ttl_seconds = 2.0
         self._settings_cache_lock = asyncio.Lock()
-        self._runtime_settings_cache: dict[Any, Any] | None = None
+        self._runtime_settings_cache: RuntimeSettings | None = None
         self._runtime_settings_cache_at = 0.0
 
     def _clone_settings_items(self, items: list[SettingItem]) -> list[SettingItem]:
@@ -102,19 +85,15 @@ class SettingsRepository:
         self._runtime_settings_cache = None
         self._runtime_settings_cache_at = 0.0
 
-    def _clone_runtime_settings(self, runtime: dict[str, Any]) -> dict[str, Any]:
-        cloned = dict(runtime)
-        allow_origins = cloned.get("cors_allow_origins")
-        if isinstance(allow_origins, list):
-            cloned["cors_allow_origins"] = list(allow_origins)
-        upstream_headers_config = cloned.get("upstream_headers_config")
-        if isinstance(upstream_headers_config, dict):
-            cloned["upstream_headers_config"] = deepcopy(upstream_headers_config)
-        upstream_param_override_config = cloned.get("upstream_param_override_config")
-        if isinstance(upstream_param_override_config, dict):
-            cloned["upstream_param_override_config"] = deepcopy(
-                upstream_param_override_config
-            )
+    def _clone_runtime_settings(self, runtime: RuntimeSettings) -> RuntimeSettings:
+        cloned = runtime.copy()
+        cloned["cors_allow_origins"] = list(runtime["cors_allow_origins"])
+        cloned["upstream_headers_config"] = runtime[
+            "upstream_headers_config"
+        ].model_copy(deep=True)
+        cloned["upstream_param_override_config"] = runtime[
+            "upstream_param_override_config"
+        ].model_copy(deep=True)
         return cloned
 
     @staticmethod
@@ -130,7 +109,7 @@ class SettingsRepository:
                 items.append(trimmed_item)
         return items
 
-    async def get_runtime_settings(self) -> dict[str, Any]:
+    async def get_runtime_settings(self) -> RuntimeSettings:
         """Return effective runtime settings with short-lived caching."""
         cached = self._runtime_settings_cache
         if (
@@ -146,7 +125,7 @@ class SettingsRepository:
             mapping.get(SETTING_CORS_ALLOW_ORIGINS, "")
         )
         time_zone = validate_time_zone_name(mapping.get(SETTING_TIME_ZONE))
-        runtime = {
+        runtime: RuntimeSettings = {
             "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
             "auth_access_token_minutes": int(
                 mapping[SETTING_AUTH_ACCESS_TOKEN_MINUTES]
@@ -213,12 +192,11 @@ class SettingsRepository:
             "health_window_seconds": int(mapping[SETTING_HEALTH_WINDOW_SECONDS]),
             "health_penalty_weight": float(mapping[SETTING_HEALTH_PENALTY_WEIGHT]),
             "health_min_samples": int(mapping[SETTING_HEALTH_MIN_SAMPLES]),
-            "upstream_headers_config": _parse_upstream_config(
-                mapping.get(SETTING_UPSTREAM_HEADERS_CONFIG), UpstreamHeadersConfig
+            "upstream_headers_config": UpstreamHeadersConfig.model_validate_json(
+                mapping[SETTING_UPSTREAM_HEADERS_CONFIG]
             ),
-            "upstream_param_override_config": _parse_upstream_config(
-                mapping.get(SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG),
-                UpstreamParamOverrideConfig,
+            "upstream_param_override_config": UpstreamParamOverrideConfig.model_validate_json(
+                mapping[SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG],
             ),
             "cooldown_detection_rules": compile_detection_rules(
                 CooldownDetectionRulesConfig.model_validate(

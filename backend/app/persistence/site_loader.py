@@ -17,7 +17,6 @@ from app.models.sites import (
     SiteModel,
     SiteProtocolConfig,
 )
-from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,
@@ -28,6 +27,8 @@ from app.persistence.entities import (
 )
 
 from ..core.context_windows import coerce_context_window
+from .group_rule_codec import parse_headers, parse_param_override
+from .json_columns import STRING_LIST, load_json_column
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,14 +48,6 @@ def format_site_updated_at(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC).isoformat()
     return value.astimezone(UTC).isoformat()
-
-
-def load_header_rules(raw: str | None) -> list[HeaderRule]:
-    return [HeaderRule.model_validate(item) for item in json.loads(raw or "[]")]
-
-
-def load_param_rules(raw: str | None) -> list[ParamOverrideRule]:
-    return [ParamOverrideRule.model_validate(item) for item in json.loads(raw or "[]")]
 
 
 def protocols_from_bindings(
@@ -169,12 +162,12 @@ def build_site_configs(rows: SiteRows) -> list[SiteConfig]:
             id=row.id,
             name=row.name,
             enabled=bool(row.enabled),
-            tags=json.loads(row.tags_json),
+            tags=load_json_column(row.tags_json, STRING_LIST, "tags_json"),
             updated_at=format_site_updated_at(row.updated_at),
             proxy_mode=ChannelProxyMode(row.proxy_mode),
             channel_proxy=row.channel_proxy,
-            headers=load_header_rules(row.headers_json),
-            param_override=load_param_rules(row.param_override),
+            headers=parse_headers(row.headers_json or "[]"),
+            param_override=parse_param_override(row.param_override or "[]"),
             base_urls=base_urls_by_site.get(row.id, []),
             credentials=credentials_by_site.get(row.id, []),
             protocols=protocols_by_site.get(row.id, []),

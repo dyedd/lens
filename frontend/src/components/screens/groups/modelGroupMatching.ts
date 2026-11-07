@@ -3,7 +3,7 @@ import type { MatchRegexOperator } from "@/lib/api/groups";
 /** Compile a rule pattern case-insensitively, or null when empty or invalid. */
 export function compileRegexRulePattern(pattern: string) {
   const trimmedPattern = pattern.trim();
-  // Python accepts a leading (?i); JS takes the flag instead.
+  // Python 的前置 (?i) 对应 JavaScript 的 i 标志。
   const source = trimmedPattern.startsWith("(?i)")
     ? trimmedPattern.slice(4)
     : trimmedPattern;

@@ -1,21 +1,6 @@
 import type { ContextWindowSource } from "@/lib/contextWindow";
+import type { HeaderRule, ParamOverrideRule } from "@/lib/upstreamRules";
 import type { ProtocolKind } from "./protocols";
-
-export type HeaderRule = {
-  name: string;
-  action: "remove" | "override" | "append";
-  value: string;
-  match?: {
-    path_regex?: string | null;
-    model_regex?: string | null;
-    protocol_regex?: string | null;
-  } | null;
-};
-export type ParamOverrideRule = {
-  path: string;
-  action: "set" | "delete";
-  value?: unknown;
-};
 
 /** 内置的 "round_robin"、"failover"，或插件提供的 `<插件 id>/<策略名>`。 */
 export type RoutingStrategy = string;

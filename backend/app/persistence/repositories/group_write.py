@@ -3,9 +3,17 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.model_group_matching import (
+    compile_model_group_pattern,
+    matches_model_group,
+)
 from app.models.channels import ChannelConfig
-from app.models.model_groups import ModelGroupItemInput
-from app.persistence.entities import ModelGroupEntity
+from app.models.model_groups import (
+    ModelGroupItemInput,
+    ModelGroupItemState,
+    ModelGroupMemberSource,
+)
+from app.persistence.entities import ModelGroupEntity, ModelGroupItemEntity
 
 from ...core.model_group_status import (
     build_model_group_channel_lookups,
@@ -15,169 +23,227 @@ from ...core.model_group_status import (
 from ...models.model_groups import ModelGroupItemReason, ModelGroupItemView
 
 
-class GroupValidationMixin:
-    async def _validate_group_payload(
-        self,
-        session: AsyncSession,
-        name: str,
-        *,
-        route_group_id: str = "",
-        items: list[ModelGroupItemInput] | None = None,
-        exclude_group_id: str | None = None,
-        fallback_group_ids: list[str] | None = None,
-        channels: list[ChannelConfig],
-        existing_items: list[ModelGroupItemView] | None = None,
-        excluded_items: list[ModelGroupItemInput] | None = None,
-    ) -> ModelGroupEntity | None:
-        trimmed_name = name.strip()
-        if not trimmed_name:
-            raise ValueError("Model group name is required")
-        result = await session.execute(
-            select(ModelGroupEntity.id)
-            .where(ModelGroupEntity.name == trimmed_name)
-            .limit(1)
-        )
-        existing_id = result.scalar_one_or_none()
-        if existing_id is not None and existing_id != exclude_group_id:
-            raise ValueError(f"Model group already exists: {trimmed_name}")
+async def validate_group_payload(
+    session: AsyncSession,
+    name: str,
+    *,
+    route_group_id: str = "",
+    items: list[ModelGroupItemInput] | None = None,
+    exclude_group_id: str | None = None,
+    fallback_group_ids: list[str] | None = None,
+    channels: list[ChannelConfig],
+    existing_items: list[ModelGroupItemView] | None = None,
+    excluded_items: list[ModelGroupItemInput] | None = None,
+) -> ModelGroupEntity | None:
+    trimmed_name = name.strip()
+    if not trimmed_name:
+        raise ValueError("Model group name is required")
+    result = await session.execute(
+        select(ModelGroupEntity.id)
+        .where(ModelGroupEntity.name == trimmed_name)
+        .limit(1)
+    )
+    existing_id = result.scalar_one_or_none()
+    if existing_id is not None and existing_id != exclude_group_id:
+        raise ValueError(f"Model group already exists: {trimmed_name}")
 
-        trimmed_route_group_id = route_group_id.strip()
-        route_group: ModelGroupEntity | None = None
-        if trimmed_route_group_id:
-            if (
-                exclude_group_id is not None
-                and trimmed_route_group_id == exclude_group_id
-            ):
-                raise ValueError("Model group cannot route to itself")
-            route_group = await session.get(ModelGroupEntity, trimmed_route_group_id)
-            if route_group is None:
-                raise ValueError(
-                    f"Route target model group not found: {trimmed_route_group_id}"
-                )
-            if route_group.route_group_id.strip():
-                raise ValueError(
-                    f"Route target must be an execution group: {route_group.name}"
-                )
+    trimmed_route_group_id = route_group_id.strip()
+    route_group: ModelGroupEntity | None = None
+    if trimmed_route_group_id:
+        if exclude_group_id is not None and trimmed_route_group_id == exclude_group_id:
+            raise ValueError("Model group cannot route to itself")
+        route_group = await session.get(ModelGroupEntity, trimmed_route_group_id)
+        if route_group is None:
+            raise ValueError(
+                f"Route target model group not found: {trimmed_route_group_id}"
+            )
+        if route_group.route_group_id.strip():
+            raise ValueError(
+                f"Route target must be an execution group: {route_group.name}"
+            )
 
-        fallback_ids = [item.strip() for item in (fallback_group_ids or [])]
-        if exclude_group_id is not None and exclude_group_id in fallback_ids:
-            raise ValueError("Model group cannot fall back to itself")
-        if fallback_ids and trimmed_route_group_id:
-            raise ValueError("Route groups cannot configure multimodal fallbacks")
-        if fallback_ids:
-            fallback_rows = (
-                (
-                    await session.execute(
-                        select(ModelGroupEntity).where(
-                            ModelGroupEntity.id.in_(fallback_ids)
-                        )
+    fallback_ids = [item.strip() for item in (fallback_group_ids or [])]
+    if exclude_group_id is not None and exclude_group_id in fallback_ids:
+        raise ValueError("Model group cannot fall back to itself")
+    if fallback_ids and trimmed_route_group_id:
+        raise ValueError("Route groups cannot configure multimodal fallbacks")
+    if fallback_ids:
+        fallback_rows = (
+            (
+                await session.execute(
+                    select(ModelGroupEntity).where(
+                        ModelGroupEntity.id.in_(fallback_ids)
                     )
                 )
-                .scalars()
-                .all()
             )
-            found_ids = {row.id for row in fallback_rows}
-            missing_id = next(
-                (item for item in fallback_ids if item not in found_ids), None
-            )
-            if missing_id is not None:
-                raise ValueError(f"Fallback model group not found: {missing_id}")
-            if any(row.route_group_id.strip() for row in fallback_rows):
-                raise ValueError("Fallback model groups must be execution groups")
+            .scalars()
+            .all()
+        )
+        found_ids = {row.id for row in fallback_rows}
+        missing_id = next(
+            (item for item in fallback_ids if item not in found_ids), None
+        )
+        if missing_id is not None:
+            raise ValueError(f"Fallback model group not found: {missing_id}")
+        if any(row.route_group_id.strip() for row in fallback_rows):
+            raise ValueError("Fallback model groups must be execution groups")
 
-        if items is None:
-            return route_group
-
-        seen_keys: set[tuple[str, str, str]] = set()
-        for item in items:
-            item_key = model_group_item_key(item)
-            if item_key in seen_keys:
-                raise ValueError(
-                    "Duplicate model group member: "
-                    f"channel={item.channel_id} credential={item.credential_id} "
-                    f"model={item.model_name}"
-                )
-            seen_keys.add(item_key)
-        excluded_keys: set[tuple[str, str, str]] = set()
-        for item in excluded_items or []:
-            item_key = model_group_item_key(item)
-            if item_key in seen_keys:
-                raise ValueError(
-                    "Model group member cannot also be excluded: "
-                    f"channel={item.channel_id} credential={item.credential_id} "
-                    f"model={item.model_name}"
-                )
-            if item_key in excluded_keys:
-                raise ValueError(
-                    "Duplicate excluded model group member: "
-                    f"channel={item.channel_id} credential={item.credential_id} "
-                    f"model={item.model_name}"
-                )
-            excluded_keys.add(item_key)
-
-        channels_by_id = build_model_group_channel_lookups(channels)
-        previous_by_key = {
-            model_group_item_key(item): item for item in existing_items or []
-        }
-        evaluated_items = [
-            (
-                item,
-                evaluate_model_group_item(item, channels_by_id),
-            )
-            for item in items
-        ]
-
-        for item, evaluation in evaluated_items:
-            previous = previous_by_key.get(model_group_item_key(item))
-            is_new = previous is None
-            is_being_enabled = bool(
-                item.enabled and previous is not None and not previous.enabled
-            )
-            if not is_new and not is_being_enabled:
-                continue
-            blocking_reason = next(
-                (
-                    reason
-                    for reason in evaluation.reasons
-                    if reason != ModelGroupItemReason.MANUAL_DISABLED
-                ),
-                None,
-            )
-            if blocking_reason is not None:
-                self._raise_group_item_error(item, blocking_reason)
-
+    if items is None:
         return route_group
 
-    @staticmethod
-    def _raise_group_item_error(
-        item: ModelGroupItemInput, reason: ModelGroupItemReason
-    ) -> None:
-        reason_label = f"{reason.value}: "
-        if reason == ModelGroupItemReason.CHANNEL_NOT_FOUND:
-            raise ValueError(f"{reason_label}Channels not found: {item.channel_id}")
-        if reason == ModelGroupItemReason.CHANNEL_DISABLED:
+    seen_keys: set[tuple[str, str, str]] = set()
+    for item in items:
+        item_key = model_group_item_key(item)
+        if item_key in seen_keys:
             raise ValueError(
-                f"{reason_label}Channel '{item.channel_id}' is disabled; "
-                "enable it before "
-                "adding this member"
+                "Duplicate model group member: "
+                f"channel={item.channel_id} credential={item.credential_id} "
+                f"model={item.model_name}"
             )
-        if reason == ModelGroupItemReason.CREDENTIAL_NOT_FOUND:
+        seen_keys.add(item_key)
+    excluded_keys: set[tuple[str, str, str]] = set()
+    for item in excluded_items or []:
+        item_key = model_group_item_key(item)
+        if item_key in seen_keys:
             raise ValueError(
-                f"{reason_label}Credential not found in channel {item.channel_id}: "
-                f"{item.credential_id}"
+                "Model group member cannot also be excluded: "
+                f"channel={item.channel_id} credential={item.credential_id} "
+                f"model={item.model_name}"
             )
-        if reason == ModelGroupItemReason.CREDENTIAL_DISABLED:
+        if item_key in excluded_keys:
             raise ValueError(
-                f"{reason_label}Credential is disabled; enable it before "
-                "adding this member"
+                "Duplicate excluded model group member: "
+                f"channel={item.channel_id} credential={item.credential_id} "
+                f"model={item.model_name}"
             )
-        if reason == ModelGroupItemReason.MODEL_NOT_FOUND:
-            raise ValueError(
-                f"{reason_label}Model not found in channel {item.channel_id} "
-                f"credential={item.credential_id}: {item.model_name}"
+        excluded_keys.add(item_key)
+
+    channels_by_id = build_model_group_channel_lookups(channels)
+    previous_by_key = {
+        model_group_item_key(item): item for item in existing_items or []
+    }
+    evaluated_items = [
+        (
+            item,
+            evaluate_model_group_item(item, channels_by_id),
+        )
+        for item in items
+    ]
+
+    for item, evaluation in evaluated_items:
+        previous = previous_by_key.get(model_group_item_key(item))
+        is_new = previous is None
+        is_being_enabled = bool(
+            item.enabled and previous is not None and not previous.enabled
+        )
+        if not is_new and not is_being_enabled:
+            continue
+        blocking_reason = next(
+            (
+                reason
+                for reason in evaluation.reasons
+                if reason != ModelGroupItemReason.MANUAL_DISABLED
+            ),
+            None,
+        )
+        if blocking_reason is not None:
+            _raise_group_item_error(item, blocking_reason)
+
+    return route_group
+
+
+def _raise_group_item_error(
+    item: ModelGroupItemInput, reason: ModelGroupItemReason
+) -> None:
+    reason_label = f"{reason.value}: "
+    if reason == ModelGroupItemReason.CHANNEL_NOT_FOUND:
+        raise ValueError(f"{reason_label}Channels not found: {item.channel_id}")
+    if reason == ModelGroupItemReason.CHANNEL_DISABLED:
+        raise ValueError(
+            f"{reason_label}Channel '{item.channel_id}' is disabled; "
+            "enable it before "
+            "adding this member"
+        )
+    if reason == ModelGroupItemReason.CREDENTIAL_NOT_FOUND:
+        raise ValueError(
+            f"{reason_label}Credential not found in channel {item.channel_id}: "
+            f"{item.credential_id}"
+        )
+    if reason == ModelGroupItemReason.CREDENTIAL_DISABLED:
+        raise ValueError(
+            f"{reason_label}Credential is disabled; enable it before adding this member"
+        )
+    if reason == ModelGroupItemReason.MODEL_NOT_FOUND:
+        raise ValueError(
+            f"{reason_label}Model not found in channel {item.channel_id} "
+            f"credential={item.credential_id}: {item.model_name}"
+        )
+    if reason == ModelGroupItemReason.MODEL_DISABLED:
+        raise ValueError(
+            f"{reason_label}Model is disabled in channel {item.channel_id} "
+            f"credential={item.credential_id}: {item.model_name}"
+        )
+
+
+def replace_group_items(
+    session: AsyncSession,
+    group_id: str,
+    items: list[ModelGroupItemInput],
+    excluded_items: list[ModelGroupItemInput] | None = None,
+) -> None:
+    rows = [
+        *((item, False) for item in items),
+        *((item, True) for item in excluded_items or []),
+    ]
+    for index, (item, is_excluded) in enumerate(rows):
+        session.add(
+            ModelGroupItemEntity(
+                group_id=group_id,
+                channel_id=item.channel_id,
+                credential_id=item.credential_id,
+                model_name=item.model_name,
+                enabled=0 if is_excluded or not item.enabled else 1,
+                # A group an admin saved holds its members explicitly;
+                # reconcile only manages what it joined by name or rule.
+                source=ModelGroupMemberSource.MANUAL.value,
+                excluded=1 if is_excluded else 0,
+                sort_order=index,
             )
-        if reason == ModelGroupItemReason.MODEL_DISABLED:
-            raise ValueError(
-                f"{reason_label}Model is disabled in channel {item.channel_id} "
-                f"credential={item.credential_id}: {item.model_name}"
-            )
+        )
+
+
+def exclude_removed_auto_members(
+    entity: ModelGroupEntity,
+    previous_items: list[ModelGroupItemView],
+    next_items: list[ModelGroupItemInput],
+    next_excluded_items: list[ModelGroupItemInput],
+) -> list[ModelGroupItemInput]:
+    """Turn removed members that reconcile would re-add into exclusions."""
+    kept_keys = {
+        model_group_item_key(item) for item in (*next_items, *next_excluded_items)
+    }
+    direct_pattern = compile_model_group_pattern(entity.match_regex)
+    patterns = (direct_pattern,) if direct_pattern is not None else ()
+    operator = (
+        entity.match_regex_operator
+        if entity.match_regex_operator in {"and", "or"}
+        else "or"
+    )
+
+    def rejoins(item: ModelGroupItemView) -> bool:
+        return matches_model_group(entity.name, item.model_name, patterns, operator)
+
+    # A member whose target is gone cannot rejoin, so it needs no exclusion.
+    return [
+        ModelGroupItemInput(
+            channel_id=item.channel_id,
+            credential_id=item.credential_id,
+            model_name=item.model_name,
+            enabled=item.enabled,
+            source=item.source,
+        )
+        for item in previous_items
+        if model_group_item_key(item) not in kept_keys
+        and item.state != ModelGroupItemState.INVALID
+        and rejoins(item)
+    ]

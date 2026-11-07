@@ -3,6 +3,8 @@ import {
   EMPTY_HEADER_RULE,
   type HeaderRuleDraft,
   headerDraftToRules,
+  headerRulesToDraft,
+  isHeaderRule,
   type UpstreamHeadersDraft,
 } from "@/lib/upstreamRules";
 
@@ -30,18 +32,7 @@ const EMPTY_HEADERS: HeaderItem[] = [EMPTY_HEADER_RULE];
 
 export function parseHeaderRows(value: unknown): HeaderItem[] {
   if (!Array.isArray(value)) return [...EMPTY_HEADERS];
-  const rows = value
-    .filter(isRecord)
-    .map((item) => ({
-      key: typeof item.name === "string" ? item.name : "",
-      value:
-        typeof item.value === "string" ? item.value : String(item.value ?? ""),
-      action: (item.action === "remove" || item.action === "append"
-        ? item.action
-        : "override") as HeaderItem["action"],
-    }))
-    .filter((item) => item.key.trim());
-  return rows.length ? rows : [...EMPTY_HEADERS];
+  return headerRulesToDraft(value.filter(isHeaderRule));
 }
 
 export function headersToRules(headers: HeaderItem[]) {

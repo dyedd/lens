@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from .....models.foreign_imports import ForeignSiteImportPreview, ForeignSitePreview
+from .....models.foreign_imports import (
+    ForeignSiteFormat,
+    ForeignSiteImportPreview,
+    ForeignSitePreview,
+)
 from .....models.site_import import SiteBatchImportRequest, SiteImportItem
 from .all_api_hub import parse_all_api_hub_sites
 from .ccload import parse_ccload_sites
@@ -47,11 +51,11 @@ def build_foreign_site_import_preview(raw: bytes) -> ForeignSiteImportPreview:
 
 
 def _build_preview(
-    format_id: str,
+    format_id: ForeignSiteFormat,
     parsed: ParsedForeignSites,
 ) -> ForeignSiteImportPreview:
     return ForeignSiteImportPreview(
-        format=format_id,  # type: ignore[arg-type] # detection 限定了合法值
+        format=format_id,
         sites=[_build_site_preview(item) for item in parsed.sites],
         warnings=parsed.warnings + parsed.skipped,
         payload=SiteBatchImportRequest(sites=parsed.sites) if parsed.sites else None,

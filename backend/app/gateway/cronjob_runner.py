@@ -38,6 +38,7 @@ class CronjobRunner:
         self._poll_seconds = max(poll_seconds, 5)
         self._owner = uuid.uuid4().hex
         self._task: asyncio.Task[None] | None = None
+        self._running_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def start(self) -> None:
         """Ensure cron jobs exist and start the polling loop."""
@@ -70,9 +71,13 @@ class CronjobRunner:
         except asyncio.CancelledError:
             pass
         self._task = None
+        for task in self._running_tasks.values():
+            task.cancel()
+        await asyncio.gather(*self._running_tasks.values(), return_exceptions=True)
+        self._running_tasks.clear()
 
-    async def list_cronjobs(self) -> list[CronjobItem]:
-        """List configured cron jobs with their persisted state."""
+    async def ensure_and_list_cronjobs(self) -> list[CronjobItem]:
+        """补齐任务记录，再返回定义及其持久化状态。"""
         await self._store.ensure_cronjobs(self._specs)
         records = await self._store.list_records(self._specs)
         return [
@@ -119,22 +124,33 @@ class CronjobRunner:
 
     async def _loop(self) -> None:
         while True:
+            self._running_tasks = {
+                task_id: task
+                for task_id, task in self._running_tasks.items()
+                if not task.done()
+            }
             try:
                 due_task_ids = await self._store.list_due_cronjob_ids(
                     [spec.id for spec in self._specs]
                 )
                 for task_id in due_task_ids:
-                    try:
-                        await self._run_cronjob(task_id, manual=False)
-                    except CronjobAlreadyRunningError:
-                        continue
-                    except Exception:
-                        self._logger.exception("Cron job failed: %s", task_id)
+                    if task_id not in self._running_tasks:
+                        self._running_tasks[task_id] = asyncio.create_task(
+                            self._run_scheduled_job(task_id)
+                        )
             except OperationalError as exc:
                 self._logger.warning("Cron job polling skipped: %s", exc)
             except Exception:
                 self._logger.exception("Cron job polling failed")
             await asyncio.sleep(self._poll_seconds)
+
+    async def _run_scheduled_job(self, task_id: str) -> None:
+        try:
+            await self._run_cronjob(task_id, manual=False)
+        except CronjobAlreadyRunningError:
+            pass
+        except Exception:
+            self._logger.exception("Cron job failed: %s", task_id)
 
     async def _run_cronjob(self, task_id: str, *, manual: bool) -> CronjobItem:
         spec = self._specs_by_id.get(task_id)

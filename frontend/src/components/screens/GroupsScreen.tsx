@@ -31,7 +31,7 @@ const ModelSyncRunsSheet = lazyComponent(() =>
   ),
 );
 const BatchModelTestDialog = lazyComponent(() =>
-  import("./channels/BatchModelTestDialog").then(
+  import("@/components/model-test/BatchModelTestDialog").then(
     (module) => module.BatchModelTestDialog,
   ),
 );
@@ -193,8 +193,7 @@ export function GroupsScreen() {
           changeName={candidates.changeName}
           routeTargetOptions={queries.routeTargetOptions}
           changeRouteTarget={candidates.changeRouteTarget}
-          excludedMembers={members.excludedMembers}
-          restoreExcludedMember={members.restoreExcludedMember}
+          members={members}
           candidateSearch={editor.candidateSearch}
           changeCandidateSearch={editor.setCandidateSearch}
           refetchCandidates={queries.candidateQuery.refetch}
@@ -206,26 +205,11 @@ export function GroupsScreen() {
           groupedCandidates={candidates.groupedCandidates}
           expandedChannels={candidates.expandedChannels}
           toggleChannel={candidates.toggleChannel}
-          foldedMembers={members.foldedMembers}
           addCandidate={candidates.addCandidate}
           candidateIsError={queries.candidateQuery.isError}
           candidateListError={queries.candidateQuery.error}
-          disabledItemCount={members.disabledItemCount}
-          invalidItemCount={members.invalidItemCount}
-          removeInvalidItems={members.removeInvalidItems}
-          removeDisabledMembers={members.removeDisabledMembers}
-          clearMembers={members.clearMembers}
-          setAllMembersEnabled={members.setAllMembersEnabled}
           memberStatusFilter={editor.memberStatusFilter}
           setMemberStatusFilter={editor.setMemberStatusFilter}
-          visibleFoldedMembers={members.visibleFoldedMembers}
-          visibleChannelGroups={members.visibleChannelGroups}
-          toggleChannelMembers={members.toggleChannelMembers}
-          toggleFoldedMember={members.toggleFoldedMember}
-          removeFoldedMember={members.removeFoldedMember}
-          moveChannelGroup={members.moveChannelGroup}
-          moveFoldedMember={members.moveFoldedMember}
-          moveFoldedMemberWithinChannel={members.moveFoldedMemberWithinChannel}
         />
       ) : null}
 

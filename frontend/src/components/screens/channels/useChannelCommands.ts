@@ -1,12 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, useState } from "react";
 import { toast } from "sonner";
-import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type {
-  Site,
-  SiteBatchImportPayload,
-  SiteBatchImportResult,
-} from "@/lib/api/sites";
+import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
+import type { Site, SiteBatchImportResult } from "@/lib/api/sites";
 import {
   batchImportTemplateText,
   parseBatchImportPayload,
@@ -36,7 +32,7 @@ export function useChannelPersistence({
   async function removeSite(site: Site) {
     setBusyId(site.id);
     try {
-      await apiRequest<void>(`/admin/sites/${site.id}`, { method: "DELETE" });
+      await apiFetch(`/admin/sites/${site.id}`, { method: "DELETE" });
       queryClient.setQueryData<Site[]>(["sites"], (current) =>
         (current ?? []).filter((item) => item.id !== site.id),
       );
@@ -147,7 +143,7 @@ export function useChannelPersistence({
     const removedIds = new Set<string>();
     try {
       for (const site of sites) {
-        await apiRequest<void>(`/admin/sites/${site.id}`, { method: "DELETE" });
+        await apiFetch(`/admin/sites/${site.id}`, { method: "DELETE" });
         removedIds.add(site.id);
       }
       setDeleteTarget(null);
@@ -241,7 +237,7 @@ export function useChannelTransfer({
     URL.revokeObjectURL(url);
   }
   async function importBatchSites() {
-    let payload: SiteBatchImportPayload;
+    let payload: ReturnType<typeof parseBatchImportPayload>;
     try {
       payload = parseBatchImportPayload(batchImportText, locale);
     } catch (error) {

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/Table";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import { CredentialBadges } from "./CredentialBadges";
-import { formatBaseUrlLabel } from "./channelModels";
+import { formatBaseUrlLabel } from "./channelDisplay";
 import type { Locale, PickerModelItem } from "./channelTypes";
 import type {
   RemoteModelCatalog,

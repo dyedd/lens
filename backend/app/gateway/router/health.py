@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from time import monotonic
 
+from ...core.cooldown_rules import CompiledCooldownDetectionRule
 from ...models.channels import ChannelConfig
 from ...models.routing import ChannelCredentialHealth, ChannelHealth, ModelHealth
 from .cooldown import (
@@ -77,6 +78,7 @@ class HealthTracker:
             self._routing_environment_signature is not None
             and routing_environment_signature != self._routing_environment_signature
         )
+        self._routing_environment_signature = routing_environment_signature
         if (
             not scoring_changed
             and not policy_changed
@@ -90,7 +92,6 @@ class HealthTracker:
             self._scores.clear()
         if policy_changed or routing_environment_changed:
             self._escalations.clear()
-        self._routing_environment_signature = routing_environment_signature
         self._next_stale_prune_at = 0.0
         self._prune_stale_states(now=monotonic())
         return scoring_changed or routing_environment_changed
@@ -100,7 +101,7 @@ class HealthTracker:
         return self._cooldowns.failure_revision
 
     @property
-    def cooldown_detection_rules(self):
+    def cooldown_detection_rules(self) -> tuple[CompiledCooldownDetectionRule, ...]:
         return self._cooldowns.detection_rules
 
     def record_success(
@@ -254,10 +255,15 @@ class HealthTracker:
     def cooldown_reason(self, target: RouteTarget, *, now: float) -> str:
         """Name the fault domain and remaining cooldown of an unavailable target."""
         return self._cooldowns.cooldown_reason(
-            _target_model_key(target), _target_credential_key(target), now=now
+            _target_model_key(target),
+            _target_credential_key(target),
+            now=now,
+            channel_model_key=model_key(target.channel.id, ""),
         )
 
-    def project_channel_health(self, channel: ChannelConfig, *, now: float):
+    def project_channel_health(
+        self, channel: ChannelConfig, *, now: float
+    ) -> ChannelHealth:
         return build_channel_health(self._cooldowns, self._scores, channel, now=now)
 
     def reconcile_channels(self, channels: list[ChannelConfig]) -> set[str]:
@@ -414,7 +420,7 @@ def _most_restrictive_state(
     """Admin views show a channel by its most restrictive client protocol."""
     return max(
         (state for state in states if state is not None),
-        key=lambda state: (state.cooled_until, state.last_failure_at),
+        key=lambda state: (state.unavailable_until, state.last_failure_at),
         default=None,
     )
 
@@ -535,7 +541,7 @@ def _build_model_health(
     now: float,
 ) -> ModelHealth:
     state = _model_state(cooldowns, channel_id, model_name, fault_protocols)
-    cooled_until = state.cooled_until if state else 0.0
+    cooled_until = state.unavailable_until if state else 0.0
     return ModelHealth(
         model_name=model_name or None,
         consecutive_failures=state.consecutive_failures if state else 0,
@@ -565,7 +571,7 @@ def _build_credential_health(
     now: float,
 ) -> ChannelCredentialHealth:
     state = _credential_state(cooldowns, channel_id, key_id, fault_protocols)
-    cooled_until = state.cooled_until if state else 0.0
+    cooled_until = state.unavailable_until if state else 0.0
     return ChannelCredentialHealth(
         credential_id=key_id,
         consecutive_failures=state.consecutive_failures if state else 0,
@@ -583,13 +589,15 @@ def _binding_available_at(
     model_name: str,
     fault_protocols: tuple[str, ...],
 ) -> float:
+    channel_state = _model_state(cooldowns, channel_id, "", fault_protocols)
     model_state = _model_state(cooldowns, channel_id, model_name, fault_protocols)
     credential_state = _credential_state(
         cooldowns, channel_id, credential_id, fault_protocols
     )
     return max(
-        model_state.cooled_until if model_state else 0.0,
-        credential_state.cooled_until if credential_state else 0.0,
+        channel_state.unavailable_until if channel_state else 0.0,
+        model_state.unavailable_until if model_state else 0.0,
+        credential_state.unavailable_until if credential_state else 0.0,
     )
 
 

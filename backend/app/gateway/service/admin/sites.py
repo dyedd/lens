@@ -123,7 +123,7 @@ async def fetch_site_models(
     payload: SiteModelFetchRequest, _: Any = Depends(get_current_admin)
 ) -> list[SiteModelFetchItem]:
     """Discover models available through the supplied site credentials."""
-    previews = await app_state.channel_store.fetch_models_preview(payload)
+    previews = app_state.channel_store.fetch_models_preview(payload)
     listing_protocols = (
         (payload.protocol,) if payload.protocol is not None else LISTING_PROTOCOLS
     )
@@ -165,13 +165,8 @@ async def fetch_site_models(
         )
         try:
             model_list = await fetch_upstream_model_list(channel, listing_protocols)
-        except (ModelDiscoveryError, HTTPException) as exc:
-            detail = (
-                exc.public_message
-                if isinstance(exc, ModelDiscoveryError)
-                else exc.detail
-            )
-            errors.append(format_channel_error(detail))
+        except ModelDiscoveryError as exc:
+            errors.append(format_channel_error(exc.public_message))
             continue
 
         pinned = ENDPOINT_KIND_PROTOCOLS.get(payload.endpoint_kind)
@@ -289,8 +284,6 @@ async def sync_site_credential_rate(
 
     try:
         return await run_credential_rate_sync(app_state, site_id, credential_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Credential not found") from exc
     except CredentialRateNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except CredentialRateConflictError as exc:

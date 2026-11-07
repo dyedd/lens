@@ -7,7 +7,6 @@ import {
   Upload,
   Waypoints,
 } from "lucide-react";
-
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
@@ -24,8 +23,8 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/Item";
-import type { ConfigBackupDump } from "@/lib/api/backups";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import type { ConfigBackupPreview } from "./backupPreview";
 
 /** Confirm replacement of the current configuration from a backup. */
 export function ConfigImportConfirmDialog({
@@ -40,7 +39,7 @@ export function ConfigImportConfirmDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectedFile: File | null;
-  preview: ConfigBackupDump | null;
+  preview: ConfigBackupPreview | null;
   isImporting: boolean;
   locale: Locale;
   onConfirm: () => void;
@@ -72,8 +71,8 @@ export function ConfigImportConfirmDialog({
                 {preview
                   ? titleForLocale(
                       locale,
-                      `将覆盖 ${preview.sites.length} 个渠道、${preview.groups.length} 个模型组`,
-                      `Will overwrite ${preview.sites.length} upstream channels and ${preview.groups.length} model routing entries`,
+                      `将覆盖 ${preview.counts.sites} 个渠道、${preview.counts.groups} 个模型组`,
+                      `Will overwrite ${preview.counts.sites} upstream channels and ${preview.counts.groups} model routing entries`,
                     )
                   : titleForLocale(
                       locale,

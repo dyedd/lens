@@ -13,18 +13,22 @@ import type {
   SiteModelProtocolDetectionPayload,
   SiteModelProtocolDetectionResult,
 } from "@/lib/api/sites";
-import { headerDraftToRules } from "@/lib/upstreamRules";
-import { headerDraftsFromJson } from "./channelAdvancedJson";
-import { activeBaseUrlValue } from "./channelForm";
-import { rebuildProtocolConfigs } from "./channelFormConversion";
 import {
-  acceptApiKeyDrafts,
-  activeSelectedCredentialIds,
-  aggregateModelGroupKey,
   credentialLabel,
-  escapeModelName,
   fallbackCredentialName,
   formatCredentialTitle,
+} from "@/lib/credentialLabels";
+import { headerDraftToRules } from "@/lib/upstreamRules";
+import { headerDraftsFromJson } from "./channelAdvancedJson";
+import {
+  acceptApiKeyDrafts,
+  activeBaseUrlValue,
+  activeSelectedCredentialIds,
+} from "./channelForm";
+import { rebuildProtocolConfigs } from "./channelFormConversion";
+import {
+  aggregateModelGroupKey,
+  escapeModelName,
   mergeModelPatterns,
   protocolConfigModelKey,
 } from "./channelModels";
@@ -275,7 +279,7 @@ export function useChannelModelPicker({
                 model_name: item.model_name,
                 enabled: true,
                 protocols: [item.protocol],
-                protocolIds: {},
+                modelIdsByProtocol: {},
                 context_window: item.context_window,
                 upstream_context_window: null,
               },

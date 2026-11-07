@@ -3,13 +3,11 @@ from __future__ import annotations
 import csv
 import io
 import json
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 
-ForeignFormat = Literal[
-    "lens", "metapi", "sub2api", "ccload", "all_api_hub", "octopus", "cli_proxy_api"
-]
+from .....models.foreign_imports import ForeignSiteFormat
 
 _SUB2API_TYPES = {"sub2api-data", "sub2api-bundle"}
 
@@ -29,7 +27,7 @@ class UnknownForeignFormatError(ValueError):
     """Raised when a dropped file matches none of the supported backup formats."""
 
 
-def detect_foreign_format(raw: bytes) -> tuple[ForeignFormat, dict[str, Any] | str]:
+def detect_foreign_format(raw: bytes) -> tuple[ForeignSiteFormat, dict[str, Any] | str]:
     """Classify a backup file and return its format id with the decoded content."""
     try:
         text = raw.decode("utf-8-sig")

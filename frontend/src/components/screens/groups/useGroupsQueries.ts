@@ -100,12 +100,10 @@ export function useGroupsQueries({
       locale === "zh-CN" ? "模型组加载失败" : "Failed to load groups",
       {
         id: "groups-load-error",
-        description:
-          groupsQuery.error instanceof Error
-            ? groupsQuery.error.message
-            : locale === "zh-CN"
-              ? "无法读取模型组"
-              : "Unable to read groups",
+        description: getApiErrorMessage(
+          groupsQuery.error,
+          locale === "zh-CN" ? "无法读取模型组" : "Unable to read groups",
+        ),
       },
     );
   }, [groupsQuery.error, groupsQuery.isError, locale]);

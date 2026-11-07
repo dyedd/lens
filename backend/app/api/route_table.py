@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from ..gateway.service.admin.backups import (
     export_settings_bundle,
@@ -77,10 +77,7 @@ from ..gateway.service.admin.sites import (
 )
 from ..gateway.service.auth import (
     change_password,
-    check_version,
-    get_app_info,
     get_current_admin_profile,
-    get_public_branding,
     login,
     update_profile,
 )
@@ -96,13 +93,16 @@ from ..gateway.service.proxy_routes import (
     proxy_openai_responses,
     proxy_rerank,
 )
+from ..gateway.service.system_info import (
+    check_version,
+    get_app_info,
+    get_public_branding,
+)
 from ..models.auth import (
     AdminProfile,
     AdminProfileUpdateResponse,
-    AppInfo,
     AuthTokenResponse,
-    PublicBranding,
-    VersionCheckResult,
+    ErrorResponse,
 )
 from ..models.backups import ConfigImportResult
 from ..models.channels import ChannelModelSyncResponse
@@ -135,10 +135,11 @@ from ..models.site_model_test import (
     SiteModelTestResult,
 )
 from ..models.sites import SiteCredential
+from ..models.system_info import AppInfo, PublicBranding, VersionCheckResult
 from . import ui_static
 
 
-def register_public(app: FastAPI) -> None:
+def register_public(app: APIRouter) -> None:
     app.add_api_route(
         "/api/public/branding",
         get_public_branding,
@@ -153,7 +154,7 @@ def register_public(app: FastAPI) -> None:
     )
 
 
-def register_admin_auth(app: FastAPI) -> None:
+def register_admin_auth(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/session",
         login,
@@ -180,7 +181,7 @@ def register_admin_auth(app: FastAPI) -> None:
     )
 
 
-def register_sites(app: FastAPI) -> None:
+def register_sites(app: APIRouter) -> None:
     app.add_api_route("/api/admin/sites", list_sites, methods=["GET"])
     app.add_api_route(
         "/api/admin/model-health",
@@ -268,7 +269,7 @@ def register_sites(app: FastAPI) -> None:
     )
 
 
-def register_version(app: FastAPI) -> None:
+def register_version(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/version-check",
         check_version,
@@ -277,7 +278,7 @@ def register_version(app: FastAPI) -> None:
     )
 
 
-def register_routing(app: FastAPI) -> None:
+def register_routing(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/routes",
         get_router_snapshot,
@@ -285,7 +286,7 @@ def register_routing(app: FastAPI) -> None:
     )
 
 
-def register_overview(app: FastAPI) -> None:
+def register_overview(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/overview-attribution",
         get_overview_attribution,
@@ -312,7 +313,7 @@ def register_overview(app: FastAPI) -> None:
     )
 
 
-def register_request_logs(app: FastAPI) -> None:
+def register_request_logs(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/request-logs/page",
         list_request_logs,
@@ -333,7 +334,7 @@ def register_request_logs(app: FastAPI) -> None:
     )
 
 
-def register_model_groups(app: FastAPI) -> None:
+def register_model_groups(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/model-group-candidates",
         list_model_group_candidates,
@@ -403,9 +404,9 @@ def register_model_groups(app: FastAPI) -> None:
     )
 
 
-def register_model_prices(app: FastAPI) -> None:
+def register_model_prices(app: APIRouter) -> None:
     app.add_api_route(
-        "/api/admin/model-prices/{model_key}",
+        "/api/admin/model-prices/{model_key:path}",
         update_model_price,
         methods=["PUT"],
         response_model=ModelPriceItem,
@@ -417,14 +418,14 @@ def register_model_prices(app: FastAPI) -> None:
         response_model=ModelPriceListResponse,
     )
     app.add_api_route(
-        "/api/admin/model-prices/{model_key}/restore-automatic",
+        "/api/admin/model-prices/{model_key:path}/restore-automatic",
         restore_model_price,
         methods=["POST"],
         response_model=ModelPriceListResponse,
     )
 
 
-def register_cronjobs(app: FastAPI) -> None:
+def register_cronjobs(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/cronjobs",
         list_cronjobs,
@@ -445,7 +446,7 @@ def register_cronjobs(app: FastAPI) -> None:
     )
 
 
-def register_plugins(app: FastAPI) -> None:
+def register_plugins(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/plugins",
         list_plugins,
@@ -472,7 +473,7 @@ def register_plugins(app: FastAPI) -> None:
     )
 
 
-def register_gateway_api_keys(app: FastAPI) -> None:
+def register_gateway_api_keys(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/gateway-api-keys",
         list_gateway_api_keys,
@@ -499,7 +500,7 @@ def register_gateway_api_keys(app: FastAPI) -> None:
     )
 
 
-def register_backups(app: FastAPI) -> None:
+def register_backups(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/backups/export",
         export_settings_bundle,
@@ -513,7 +514,7 @@ def register_backups(app: FastAPI) -> None:
     )
 
 
-def register_settings(app: FastAPI) -> None:
+def register_settings(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/settings",
         list_settings,
@@ -528,7 +529,7 @@ def register_settings(app: FastAPI) -> None:
     )
 
 
-def register_proxy(app: FastAPI) -> None:
+def register_proxy(app: APIRouter) -> None:
     app.add_api_route("/v1/chat/completions", proxy_openai_chat, methods=["POST"])
     app.add_api_route("/v1/responses", proxy_openai_responses, methods=["POST"])
     app.add_api_route("/v1/embeddings", proxy_openai_embeddings, methods=["POST"])
@@ -552,6 +553,7 @@ def register_proxy(app: FastAPI) -> None:
 
 def include_routes(app: FastAPI, *, ui_static_dir: str = "") -> None:
     """Register all public, administrative, proxy, and UI routes on the app."""
+    api_router = APIRouter(responses={422: {"model": ErrorResponse}})
     for register in (
         register_public,
         register_admin_auth,
@@ -567,9 +569,10 @@ def include_routes(app: FastAPI, *, ui_static_dir: str = "") -> None:
         register_gateway_api_keys,
         register_backups,
         register_settings,
-        register_proxy,
     ):
-        register(app)
+        register(api_router)
+    app.include_router(api_router)
+    register_proxy(app.router)
 
     ui_static.register(app, ui_static_dir)
 

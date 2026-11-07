@@ -13,17 +13,22 @@ tools and server-side state (``previous_response_id``) intact.
 """
 
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Callable, Mapping
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ...core.protocol_reachability import can_reach_protocol
 from ...models.protocols import ProtocolKind
+from . import capabilities
 from .chat_stream import repair_chat_tool_call_stream
 from .responses_common import is_reasoning_envelope
 from .signatures import FOREIGN_THINKING_SIGNATURE, fits
+from .unified import ToolCallPart, ToolDefinition, ToolKind, UnifiedRequest
+from .unified_response import UnifiedResponse
+from .unified_stream import BlockKind, BlockStart, StreamEvent
 
 __all__ = [
+    "ConvertedRequest",
     "can_reach_protocol",
     "convert_request",
     "convert_response",
@@ -33,22 +38,25 @@ __all__ = [
     "strip_foreign_reasoning",
 ]
 
-Parse = Callable[[dict[str, Any]], Any]
-Build = Callable[[Any], dict[str, Any]]
-ParseStream = Callable[[AsyncIterator[bytes]], AsyncIterator[Any]]
-BuildStream = Callable[[AsyncIterator[Any], str], AsyncIterator[bytes]]
+
+@dataclass(frozen=True, slots=True)
+class ConvertedRequest:
+    """转换后的请求与本次尝试使用的工具身份。"""
+
+    body: dict[str, Any]
+    tool_mapping: dict[str, ToolDefinition]
 
 
 @dataclass(frozen=True, slots=True)
 class Spoke:
     """One protocol's wire readers and writers for the unified protocol."""
 
-    parse_request: Parse
-    build_request: Build
-    parse_response: Parse
-    build_response: Build
-    parse_stream: ParseStream
-    build_stream: BuildStream
+    parse_request: Callable[[dict[str, Any]], UnifiedRequest]
+    build_request: Callable[[UnifiedRequest], dict[str, Any]]
+    parse_response: Callable[[dict[str, Any]], UnifiedResponse]
+    build_response: Callable[[UnifiedResponse], dict[str, Any]]
+    parse_stream: Callable[[AsyncIterator[bytes]], AsyncIterator[StreamEvent]]
+    build_stream: Callable[[AsyncIterator[StreamEvent], str], AsyncIterator[bytes]]
 
 
 def _spokes() -> dict[ProtocolKind, Spoke]:
@@ -138,24 +146,6 @@ def needs_protocol_conversion(
     return client_protocol != channel_protocol
 
 
-def _build_upstream_request(
-    channel_protocol: ProtocolKind, request: Any
-) -> dict[str, Any]:
-    return spoke_for(channel_protocol).build_request(request)
-
-
-def _parse_upstream_response(
-    channel_protocol: ProtocolKind, body: dict[str, Any]
-) -> Any:
-    return spoke_for(channel_protocol).parse_response(body)
-
-
-def _parse_upstream_stream(
-    channel_protocol: ProtocolKind, raw_iterator: AsyncIterator[bytes]
-) -> AsyncIterator[Any]:
-    return spoke_for(channel_protocol).parse_stream(raw_iterator)
-
-
 def _check_reachable(
     client_protocol: ProtocolKind, channel_protocol: ProtocolKind
 ) -> None:
@@ -171,7 +161,7 @@ def convert_request(
     body: dict[str, Any],
     target_model: str | None = None,
     preserve_reasoning: bool = False,
-) -> dict[str, Any]:
+) -> ConvertedRequest:
     """Convert a client request into the selected upstream protocol."""
     _check_reachable(client_protocol, channel_protocol)
     request = spoke_for(client_protocol).parse_request(dict(body))
@@ -179,14 +169,26 @@ def convert_request(
     request.replay_reasoning = preserve_reasoning
     if target_model:
         request.model = target_model
-    result = _build_upstream_request(channel_protocol, request)
+    tool_mapping: dict[str, ToolDefinition] = {}
+    if channel_protocol is not ProtocolKind.OPENAI_RESPONSES:
+        for tool in request.tools:
+            name = capabilities.namespaced_name(tool.namespace, tool.name)
+            previous = tool_mapping.get(name)
+            if previous is not None and (
+                previous.name != tool.name
+                or previous.namespace != tool.namespace
+                or previous.kind != tool.kind
+            ):
+                raise ValueError(f"Tool names collide in upstream protocol: {name}")
+            tool_mapping[name] = tool
+    result = spoke_for(channel_protocol).build_request(request)
     if target_model:
         result["model"] = target_model
     # Upstream transport reads this flag to pick the streaming endpoint, so it
     # holds for every target protocol; Gemini drops it from the final payload.
     if request.stream:
         result["stream"] = True
-    return result
+    return ConvertedRequest(body=result, tool_mapping=tool_mapping)
 
 
 def strip_foreign_reasoning(
@@ -269,13 +271,25 @@ def convert_response(
     channel_protocol: ProtocolKind,
     response_body: bytes,
     original_model: str = "",
+    *,
+    tool_mapping: Mapping[str, ToolDefinition] | None = None,
 ) -> bytes:
     """Convert an upstream response into the client protocol."""
     _check_reachable(client_protocol, channel_protocol)
     body = json.loads(response_body)
-    response = _parse_upstream_response(channel_protocol, body)
+    response = spoke_for(channel_protocol).parse_response(body)
     if not response.model:
         response.model = original_model
+    if tool_mapping:
+        for part in response.parts:
+            if not isinstance(part, ToolCallPart):
+                continue
+            tool = tool_mapping.get(part.name)
+            if tool is None:
+                continue
+            part.name, part.namespace, part.kind = tool.name, tool.namespace, tool.kind
+            if tool.kind is ToolKind.CUSTOM:
+                part.arguments = capabilities.unwrap_custom_tool_input(part.arguments)
     converted = spoke_for(client_protocol).build_response(response)
     return json.dumps(converted, ensure_ascii=False).encode("utf-8")
 
@@ -285,10 +299,28 @@ async def convert_stream_iterator(
     channel_protocol: ProtocolKind,
     raw_iterator: AsyncIterator[bytes],
     original_model: str = "",
+    *,
+    tool_mapping: Mapping[str, ToolDefinition] | None = None,
 ) -> AsyncIterator[bytes]:
     """Convert an upstream byte stream into the client protocol stream."""
     _check_reachable(client_protocol, channel_protocol)
-    events = _parse_upstream_stream(channel_protocol, raw_iterator)
-    stream = spoke_for(client_protocol).build_stream(events, original_model)
+
+    async def events() -> AsyncIterator[StreamEvent]:
+        async for event in spoke_for(channel_protocol).parse_stream(raw_iterator):
+            if (
+                tool_mapping
+                and isinstance(event, BlockStart)
+                and event.kind is BlockKind.TOOL_CALL
+                and (tool := tool_mapping.get(event.name)) is not None
+            ):
+                event = replace(
+                    event,
+                    name=tool.name,
+                    namespace=tool.namespace,
+                    tool_kind=tool.kind,
+                )
+            yield event
+
+    stream = spoke_for(client_protocol).build_stream(events(), original_model)
     async for chunk in stream:
         yield chunk

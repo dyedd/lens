@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from functools import lru_cache
@@ -85,6 +86,12 @@ class _HtmlTitleParser(HTMLParser):
 
 def format_http_response_error(response: httpx.Response) -> str:
     detail = response.text or f"HTTP {response.status_code}"
+    try:
+        payload = json.loads(detail)
+    except json.JSONDecodeError:
+        pass
+    else:
+        detail = json.dumps(payload, ensure_ascii=False)
     return summarize_html_error_detail(
         detail,
         status_code=response.status_code,

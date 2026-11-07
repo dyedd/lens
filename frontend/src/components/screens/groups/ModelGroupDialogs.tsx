@@ -26,8 +26,6 @@ import {
 import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
 import type {
   CandidateChannelGroup,
-  ChannelMemberGroup,
-  FoldedMember,
   FormState,
   MemberStatusFilter,
 } from "./groupTypes";
@@ -38,6 +36,7 @@ import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
 import { MultimodalFallbackGroups } from "./MultimodalFallbackGroups";
 import { modelGroupItemKey } from "./modelGroupFormatting";
+import type { GroupMembers } from "./useGroupMembers";
 
 interface GroupEditorDialogProps {
   dialogOpen: boolean;
@@ -50,8 +49,7 @@ interface GroupEditorDialogProps {
   changeName: (name: string) => void;
   routeTargetOptions: ModelGroup[];
   changeRouteTarget: (routeGroupId: string) => void;
-  excludedMembers: FoldedMember[];
-  restoreExcludedMember: (foldKey: string) => void;
+  members: GroupMembers;
   candidateSearch: string;
   changeCandidateSearch: (value: string) => void;
   refetchCandidates: () => unknown;
@@ -63,30 +61,11 @@ interface GroupEditorDialogProps {
   groupedCandidates: CandidateChannelGroup[];
   expandedChannels: string[];
   toggleChannel: (channelId: string) => void;
-  foldedMembers: FoldedMember[];
   addCandidate: (candidate: ModelGroupCandidateItem) => void;
   candidateIsError: boolean;
   candidateListError: unknown;
-  disabledItemCount: number;
-  invalidItemCount: number;
-  removeInvalidItems: () => void;
-  removeDisabledMembers: () => void;
-  clearMembers: () => void;
-  setAllMembersEnabled: (enabled: boolean) => void;
   memberStatusFilter: MemberStatusFilter;
   setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
-  visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
-  visibleChannelGroups: ChannelMemberGroup[];
-  toggleChannelMembers: (channelKey: string, enabled: boolean) => void;
-  toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
-  removeFoldedMember: (foldKey: string) => void;
-  moveChannelGroup: (fromIndex: number, toIndex: number) => void;
-  moveFoldedMember: (fromIndex: number, toIndex: number) => void;
-  moveFoldedMemberWithinChannel: (
-    channelKey: string,
-    fromIndex: number,
-    toIndex: number,
-  ) => void;
 }
 
 interface DeleteGroupDialogProps {
@@ -150,32 +129,16 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                   onAddSources={() => setCandidateSheetOpen(true)}
                   locale={locale}
                   strategy={form.strategy}
-                  foldedMembers={props.foldedMembers}
-                  disabledItemCount={props.disabledItemCount}
-                  invalidItemCount={props.invalidItemCount}
-                  removeInvalidItems={props.removeInvalidItems}
-                  removeDisabledMembers={props.removeDisabledMembers}
-                  clearMembers={props.clearMembers}
-                  setAllMembersEnabled={props.setAllMembersEnabled}
+                  members={props.members}
                   memberStatusFilter={props.memberStatusFilter}
                   setMemberStatusFilter={props.setMemberStatusFilter}
-                  visibleFoldedMembers={props.visibleFoldedMembers}
-                  visibleChannelGroups={props.visibleChannelGroups}
-                  toggleChannelMembers={props.toggleChannelMembers}
-                  toggleFoldedMember={props.toggleFoldedMember}
-                  removeFoldedMember={props.removeFoldedMember}
-                  moveChannelGroup={props.moveChannelGroup}
-                  moveFoldedMember={props.moveFoldedMember}
-                  moveFoldedMemberWithinChannel={
-                    props.moveFoldedMemberWithinChannel
-                  }
                 />
               ) : null}
               {!form.route_group_id ? (
                 <ModelGroupExcludedMembers
                   locale={locale}
-                  excludedMembers={props.excludedMembers}
-                  restoreExcludedMember={props.restoreExcludedMember}
+                  excludedMembers={props.members.excludedMembers}
+                  restoreExcludedMember={props.members.restoreExcludedMember}
                 />
               ) : null}
               <Accordion
@@ -264,8 +227,8 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                     ? "别名模型组"
                     : "Alias group"
                   : locale === "zh-CN"
-                    ? `已选 ${props.foldedMembers.length} 个模型`
-                    : `${props.foldedMembers.length} selected models`}
+                    ? `已选 ${props.members.foldedMembers.length} 个模型`
+                    : `${props.members.foldedMembers.length} selected models`}
               </span>
               <div className="flex items-center gap-2">
                 <Button

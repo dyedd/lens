@@ -79,7 +79,7 @@ export function useChannelSave({
     return site;
   }
 
-  function changedCredentialIds() {
+  function credentialIdsForModelSync() {
     const nextCredentials = toPayload(editor.form).credentials;
     if (!editor.editingSiteId) {
       return nextCredentials
@@ -159,7 +159,7 @@ export function useChannelSave({
     event.preventDefault();
     if (!editor.validateSiteForm()) return;
     const editing = Boolean(editor.editingSiteId);
-    const credentialIds = changedCredentialIds();
+    const credentialIdsToSync = credentialIdsForModelSync();
     setIsSaving(true);
     try {
       const site = await persistSite();
@@ -178,8 +178,8 @@ export function useChannelSave({
             ? "渠道已创建"
             : "Channel created",
       );
-      if (site.enabled && (credentialIds?.length ?? 0) > 0) {
-        void syncSiteModels(site.id, credentialIds);
+      if (site.enabled && credentialIdsToSync.length > 0) {
+        void syncSiteModels(site.id, credentialIdsToSync);
       } else {
         void invalidateChannelData();
       }

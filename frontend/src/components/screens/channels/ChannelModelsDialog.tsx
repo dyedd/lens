@@ -175,7 +175,7 @@ function ChannelModelsBody({
     setRemoveRequest(keys);
   }
 
-  async function confirmRemoval() {
+  function confirmRemoval() {
     const keys = removeRequest ?? [];
     if (!keys.length) return;
     for (const key of keys) onDelete(key);
@@ -435,7 +435,7 @@ function ChannelModelsBody({
         onOpenChange={(open) => {
           if (!open) setRemoveRequest(null);
         }}
-        onConfirm={() => void confirmRemoval()}
+        onConfirm={confirmRemoval}
       />
     </>
   );

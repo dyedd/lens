@@ -207,6 +207,10 @@ class CooldownState:
     # 冷却到期后只允许一个请求探测该目标，成功后才会放行全量流量。
     probe_lease_until: float = 0.0
 
+    @property
+    def unavailable_until(self) -> float:
+        return max(self.cooled_until, self.probe_lease_until)
+
 
 def model_key(
     channel_id: str, model_name: str | None, fault_protocol: str = ""
@@ -245,7 +249,7 @@ class CooldownLedger:
         return self._policy
 
     @property
-    def detection_rules(self):
+    def detection_rules(self) -> tuple[CompiledCooldownDetectionRule, ...]:
         return self._policy.detection_rules
 
     @property
@@ -348,20 +352,22 @@ class CooldownLedger:
             self._credential_states.pop(key, None)  # type: ignore[arg-type]
 
     def cooldown_reason(
-        self, model: ModelKey, credential: CredentialKey, *, now: float
+        self,
+        model: ModelKey,
+        credential: CredentialKey,
+        *,
+        now: float,
+        channel_model_key: ModelKey | None = None,
     ) -> str:
         """Name the fault domain and remaining cooldown of an unavailable target."""
         states = [
             state
-            for state in (
-                self._model_states.get(model),
-                self._credential_states.get(credential),
-            )
-            if state is not None and state.cooled_until > now
+            for state in self._target_states(model, credential, channel_model_key)
+            if state is not None and state.unavailable_until > now
         ]
         if not states:
             return ""
-        state = max(states, key=lambda item: item.cooled_until)
+        state = max(states, key=lambda item: item.unavailable_until)
         category = (
             state.last_error_category.value
             if state.last_error_category is not None
@@ -370,7 +376,7 @@ class CooldownLedger:
         detail = state.last_error or category
         return (
             f"{detail} ({category}, "
-            f"{remaining_seconds(state.cooled_until, now=now)}s left)"
+            f"{remaining_seconds(state.unavailable_until, now=now)}s left)"
         )
 
     def remaining_seconds_for(
@@ -384,9 +390,9 @@ class CooldownLedger:
         """Seconds until every fault domain of a target recovers; 0 when available."""
         return max(
             (
-                state.cooled_until - now
+                state.unavailable_until - now
                 for state in self._target_states(model, credential, channel_model_key)
-                if state is not None and state.cooled_until > now
+                if state is not None and state.unavailable_until > now
             ),
             default=0.0,
         )
@@ -463,13 +469,13 @@ class CooldownLedger:
         stale_before = now - self._policy.failure_window_seconds
         for key, state in list(self._model_states.items()):
             if (
-                state.cooled_until <= now
+                state.unavailable_until <= now
                 and max(state.last_failure_at, state.cooled_until) < stale_before
             ):
                 self._model_states.pop(key, None)
         for key, state in list(self._credential_states.items()):
             if (
-                state.cooled_until <= now
+                state.unavailable_until <= now
                 and max(state.last_failure_at, state.cooled_until) < stale_before
             ):
                 self._credential_states.pop(key, None)
@@ -525,7 +531,9 @@ class CooldownLedger:
             return
 
         state.consecutive_failures += 1
-        threshold = self._policy.threshold(category)
+        threshold = (
+            1 if cooldown_seconds is not None else self._policy.threshold(category)
+        )
         if state.consecutive_failures < threshold:
             return
         # 只有探测失败才重新放大退避：被冷却拒之门外的常规请求不该把恢复推远。
@@ -553,6 +561,7 @@ class CooldownLedger:
                 or self._policy.initial_cooldown(category) <= 0
             ):
                 state.cooled_until = 0.0
+                state.probe_lease_until = 0.0
                 state.last_cooldown = 0.0
                 state.consecutive_failures = 0
                 continue

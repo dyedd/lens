@@ -176,7 +176,7 @@ export async function downloadConfigBackup(options?: {
 }
 
 /** Imports a configuration backup file through the admin API. */
-export async function importConfigBackup(file: File) {
+export function importConfigBackup(file: File) {
   const formData = new FormData();
   formData.append("file", file);
   return apiRequest<ConfigImportResult>("/admin/backups/import", {

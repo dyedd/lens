@@ -119,7 +119,8 @@ def _chat_tool_call_delta_has_output(value: Any) -> bool:
         return True
     if _has_non_empty_stream_value(value.get("type")):
         return True
-    return _chat_function_delta_has_output(value.get("function"))
+    function = value.get("function")
+    return isinstance(function, dict) and _chat_function_delta_has_output(function)
 
 
 def _responses_stream_payload_has_output(payload: dict[str, Any]) -> bool:

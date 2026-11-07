@@ -17,15 +17,18 @@ from ....core.upstream_rules import (
 )
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind, RequestLogLifecycleStatus
+from ....models.settings import RuntimeSettings
 from ...converters import (
     convert_request,
     needs_protocol_conversion,
     strip_foreign_reasoning,
 )
 from ...converters.responses_common import lift_additional_tools
+from ...converters.unified import ToolDefinition
 from ...router import RouteTarget, TargetKey
 from ...router.cooldown import ErrorCategory, classify_error, default_scope
 from ...router.failover import FailurePolicy, RetryAction, policy_for
+from ...upstream_request import UpstreamRequest
 from ..app_state import app_state
 from ..compat import (
     apply_deepseek_thinking_compat,
@@ -68,7 +71,7 @@ class AttemptRequest:
 
     protocol: ProtocolKind
     body: dict[str, Any]
-    runtime: dict[str, Any]
+    runtime: RuntimeSettings
     upstream_user_agent: str
     inbound_headers: Mapping[str, str] | None = None
     path_suffix: str | None = None
@@ -162,10 +165,11 @@ class _AttemptRun:
 class _PreparedAttempt:
     channel: ChannelConfig
     upstream_body: dict[str, Any]
-    upstream: Any
+    upstream: UpstreamRequest
     body_bytes: bytes
     request_content: str | None
     reasoning_effort: str | None
+    tool_mapping: dict[str, ToolDefinition]
 
 
 async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | None:
@@ -174,9 +178,10 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
     target = run.target
     channel = target.channel
 
+    tool_mapping: dict[str, ToolDefinition] = {}
     if needs_protocol_conversion(request.protocol, channel.protocol):
         try:
-            upstream_body = convert_request(
+            converted = convert_request(
                 request.protocol,
                 channel.protocol,
                 request.body,
@@ -185,6 +190,8 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
                     channel, target.model_name
                 ),
             )
+            upstream_body = converted.body
+            tool_mapping = converted.tool_mapping
         except ValueError as exc:
             return await _record_target_failure(
                 run,
@@ -303,6 +310,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
         body_bytes=body_bytes,
         request_content=upstream_request_content,
         reasoning_effort=extract_request_reasoning_effort(request.body, upstream_body),
+        tool_mapping=tool_mapping,
     )
 
 
@@ -333,6 +341,7 @@ async def _send_attempt(
             log_body_enabled=run.log_body_enabled,
             deadline=run.deadline,
             plugin_run=run.log_ctx.plugin_run,
+            tool_mapping=prepared.tool_mapping,
         )
         return await execute_upstream_request(
             UpstreamExecutionRequest(
@@ -482,7 +491,7 @@ async def _finalize_stream_request(
     """Background close-out of a streamed attempt: route health, then the log row."""
     outcome = stream_log_outcome(result, result.stream_capture)
     try:
-        await _record_stream_route_health(
+        _record_stream_route_health(
             channel=channel,
             fault_protocol=fault_protocol,
             capture=result.stream_capture,
@@ -524,7 +533,7 @@ async def _finalize_stream_request(
             app_state.router.release_probe(target)
 
 
-async def _record_stream_route_health(
+def _record_stream_route_health(
     *,
     channel: ChannelConfig,
     fault_protocol: str,

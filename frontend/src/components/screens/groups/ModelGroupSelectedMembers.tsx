@@ -33,38 +33,17 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import type { RoutingStrategy } from "@/lib/api/groups";
-import type {
-  ChannelMemberGroup,
-  FoldedMember,
-  MemberStatusFilter,
-} from "./groupTypes";
+import type { MemberStatusFilter } from "./groupTypes";
 import { ModelGroupSelectedMemberList } from "./ModelGroupSelectedMemberList";
+import type { GroupMembers } from "./useGroupMembers";
 
 interface ModelGroupSelectedMembersProps {
   onAddSources: () => void;
   locale: "zh-CN" | "en-US";
   strategy: RoutingStrategy;
-  foldedMembers: FoldedMember[];
-  disabledItemCount: number;
-  invalidItemCount: number;
-  removeInvalidItems: () => void;
-  removeDisabledMembers: () => void;
-  clearMembers: () => void;
-  setAllMembersEnabled: (enabled: boolean) => void;
+  members: Omit<GroupMembers, "excludedMembers" | "restoreExcludedMember">;
   memberStatusFilter: MemberStatusFilter;
   setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
-  visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
-  visibleChannelGroups: ChannelMemberGroup[];
-  toggleChannelMembers: (channelKey: string, enabled: boolean) => void;
-  toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
-  removeFoldedMember: (foldKey: string) => void;
-  moveChannelGroup: (fromIndex: number, toIndex: number) => void;
-  moveFoldedMember: (fromIndex: number, toIndex: number) => void;
-  moveFoldedMemberWithinChannel: (
-    channelKey: string,
-    fromIndex: number,
-    toIndex: number,
-  ) => void;
 }
 
 /** Render selected model controls and draggable member rows. */
@@ -72,24 +51,19 @@ export function ModelGroupSelectedMembers({
   onAddSources,
   locale,
   strategy,
-  foldedMembers,
-  disabledItemCount,
-  invalidItemCount,
-  removeInvalidItems,
-  removeDisabledMembers,
-  clearMembers,
-  setAllMembersEnabled,
+  members,
   memberStatusFilter,
   setMemberStatusFilter,
-  visibleFoldedMembers,
-  visibleChannelGroups,
-  toggleChannelMembers,
-  toggleFoldedMember,
-  removeFoldedMember,
-  moveChannelGroup,
-  moveFoldedMember,
-  moveFoldedMemberWithinChannel,
 }: ModelGroupSelectedMembersProps) {
+  const {
+    foldedMembers,
+    disabledItemCount,
+    invalidItemCount,
+    removeInvalidItems,
+    removeDisabledMembers,
+    clearMembers,
+    setAllMembersEnabled,
+  } = members;
   const itemCount = foldedMembers.reduce(
     (count, member) => count + member.subItems.length,
     0,
@@ -221,14 +195,7 @@ export function ModelGroupSelectedMembers({
                 locale={locale}
                 strategy={strategy}
                 memberStatusFilter={memberStatusFilter}
-                visibleFoldedMembers={visibleFoldedMembers}
-                visibleChannelGroups={visibleChannelGroups}
-                toggleChannelMembers={toggleChannelMembers}
-                toggleFoldedMember={toggleFoldedMember}
-                removeFoldedMember={removeFoldedMember}
-                moveChannelGroup={moveChannelGroup}
-                moveFoldedMember={moveFoldedMember}
-                moveFoldedMemberWithinChannel={moveFoldedMemberWithinChannel}
+                {...members}
               />
             </div>
           </AccordionContent>

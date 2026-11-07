@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from pydantic import TypeAdapter
 from sqlalchemy import Select, String, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceNotFoundError
 from app.core.model_endpoints import credential_ids_for_url
 from app.core.model_name_parser import clean_reasoning_effort
+from app.core.time_zone import load_time_zone
 from app.models.health import (
     HealthBucket,
     HealthItem,
@@ -38,6 +39,7 @@ from app.persistence.entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
+from app.persistence.json_columns import load_json_column
 
 from .agents import user_agent_sql_expression
 from .types import (
@@ -45,12 +47,12 @@ from .types import (
     REQUEST_LOG_MODEL_FAMILY_PREFIXES,
     REQUEST_LOG_RUNNING_STATUSES,
     GatewayKeyPort,
-    HydratorPort,
-    RuntimeTimeZone,
     SettingsPort,
     extract_reasoning_effort,
     group_channel_ids_by_protocol_config,
 )
+
+_ATTEMPTS = TypeAdapter(list[dict[str, Any]])
 
 REQUEST_LOG_STATS_COLUMNS = (
     RequestLogEntity.created_at,
@@ -233,14 +235,7 @@ def to_request_log_detail(
 
 
 def parse_attempts_json(raw_value: str | None) -> list[dict[str, Any]]:
-    if not raw_value:
-        return []
-    payload = json.loads(raw_value)
-    if not isinstance(payload, list) or not all(
-        isinstance(item, dict) for item in payload
-    ):
-        raise ValueError("Invalid request log attempts JSON")
-    return payload
+    return load_json_column(raw_value or "[]", _ATTEMPTS, "attempts_json")
 
 
 def resolve_request_log_window(
@@ -567,14 +562,12 @@ class RequestLogQueries:
         session_factory: async_sessionmaker[AsyncSession],
         settings_repo: SettingsPort,
         gateway_key_repo: GatewayKeyPort,
-        hydrator: HydratorPort,
-        runtime_time_zone: RuntimeTimeZone,
+        hydrator: RequestLogHydrator,
     ) -> None:
         self.session_factory = session_factory
         self.settings_repo = settings_repo
         self.gateway_key_repo = gateway_key_repo
         self.hydrator = hydrator
-        self.runtime_time_zone = runtime_time_zone
 
     async def list_model_health(
         self,
@@ -743,8 +736,8 @@ class RequestLogQueries:
         agent: str | None = None,
     ) -> RequestLogPage:
         """Return a filtered page of request logs and filter options."""
-        time_zone = self.runtime_time_zone(
-            await self.settings_repo.get_runtime_settings()
+        time_zone = load_time_zone(
+            (await self.settings_repo.get_runtime_settings())["time_zone"]
         )
         async with self.session_factory() as session:
             items_stmt = select(RequestLogEntity)

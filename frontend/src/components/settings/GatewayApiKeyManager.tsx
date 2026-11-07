@@ -9,7 +9,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { useRowSelection } from "@/hooks/useRowSelection";
-import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
+import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { GatewayApiKey, GatewayApiKeyPayload } from "@/lib/api/settings";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
@@ -85,6 +85,30 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     await queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] });
   }
 
+  async function updateGatewayKeyEnabled(
+    item: GatewayApiKey,
+    enabled: boolean,
+  ) {
+    const updated = await apiRequest<GatewayApiKey>(
+      `/admin/gateway-api-keys/${item.id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          remark: item.remark,
+          enabled,
+          allowed_models: item.allowed_models,
+          max_cost_usd: item.max_cost_usd,
+          expires_at: item.expires_at ?? null,
+        } satisfies GatewayApiKeyPayload),
+      },
+    );
+    queryClient.setQueryData<GatewayApiKey[]>(["gateway-api-keys"], (current) =>
+      (current ?? []).map((entry) =>
+        entry.id === updated.id ? updated : entry,
+      ),
+    );
+  }
+
   async function toggleGatewayKeyEnabled(
     item: GatewayApiKey,
     enabled: boolean,
@@ -95,26 +119,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
     setBusyId(item.id);
     try {
-      const updated = await apiRequest<GatewayApiKey>(
-        `/admin/gateway-api-keys/${item.id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            remark: item.remark,
-            enabled,
-            allowed_models: item.allowed_models,
-            max_cost_usd: item.max_cost_usd,
-            expires_at: item.expires_at ?? null,
-          } satisfies GatewayApiKeyPayload),
-        },
-      );
-      queryClient.setQueryData<GatewayApiKey[]>(
-        ["gateway-api-keys"],
-        (current) =>
-          (current ?? []).map((entry) =>
-            entry.id === updated.id ? updated : entry,
-          ),
-      );
+      await updateGatewayKeyEnabled(item, enabled);
       toast.success(
         titleForLocale(
           locale,
@@ -146,26 +151,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     setBusyId("bulk");
     try {
       for (const item of items) {
-        const updated = await apiRequest<GatewayApiKey>(
-          `/admin/gateway-api-keys/${item.id}`,
-          {
-            method: "PUT",
-            body: JSON.stringify({
-              remark: item.remark,
-              enabled,
-              allowed_models: item.allowed_models,
-              max_cost_usd: item.max_cost_usd,
-              expires_at: item.expires_at ?? null,
-            } satisfies GatewayApiKeyPayload),
-          },
-        );
-        queryClient.setQueryData<GatewayApiKey[]>(
-          ["gateway-api-keys"],
-          (current) =>
-            (current ?? []).map((entry) =>
-              entry.id === updated.id ? updated : entry,
-            ),
-        );
+        await updateGatewayKeyEnabled(item, enabled);
       }
       toast.success(
         titleForLocale(
@@ -200,7 +186,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     setBusyId("bulk");
     try {
       for (const item of selectedKeys) {
-        await apiRequest<void>(`/admin/gateway-api-keys/${item.id}`, {
+        await apiFetch(`/admin/gateway-api-keys/${item.id}`, {
           method: "DELETE",
         });
       }

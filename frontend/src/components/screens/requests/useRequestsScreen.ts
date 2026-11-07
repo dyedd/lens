@@ -8,7 +8,7 @@ import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
-import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
+import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { RequestLogDetail, RequestLogPage } from "@/lib/api/requests";
 import type { SettingItem } from "@/lib/api/settings";
@@ -236,7 +236,7 @@ export function useRequestsScreen() {
   async function clearRequestLogs() {
     setClearingLogs(true);
     try {
-      await apiRequest<void>("/admin/request-logs", { method: "DELETE" });
+      await apiFetch("/admin/request-logs", { method: "DELETE" });
       setPage(0);
       setDetailId(null);
       await Promise.all(
@@ -244,7 +244,6 @@ export function useRequestsScreen() {
           ["request-logs"],
           ["overview-summary"],
           ["overview-daily"],
-          ["overview-models"],
           ["overview-attribution"],
           ["overview-activity"],
           ["gateway-api-keys"],

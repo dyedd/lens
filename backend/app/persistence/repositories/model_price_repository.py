@@ -344,9 +344,11 @@ class ModelPriceRepository:
             ),
         )
 
-    async def upsert_model_price(self, payload: ModelPriceUpdate) -> ModelPriceItem:
+    async def upsert_model_price(
+        self, model_key: str, payload: ModelPriceUpdate
+    ) -> ModelPriceItem:
         """Create or update pricing for an existing model group."""
-        model_key = canonical_model_price_key(payload.model_key)
+        model_key = canonical_model_price_key(model_key)
         if not model_key:
             raise ValueError("Model key is required")
 

@@ -274,7 +274,7 @@ def dev(_args: argparse.Namespace) -> None:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    thread = threading.Thread(target=asyncio.run, args=(server.serve(),), daemon=True)
+    thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
     frontend = _pnpm_popen(
@@ -311,11 +311,13 @@ def dev(_args: argparse.Namespace) -> None:
             os.killpg(frontend.pid, signal.SIGKILL)
 
     try:
-        while True:
+        while not server.should_exit and thread.is_alive():
             return_code = frontend.poll()
             if return_code is not None:
                 raise SystemExit(return_code)
             time.sleep(0.25)
+        if not server.started:
+            raise SystemExit(1)
     finally:
         server.should_exit = True
         stop_frontend()

@@ -7,7 +7,6 @@ from typing import Any
 import httpx
 import pytest
 from conftest import assert_error, run_async
-from fastapi import HTTPException
 
 from app.gateway.service.tasks.litellm_sync_tasks import (
     _fetch_litellm_payload as _original_fetch_litellm_payload,
@@ -59,6 +58,10 @@ def test_fetch_site_models_uses_selected_credentials(
         credential = request.headers["authorization"].removeprefix("Bearer ")
         seen.append(credential)
         assert request.url.path == "/v1/models"
+        assert all(
+            timeout is not None and timeout > 0
+            for timeout in request.extensions["timeout"].values()
+        )
         return httpx.Response(
             200,
             json={
@@ -72,7 +75,7 @@ def test_fetch_site_models_uses_selected_credentials(
             },
         )
 
-    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None)
     monkeypatch.setattr(model_discovery, "resolve_http_client", lambda _proxy: upstream)
     try:
         response = client.post(
@@ -329,29 +332,29 @@ def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
     admin_headers,
     monkeypatch,
 ) -> None:
-    async def failing_fetch(_channel: Any) -> list[str]:
-        raise HTTPException(status_code=503, detail="upstream unavailable")
-
     import app.gateway.service.tasks.model_discovery as model_discovery
 
-    monkeypatch.setattr(model_discovery, "fetch_upstream_models", failing_fetch)
-
-    response = client.post(
-        "/api/admin/site-model-discoveries",
-        headers=admin_headers,
-        json={
-            "base_url": "https://upstream.example/v1",
-            "headers": [],
-            "credentials": [
-                {
-                    "id": "cred-a",
-                    "name": "primary",
-                    "api_key": "upstream-secret",
-                }
-            ],
-            "credential_ids": ["cred-a"],
-        },
+    upstream = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(503, json={"error": "upstream unavailable"})
+        )
     )
+    monkeypatch.setattr(model_discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        response = client.post(
+            "/api/admin/site-model-discoveries",
+            headers=admin_headers,
+            json={
+                "base_url": "https://upstream.example/v1",
+                "headers": [],
+                "credentials": [
+                    {"id": "cred-a", "name": "primary", "api_key": "upstream-secret"}
+                ],
+                "credential_ids": ["cred-a"],
+            },
+        )
+    finally:
+        run_async(upstream.aclose())
 
     assert_error(response, 502, "Model discovery failed")
 

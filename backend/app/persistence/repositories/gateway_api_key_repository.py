@@ -22,6 +22,7 @@ from app.models.gateway_keys import (
     GatewayApiKeyUpdate,
 )
 from app.persistence.entities import GatewayApiKeyEntity
+from app.persistence.json_columns import load_allowed_models
 
 GATEWAY_API_KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -124,23 +125,6 @@ class GatewayApiKeyRepository:
             await session.commit()
 
     @staticmethod
-    def _load_gateway_key_models(raw_value: str | None) -> list[str]:
-        if not raw_value:
-            return []
-        payload = json.loads(raw_value)
-        if not isinstance(payload, list):
-            raise ValueError("Invalid gateway API key allowed models JSON")
-        models: list[str] = []
-        seen: set[str] = set()
-        for item in payload:
-            trimmed_item = str(item).strip()
-            if not trimmed_item or trimmed_item in seen:
-                continue
-            seen.add(trimmed_item)
-            models.append(trimmed_item)
-        return models
-
-    @staticmethod
     def _dump_gateway_key_models(models: list[str]) -> str:
         unique_models: list[str] = []
         seen: set[str] = set()
@@ -224,7 +208,7 @@ class GatewayApiKeyRepository:
             remark=entity.remark,
             api_key=entity.api_key,
             enabled=bool(entity.enabled),
-            allowed_models=cls._load_gateway_key_models(entity.allowed_models_json),
+            allowed_models=load_allowed_models(entity.allowed_models_json),
             max_cost_usd=max(float(entity.max_cost_usd), 0.0),
             spent_cost_usd=max(float(entity.spent_cost_usd), 0.0),
             expires_at=cls._format_datetime(entity.expires_at),

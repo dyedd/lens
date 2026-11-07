@@ -10,6 +10,7 @@ from sqlalchemy import Integer, func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.runtime_channel_ids import split_runtime_channel_id
+from app.core.time_zone import load_time_zone
 from app.models.overview import (
     OverviewAttribution,
     OverviewAttributionCoverage,
@@ -127,8 +128,8 @@ class RequestLogAttribution:
         filter_key: str | None = None,
     ) -> OverviewAttribution:
         overview = self.overview
-        time_zone = overview.runtime_time_zone(
-            await overview.settings_repo.get_runtime_settings()
+        time_zone = load_time_zone(
+            (await overview.settings_repo.get_runtime_settings())["time_zone"]
         )
         async with overview.session_factory() as session:
             buckets = await self.load_buckets(session, days=days, time_zone=time_zone)
@@ -258,8 +259,8 @@ class RequestLogAttribution:
 
     async def hourly_points(self, *, days: int) -> list[OverviewDailyPoint]:
         overview = self.overview
-        time_zone = overview.runtime_time_zone(
-            await overview.settings_repo.get_runtime_settings()
+        time_zone = load_time_zone(
+            (await overview.settings_repo.get_runtime_settings())["time_zone"]
         )
         async with overview.session_factory() as session:
             buckets = await self.load_buckets(session, days=days, time_zone=time_zone)

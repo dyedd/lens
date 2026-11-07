@@ -1,8 +1,5 @@
-import type {
-  HeaderRule,
-  ModelGroupReconcileReport,
-  ParamOverrideRule,
-} from "./groups";
+import type { HeaderRule, ParamOverrideRule } from "@/lib/upstreamRules";
+import type { ModelGroupReconcileReport } from "./groups";
 import type { ProtocolKind } from "./protocols";
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";

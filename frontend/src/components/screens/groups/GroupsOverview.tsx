@@ -112,7 +112,7 @@ type Props = {
   onOpenEdit: (group: ModelGroup) => void;
   onToggleEnabled: (group: GroupRow, enabled: boolean) => void;
   onChangeStrategy: (group: GroupRow, strategy: RoutingStrategy) => void;
-  onMerge: (source: ModelGroup, target: SimilarGroupView) => Promise<void>;
+  onMerge: (source: ModelGroup, target: SimilarGroupView) => Promise<boolean>;
   onDelete: (group: ModelGroup) => void;
   onTest: (group: GroupRow) => void;
   onBulkEnabled: (groups: GroupRow[], enabled: boolean) => void;
@@ -467,10 +467,11 @@ export function GroupsOverview({
                 type="button"
                 size="sm"
                 disabled={Boolean(busyId)}
-                onClick={() => {
+                onClick={async () => {
                   if (!mergeRequest) return;
-                  void onMerge(mergeRequest.source, mergeRequest.target);
-                  setMergeRequest(null);
+                  if (await onMerge(mergeRequest.source, mergeRequest.target)) {
+                    setMergeRequest(null);
+                  }
                 }}
               >
                 {locale === "zh-CN" ? "确认合并" : "Merge"}

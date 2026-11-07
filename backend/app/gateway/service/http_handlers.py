@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any
 
 import jwt
 from fastapi import FastAPI, Request, Response, status
@@ -13,7 +12,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ...core.errors import LensError
 from ..cronjob_runner import CronjobAlreadyRunningError
-from ..router.cooldown import CooldownPolicy
 from .app_state import app_state, bind_app_state, logger, reset_app_state
 from .error_responses import (
     build_database_error_response,
@@ -150,54 +148,10 @@ async def handle_operational_error(
     return build_database_error_response(exc, request)
 
 
-def apply_router_runtime_settings(runtime: dict[str, Any]) -> None:
-    app_state.router.configure(
-        health_scoring_enabled=bool(runtime["health_scoring_enabled"]),
-        health_window_seconds=int(runtime["health_window_seconds"]),
-        health_penalty_weight=float(runtime["health_penalty_weight"]),
-        health_min_samples=int(runtime["health_min_samples"]),
-        routing_environment_signature=(
-            str(runtime["proxy_url"]),
-            json.dumps(
-                runtime["upstream_headers_config"],
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-        ),
-        cooldown_policy=CooldownPolicy(
-            failure_threshold=int(runtime["circuit_breaker_threshold"]),
-            failure_window_seconds=int(
-                runtime["circuit_breaker_failure_window_seconds"]
-            ),
-            timeout_threshold=int(runtime["circuit_breaker_timeout_threshold"]),
-            network_threshold=int(runtime["circuit_breaker_network_threshold"]),
-            server_cooldown_seconds=int(runtime["circuit_breaker_cooldown"]),
-            auth_cooldown_seconds=int(runtime["circuit_breaker_auth_cooldown"]),
-            not_found_cooldown_seconds=int(
-                runtime["circuit_breaker_not_found_cooldown"]
-            ),
-            rate_limit_cooldown_seconds=int(
-                runtime["circuit_breaker_rate_limit_cooldown"]
-            ),
-            timeout_cooldown_seconds=int(runtime["circuit_breaker_timeout_cooldown"]),
-            network_cooldown_seconds=int(runtime["circuit_breaker_network_cooldown"]),
-            backoff_multiplier=float(runtime["circuit_breaker_backoff_multiplier"]),
-            max_cooldown_seconds=int(runtime["circuit_breaker_max_cooldown"]),
-            escalate_threshold=int(runtime["circuit_breaker_escalate_threshold"]),
-            escalate_window_seconds=int(
-                runtime["circuit_breaker_escalate_window_seconds"]
-            ),
-            detection_rules=runtime["cooldown_detection_rules"],
-        ),
-        affinity_seconds=float(runtime["failover_affinity_seconds"]),
-    )
-
-
 async def dynamic_cors_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    """Apply runtime CORS settings and router health configuration."""
+    """Apply runtime CORS settings."""
     token = bind_app_state(request.app.state.app_state)
     try:
         if request.method == "OPTIONS":
@@ -210,7 +164,6 @@ async def dynamic_cors_middleware(
                 return build_database_error_response(exc, request)
         try:
             runtime = await app_state.settings_repo.get_runtime_settings()
-            apply_router_runtime_settings(runtime)
         except OperationalError as exc:
             return build_database_error_response(exc, request)
         response = await call_next(request)
@@ -232,7 +185,6 @@ async def dynamic_cors_middleware(
 async def _cors_preflight_response(request: Request) -> Response:
     """Return a preflight response using the configured allowed origins."""
     runtime = await app_state.settings_repo.get_runtime_settings()
-    apply_router_runtime_settings(runtime)
     allow_origins = runtime["cors_allow_origins"]
     origin = request.headers.get("origin", "")
     headers = {

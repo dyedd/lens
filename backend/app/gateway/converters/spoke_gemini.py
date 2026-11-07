@@ -366,6 +366,9 @@ def _gemini_part_to_unified(
                     payload if isinstance(payload, Mapping) else {}, ensure_ascii=False
                 ),
                 is_error=isinstance(payload, Mapping) and "error" in payload,
+                parts=_gemini_parts_to_unified(
+                    response.get("parts"), role=MessageRole.USER
+                ),
             )
         ]
     if "inlineData" in part or "fileData" in part:
@@ -478,6 +481,8 @@ def _unified_parts_to_gemini(
             built.append(
                 _tool_result_to_gemini(part, results_by_name=results_by_name or {})
             )
+            # 媒体单独放入用户消息，兼容不支持 functionResponse.parts 的模型。
+            built.extend(_unified_parts_to_gemini(part.parts, role=MessageRole.USER))
         elif isinstance(part, ServerToolPart):
             if part.origin == _ORIGIN and part.raw:
                 built.append(dict(part.raw))

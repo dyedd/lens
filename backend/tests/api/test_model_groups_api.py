@@ -845,6 +845,50 @@ def test_merge_keeps_target_match_operator_when_source_has_no_regex(
     assert response.json()["match_regex_operator"] == "and"
 
 
+@pytest.mark.parametrize("pattern", ["(?s)^claude-", "(?x)# note\n(?s)^claude- # end"])
+def test_merge_keeps_regex_flags_and_long_patterns_editable(
+    client, admin_headers, pattern
+) -> None:
+    target = _create_group(
+        client, admin_headers, name="target", match_regex="^gpt-" + "a" * 490
+    )
+    source = _create_group(client, admin_headers, name="source", match_regex=pattern)
+    merged = client.post(
+        f"/api/admin/model-groups/{source['id']}/merge",
+        headers=admin_headers,
+        json={"target_group_id": target["id"]},
+    )
+    assert merged.status_code == 200, merged.text
+    combined = merged.json()["match_regex"]
+    assert len(combined) > 500
+    updated = client.put(
+        f"/api/admin/model-groups/{target['id']}",
+        headers=admin_headers,
+        json={"name": "renamed", "match_regex": combined},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["match_regex"] == combined
+    assert (
+        client.get("/api/admin/model-groups", headers=admin_headers).status_code == 200
+    )
+
+
+def test_merge_rejects_oversized_regex_without_deleting_groups(client, admin_headers):
+    target = _create_group(client, admin_headers, name="target", match_regex="a" * 6000)
+    source = _create_group(client, admin_headers, name="source", match_regex="b" * 6000)
+    merged = client.post(
+        f"/api/admin/model-groups/{source['id']}/merge",
+        headers=admin_headers,
+        json={"target_group_id": target["id"]},
+    )
+    assert merged.status_code == 400, merged.text
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert {group["id"]: group["match_regex"] for group in groups} == {
+        target["id"]: target["match_regex"],
+        source["id"]: source["match_regex"],
+    }
+
+
 @pytest.mark.parametrize(
     ("target_name", "status_code"),
     [
