@@ -1,9 +1,14 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
-import { apiRequest } from "@/lib/api/client";
+import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { HealthSummary } from "@/lib/api/sites";
 import { titleForLocale, useI18n } from "@/lib/I18nContext";
 import { HealthOverview } from "./health/HealthOverview";
@@ -28,6 +33,7 @@ function useDebouncedValue(value: string, delay: number) {
 /** Renders request-log health by execution model group or configured channel. */
 export function ModelHealthScreen() {
   const { locale } = useI18n();
+  const queryClient = useQueryClient();
   const timeZone = useAppTimeZone();
   const [hours, setHours] = useState<HealthHours>("6");
   const [mode, setMode] = useState<HealthMode>("model");
@@ -39,7 +45,7 @@ export function ModelHealthScreen() {
   const offset = page * pageSize;
   const healthQuery = useQuery({
     queryKey: ["model-health", mode, hours, debouncedSearch, pageSize, offset],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const query = new URLSearchParams({
         hours,
         mode,
@@ -49,11 +55,31 @@ export function ModelHealthScreen() {
       if (debouncedSearch) query.set("query", debouncedSearch);
       return apiRequest<HealthSummary>(
         `/admin/model-health?${query.toString()}`,
+        { signal },
       );
     },
     placeholderData: keepPreviousData,
     staleTime: 5_000,
     refetchInterval: 5_000,
+  });
+  const resetCooldown = useMutation({
+    mutationFn: ({ id, mode }: { id: string; mode: HealthMode }) =>
+      apiFetch(
+        `/admin/model-health/${encodeURIComponent(id)}/reset-cooldown?mode=${mode}`,
+        { method: "POST" },
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["model-health"] });
+      toast.success(titleForLocale(locale, "冷却已重置", "Cooldown reset"));
+    },
+    onError: (error) => {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          titleForLocale(locale, "重置冷却失败", "Failed to reset cooldown"),
+        ),
+      );
+    },
   });
 
   useEffect(() => {
@@ -97,6 +123,10 @@ export function ModelHealthScreen() {
         pageSize={pageSize}
         hasNextPage={healthQuery.data?.next_offset != null}
         timeZone={timeZone}
+        isResettingCooldown={
+          resetCooldown.isPending || healthQuery.isPlaceholderData
+        }
+        onResetCooldown={(id) => resetCooldown.mutate({ id, mode })}
         onSearchChange={(value) =>
           updateFilter(() => {
             setSearch(value);

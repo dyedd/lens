@@ -328,6 +328,13 @@ class CooldownLedger:
     def model_state(self, key: ModelKey) -> CooldownState | None:
         return self._model_states.get(key)
 
+    def reset(
+        self, model: ModelKey, credential: CredentialKey, channel_model: ModelKey
+    ) -> None:
+        self._model_states.pop(model, None)
+        self._model_states.pop(channel_model, None)
+        self._credential_states.pop(credential, None)
+
     def credential_state(self, key: CredentialKey) -> CooldownState | None:
         return self._credential_states.get(key)
 

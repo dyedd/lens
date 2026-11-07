@@ -51,6 +51,8 @@ type Props = {
   pageSize: (typeof PAGE_SIZE_OPTIONS)[number];
   hasNextPage: boolean;
   timeZone: string;
+  isResettingCooldown: boolean;
+  onResetCooldown: (id: string) => void;
   onSearchChange: (value: string) => void;
   onModeChange: (value: HealthMode) => void;
   onHoursChange: (value: HealthHours) => void;
@@ -73,6 +75,8 @@ export function HealthOverview({
   pageSize,
   hasNextPage,
   timeZone,
+  isResettingCooldown,
+  onResetCooldown,
   onSearchChange,
   onModeChange,
   onHoursChange,
@@ -232,6 +236,8 @@ export function HealthOverview({
         loading={loading}
         emptyLabel={emptyLabel}
         timeZone={timeZone}
+        isResettingCooldown={isResettingCooldown}
+        onResetCooldown={onResetCooldown}
       />
 
       <TablePagination

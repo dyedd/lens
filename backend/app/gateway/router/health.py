@@ -246,6 +246,19 @@ class HealthTracker:
             channel_model_key=model_key(target.channel.id, ""),
         )
 
+    def reset_cooldowns(self, targets: list[RouteTarget]) -> None:
+        for target in targets:
+            model = _target_model_key(target)
+            self._cooldowns.reset(
+                model,
+                _target_credential_key(target),
+                model_key(target.channel.id, ""),
+            )
+            self._escalations.pop(model, None)
+            for key, seen in self._escalations.items():
+                if key[0] == target.channel.id and key[2] == target.fault_protocol:
+                    seen.pop(target.credential_id or "", None)
+
     def is_target_available(self, target: RouteTarget, *, now: float) -> bool:
         return self.cooldown_remaining_seconds(target, now=now) <= 0.0
 

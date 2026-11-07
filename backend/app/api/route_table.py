@@ -69,6 +69,7 @@ from ..gateway.service.admin.sites import (
     list_model_sync_runs,
     list_sites,
     probe_endpoint_latency,
+    reset_health_cooldown,
     sync_channel_models,
     sync_site_credential_rate,
     test_site_model,
@@ -188,6 +189,12 @@ def register_sites(app: APIRouter) -> None:
         list_model_health,
         methods=["GET"],
         response_model=HealthSummary,
+    )
+    app.add_api_route(
+        "/api/admin/model-health/{item_id}/reset-cooldown",
+        reset_health_cooldown,
+        methods=["POST"],
+        status_code=204,
     )
     app.add_api_route(
         "/api/admin/sites",

@@ -28,7 +28,9 @@ class HealthBucket(StrictBaseModel):
 
 
 class HealthItem(StrictBaseModel):
+    id: str
     name: str
+    cooldown_remaining_seconds: int = 0
     success_count: int = 0
     total_count: int = 0
     tier: str = "no-data"

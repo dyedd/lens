@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from fastapi import Depends, HTTPException, Query, Request, Response
 
-from ....core.errors import ModelDiscoveryError
+from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
 from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS, resolve_onboard_protocol
 from ....models.channels import (
     ChannelConfig,
@@ -13,6 +13,7 @@ from ....models.channels import (
 )
 from ....models.endpoint_probe import EndpointProbeRequest, EndpointProbeResult
 from ....models.health import HealthSummary
+from ....models.model_groups import ModelGroupItemState
 from ....models.protocols import ProtocolKind
 from ....models.site_import import SiteBatchImportRequest, SiteBatchImportResult
 from ....models.site_model_test import (
@@ -31,6 +32,7 @@ from ....models.sites import (
     SiteEnabledUpdate,
     SiteUpdate,
 )
+from ...router.targets import RouteTarget, target_key
 from ..app_state import app_state
 from ..auth import get_current_admin
 from ..tasks.litellm_sync_tasks import (
@@ -65,13 +67,83 @@ async def list_model_health(
     """List request-log health by execution model group or site."""
     if hours not in (1, 6, 24):
         raise HTTPException(status_code=422, detail="hours must be 1, 6, or 24")
-    return await app_state.request_log_store.queries.list_model_health(
+    summary = await app_state.request_log_store.queries.list_model_health(
         hours=hours,
         mode=mode,
         query=query,
         limit=limit,
         offset=offset,
     )
+    channels = await app_state.channel_store.list_channels()
+    targets_by_id = await _health_targets(mode, channels)
+    targets = [
+        target for item in summary.items for target in targets_by_id.get(item.id, [])
+    ]
+    cooldowns = app_state.router.cooldown_remaining_by_target(channels, targets)
+    for item in summary.items:
+        item.cooldown_remaining_seconds = max(
+            (
+                cooldowns[target_key(target)]
+                for target in targets_by_id.get(item.id, [])
+            ),
+            default=0,
+        )
+    return summary
+
+
+async def reset_health_cooldown(
+    item_id: str,
+    mode: Literal["model", "channel"] = "model",
+    _: Any = Depends(get_current_admin),
+) -> Response:
+    channels = await app_state.channel_store.list_channels()
+    targets_by_id = await _health_targets(mode, channels)
+    if item_id not in targets_by_id:
+        raise ResourceNotFoundError(item_id)
+    app_state.router.reset_cooldowns(targets_by_id[item_id])
+    return Response(status_code=204)
+
+
+async def _health_targets(
+    mode: Literal["model", "channel"], channels: list[ChannelConfig]
+) -> dict[str, list[RouteTarget]]:
+    if mode == "model":
+        channel_map = {channel.id: channel for channel in channels}
+        groups = await app_state.group_repo.list_groups(channels=channels)
+        return {
+            group.id: [
+                RouteTarget(
+                    channel=channel_map[item.channel_id],
+                    model_name=item.model_name,
+                    credential_id=item.credential_id,
+                )
+                for item in group.items
+                if item.state == ModelGroupItemState.READY
+            ]
+            for group in groups
+            if not group.route_group_id
+        }
+
+    targets_by_id: dict[str, list[RouteTarget]] = {}
+    for channel in channels:
+        targets = targets_by_id.setdefault(channel.site_id, [])
+        credential_ids = {key.id for key in channel.keys}
+        targets.extend(
+            RouteTarget(
+                channel=channel,
+                model_name=model.model_name,
+                credential_id=model.credential_id,
+            )
+            for model in channel.models
+            if model.enabled
+            and (not channel.keys or model.credential_id in credential_ids)
+        )
+        if not channel.models:
+            targets.extend(
+                RouteTarget(channel=channel, credential_id=credential_id)
+                for credential_id in credential_ids or {""}
+            )
+    return targets_by_id
 
 
 async def create_site(
