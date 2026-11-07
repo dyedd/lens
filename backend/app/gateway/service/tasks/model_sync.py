@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
-from ....core.model_endpoints import resolve_model_base_url_id
 from ....core.model_names import ModelPatternKind, classify_model_pattern
-from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS, resolve_onboard_protocol
-from ....core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
+from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS
+from ....core.runtime_channel_ids import compose_runtime_channel_id
 from ....models.channels import (
     ChannelConfig,
     ChannelModelSyncResponse,
@@ -17,8 +15,7 @@ from ....models.channels import (
 )
 from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus, ProtocolKind
-from ....models.sites import SiteConfig, SiteProtocolConfig
-from ....persistence.channel_store import flatten_site
+from ....models.sites import SiteBaseUrl, SiteConfig, SiteCredential, SiteProtocolConfig
 from ..app_state import logger
 from .litellm_sync_tasks import (
     ModelPriceSyncError,
@@ -26,20 +23,13 @@ from .litellm_sync_tasks import (
     find_context_window,
 )
 from .model_discovery import (
-    NATIVE_LISTING_PROTOCOLS,
-    UpstreamModel,
-    fetch_upstream_models,
+    UpstreamModelList,
+    fetch_upstream_model_list,
+    model_list_protocols,
 )
 
 if TYPE_CHECKING:
     from ..app_state import AppState
-
-
-@dataclass(frozen=True, slots=True)
-class _ModelCatalog:
-    models: list[UpstreamModel]
-    protocols: dict[str, ProtocolKind]
-    existing_protocols: dict[str, frozenset[ProtocolKind]]
 
 
 def channel_for_credential(
@@ -140,65 +130,42 @@ async def _sync_site_models(
     requested_credential_ids: set[str] | None = None,
     context_windows: dict[str, int] | None = None,
 ) -> list[ChannelModelSyncResultItem]:
-    credential_names = {
-        credential.id: credential.name for credential in site.credentials
-    }
-    credential_patterns = {
-        credential.id: credential.model_pattern for credential in site.credentials
-    }
-    channels_by_config: dict[str, list[ChannelConfig]] = defaultdict(list)
-    for channel in flatten_site(site):
-        channels_by_config[
-            protocol_config_id_from_runtime_channel_id(channel.id)
-        ].append(channel)
-
-    catalogs: dict[str, _ModelCatalog] = {}
+    credentials = {credential.id: credential for credential in site.credentials}
     base_urls = {url.id: url for url in site.base_urls}
-    configs = sorted(
-        site.protocols,
-        key=lambda config: (
-            base_urls[config.base_url_id].kind not in {"china", "default"},
-            base_urls[config.base_url_id].kind != "china",
-        ),
-    )
+    catalogs: dict[tuple[str, str], UpstreamModelList | ModelDiscoveryError] = {}
     items: list[ChannelModelSyncResultItem] = []
-    for protocol_config in configs:
-        channels = channels_by_config.get(protocol_config.id, [])
-        for credential_id in protocol_config.credential_ids:
+    for config in site.protocols:
+        address = base_urls[config.base_url_id]
+        if address.kind == "models":
+            continue
+        for credential_id in config.credential_ids:
             if (
                 requested_credential_ids is not None
                 and credential_id not in requested_credential_ids
             ):
                 continue
+            credential = credentials[credential_id]
             item = ChannelModelSyncResultItem(
                 site_id=site.id,
                 site_name=site.name,
-                protocol_config_id=protocol_config.id,
+                protocol_config_id=config.id,
                 credential_id=credential_id,
-                credential_name=credential_names.get(credential_id, ""),
+                credential_name=credential.name,
                 status=ChannelModelSyncStatus.UNCHANGED,
             )
             items.append(item)
             try:
-                catalog = await _sync_credential_models(
+                await _sync_credential_models(
                     state,
-                    protocol_config,
-                    channels,
+                    site,
+                    config,
+                    credential,
+                    address,
                     item,
-                    credential_patterns,
-                    site=site,
-                    catalog=catalogs.get(credential_id),
-                    context_windows=context_windows or {},
+                    catalogs,
+                    context_windows or {},
                 )
-                if catalog is not None and base_urls[
-                    protocol_config.base_url_id
-                ].kind in {"default", "china", "protocol"}:
-                    catalogs[credential_id] = catalog
-            except (
-                ModelDiscoveryError,
-                ResourceNotFoundError,
-                ValueError,
-            ) as exc:
+            except (ModelDiscoveryError, ResourceNotFoundError, ValueError) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
                 item.error = str(exc)
     return items
@@ -206,120 +173,89 @@ async def _sync_site_models(
 
 async def _sync_credential_models(
     state: AppState,
-    protocol_config: SiteProtocolConfig,
-    channels: list[ChannelConfig],
-    item: ChannelModelSyncResultItem,
-    credential_patterns: dict[str, str],
-    *,
     site: SiteConfig,
-    catalog: _ModelCatalog | None,
+    config: SiteProtocolConfig,
+    credential: SiteCredential,
+    address: SiteBaseUrl,
+    item: ChannelModelSyncResultItem,
+    catalogs: dict[tuple[str, str], UpstreamModelList | ModelDiscoveryError],
     context_windows: dict[str, int],
-) -> _ModelCatalog | None:
-    pattern = credential_patterns.get(item.credential_id, "").strip()
+) -> None:
+    pattern = credential.model_pattern.strip()
     if not pattern:
-        return None
+        return
     if classify_model_pattern(pattern) is ModelPatternKind.INVALID:
         raise ValueError("invalid model pattern")
-    credential_channels = [
-        credential_channel
-        for channel in channels
-        if (credential_channel := channel_for_credential(channel, item.credential_id))
-    ]
-    # Per-model protocols mix channels on one URL; the OpenAI-compatible list
-    # suits every relay, so native Anthropic or Gemini lists only go last.
-    fetch_channel = min(
-        credential_channels,
-        key=lambda channel: channel.protocol in NATIVE_LISTING_PROTOCOLS,
-        default=None,
-    )
-    if fetch_channel is None:
-        raise ValueError("no usable credential for model discovery")
-    if catalog is None:
-        # 通用目录失败时保留旧模型，不能改用专用地址把全目录锁为单一协议。
-        if fetch_channel.endpoint_kind not in {"default", "china", "protocol"} and any(
-            url.kind in {"default", "china", "protocol"}
-            and any(
-                config.base_url_id == url.id
-                and item.credential_id in config.credential_ids
-                for config in site.protocols
-            )
+    source = next(
+        (
+            url
             for url in site.base_urls
-        ):
-            raise ValueError("no usable shared model catalog")
-        upstream_models = await fetch_upstream_models(fetch_channel)
-        pinned = ENDPOINT_KIND_PROTOCOLS.get(fetch_channel.endpoint_kind)
-        existing_protocols: dict[str, set[ProtocolKind]] = defaultdict(set)
-        for config in site.protocols:
-            for model in config.models:
-                if (
-                    model.credential_id == item.credential_id
-                    and model.protocol is not None
-                ):
-                    existing_protocols[model.model_name].add(model.protocol)
-        preferred_protocols = {
-            name: sorted(protocols, key=lambda protocol: protocol.value)[0]
-            for name, protocols in existing_protocols.items()
-        }
-        protocols = {
-            model.name: preferred_protocols.get(model.name)
-            or resolve_onboard_protocol(
-                model.name,
-                pinned=pinned,
-                declared=(
-                    *model.protocols,
-                    *(
-                        (fetch_channel.protocol,)
-                        if fetch_channel.protocol in NATIVE_LISTING_PROTOCOLS
-                        else ()
-                    ),
-                ),
-                configured=protocol_config.protocols,
-            )
-            for model in upstream_models
-        }
-        catalog = _ModelCatalog(
-            models=upstream_models,
-            protocols=protocols,
-            existing_protocols={
-                name: frozenset(protocols)
-                for name, protocols in existing_protocols.items()
-            },
+            if url.kind == "models"
+            and (credential.base_url_ids is None or url.id in credential.base_url_ids)
+        ),
+        address,
+    )
+    catalog_key = (source.id, credential.id)
+    catalog = catalogs.get(catalog_key)
+    if catalog is None:
+        listing_protocol = ENDPOINT_KIND_PROTOCOLS.get(
+            source.kind, ProtocolKind.OPENAI_CHAT
         )
-    upstream_models, protocols = catalog.models, catalog.protocols
-    upstream_names: set[str] = set()
-    for model in upstream_models:
-        existing_protocols = catalog.existing_protocols.get(model.name)
-        if existing_protocols:
-            matches_endpoint = any(
-                resolve_model_base_url_id(
-                    site.base_urls,
-                    site.credentials,
-                    item.credential_id,
-                    protocol,
-                )
-                == protocol_config.base_url_id
-                for protocol in existing_protocols
-            )
-        else:
-            matches_endpoint = (
-                resolve_model_base_url_id(
-                    site.base_urls,
-                    site.credentials,
-                    item.credential_id,
-                    protocols[model.name],
-                )
-                == protocol_config.base_url_id
-            )
-        if matches_endpoint:
-            upstream_names.add(model.name)
+        channel = ChannelConfig(
+            id=compose_runtime_channel_id(config.id, listing_protocol),
+            site_id=site.id,
+            site_tags=list(site.tags),
+            name=site.name,
+            protocol=listing_protocol,
+            base_url=source.url,
+            endpoint_kind=source.kind,
+            model_list_url=source.url if source.kind == "models" else None,
+            api_key=credential.api_key,
+            keys=[
+                {
+                    "id": credential.id,
+                    "key": credential.api_key,
+                    "remark": credential.name,
+                }
+            ],
+            headers=site.headers,
+            proxy_mode=site.proxy_mode,
+            channel_proxy=site.channel_proxy,
+        )
+        try:
+            catalog = await fetch_upstream_model_list(channel)
+        except ModelDiscoveryError as exc:
+            # 同一次同步内，共用目录失败也要复用，避免后续出口改用另一份目录。
+            catalogs[catalog_key] = exc
+            raise
+        catalogs[catalog_key] = catalog
+    if isinstance(catalog, ModelDiscoveryError):
+        raise catalog
+
+    existing_protocols: dict[str, set[ProtocolKind]] = defaultdict(set)
+    for model in config.models:
+        if model.credential_id == credential.id and model.protocol is not None:
+            existing_protocols[model.model_name].add(model.protocol)
+    pinned = ENDPOINT_KIND_PROTOCOLS.get(address.kind)
+    protocols = {
+        model.name: model_list_protocols(model, catalog.protocol, source.kind)
+        for model in catalog.models
+    }
+    if pinned is not None:
+        protocols = {
+            name: (pinned,)
+            for name, declared in protocols.items()
+            if pinned in existing_protocols.get(name, declared)
+        }
+    upstream_names = set(protocols)
     changes = await state.channel_store.sync_upstream_models(
-        protocol_config.id,
-        item.credential_id,
+        config.id,
+        credential.id,
         upstream_names=upstream_names,
         upstream_pattern=pattern,
         upstream_context_windows={
             model.name: model.context_window
-            for model in upstream_models
+            for model in catalog.models
             if model.context_window is not None
         },
         upstream_protocols=protocols,
@@ -334,4 +270,3 @@ async def _sync_credential_models(
     item.restored = changes.restored
     if changes.added or changes.missing or changes.restored:
         item.status = ChannelModelSyncStatus.UPDATED
-    return catalog

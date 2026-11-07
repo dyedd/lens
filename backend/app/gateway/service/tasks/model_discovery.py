@@ -7,10 +7,15 @@ import httpx
 
 from ....core.context_windows import parse_upstream_model_context_window
 from ....core.errors import ModelDiscoveryError
-from ....core.model_protocols import parse_declared_protocols
+from ....core.model_protocols import (
+    ENDPOINT_KIND_PROTOCOLS,
+    parse_declared_protocols,
+    resolve_onboard_protocol,
+)
 from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
+from ....models.sites import SiteBaseUrlKind
 from ....models.upstream_rules import UpstreamHeadersConfig
 from ....plugins.contract import UpstreamCall
 from ....plugins.runtime import apply_credential_hooks, system_run
@@ -52,10 +57,40 @@ class UpstreamModelList:
     models: list[UpstreamModel]
 
 
+def model_list_protocols(
+    model: UpstreamModel, listing_protocol: ProtocolKind, endpoint_kind: SiteBaseUrlKind
+) -> tuple[ProtocolKind, ...]:
+    if endpoint_kind == "models" and model.protocols:
+        return model.protocols
+    return (
+        resolve_onboard_protocol(
+            model.name,
+            pinned=ENDPOINT_KIND_PROTOCOLS.get(endpoint_kind),
+            declared=(
+                *model.protocols,
+                *(
+                    (listing_protocol,)
+                    if listing_protocol in NATIVE_LISTING_PROTOCOLS
+                    else ()
+                ),
+            ),
+        ),
+    )
+
+
 async def fetch_upstream_model_list(
-    channel: ChannelConfig, protocols: tuple[ProtocolKind, ...] = LISTING_PROTOCOLS
+    channel: ChannelConfig, protocols: tuple[ProtocolKind, ...] | None = None
 ) -> UpstreamModelList:
     """List models with the first listing protocol the upstream accepts."""
+    if protocols is None:
+        pinned = ENDPOINT_KIND_PROTOCOLS.get(channel.endpoint_kind)
+        protocols = (
+            (pinned,)
+            if pinned in NATIVE_LISTING_PROTOCOLS
+            else (ProtocolKind.OPENAI_CHAT,)
+            if pinned is not None
+            else LISTING_PROTOCOLS
+        )
     errors: list[ModelDiscoveryError] = []
     for protocol in protocols:
         try:

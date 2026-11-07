@@ -20,16 +20,16 @@ import {
 } from "@/lib/credentialLabels";
 import { headerDraftToRules } from "@/lib/upstreamRules";
 import { headerDraftsFromJson } from "./channelAdvancedJson";
+import { acceptApiKeyDrafts } from "./channelForm";
 import {
-  acceptApiKeyDrafts,
-  activeBaseUrlValue,
-  activeSelectedCredentialIds,
-} from "./channelForm";
-import { rebuildProtocolConfigs } from "./channelFormConversion";
+  endpointSupportsProtocol,
+  rebuildProtocolConfigs,
+} from "./channelFormConversion";
 import {
   aggregateModelGroupKey,
   escapeModelName,
   mergeModelPatterns,
+  modelSourceKey,
   protocolConfigModelKey,
 } from "./channelModels";
 import type { FormState, Locale, PickerModelItem } from "./channelTypes";
@@ -43,10 +43,9 @@ export type RemoteModelItem = PickerModelItem & {
 
 export type RemoteModelCatalog = {
   items: RemoteModelItem[];
-  boundNames: Set<string>;
+  boundSources: Set<string>;
   /** Distinct keys queried across every URL. */
   credentialCount: number;
-  hasMultipleBaseUrls: boolean;
 };
 
 const DETECTION_CHUNK_SIZE = 1000;
@@ -91,31 +90,59 @@ export function useChannelModelPicker({
     const headers = headerDraftToRules(
       headerDraftsFromJson(editor.headersJson) ?? [],
     );
-    const targets = editor.protocolConfigs.flatMap((config) => {
-      const credentialIds = new Set(
-        activeSelectedCredentialIds(editor, config),
-      );
-      const baseUrl = activeBaseUrlValue(editor, config).trim();
-      if (!credentialIds.size || !baseUrl) return [];
-      const payload: SiteModelFetchPayload = {
-        base_url: baseUrl,
-        endpoint_kind:
-          editor.base_urls.find((item) => item.id === config.base_url_id)
-            ?.kind ?? "default",
-        headers,
-        proxy_mode: editor.proxy_mode,
-        channel_proxy: editor.channel_proxy.trim(),
-        credentials: editor.credentials
-          .map((item, index) => ({
-            id: item.id,
-            name: item.name.trim() || fallbackCredentialName(index),
-            api_key: item.api_key.trim(),
-          }))
-          .filter((item) => item.api_key && credentialIds.has(item.id)),
-        credential_ids: [...credentialIds],
-      };
-      return [{ protocolConfigId: config.id, baseUrl, payload }];
-    });
+    const targetsBySource = new Map<
+      string,
+      {
+        configs: typeof editor.protocolConfigs;
+        payload: SiteModelFetchPayload;
+      }
+    >();
+    for (const config of editor.protocolConfigs) {
+      const address = editor.base_urls.find(
+        (url) => url.id === config.base_url_id,
+      )!;
+      for (const credentialId of config.credential_ids) {
+        const index = editor.credentials.findIndex(
+          (item) => item.id === credentialId,
+        );
+        const credential = editor.credentials[index];
+        const source =
+          editor.base_urls.find(
+            (url) =>
+              url.kind === "models" &&
+              url.url.trim() &&
+              (credential.base_url_ids === null ||
+                credential.base_url_ids.includes(url.id)),
+          ) ?? address;
+        const key = JSON.stringify([source.id, credentialId]);
+        const existing = targetsBySource.get(key);
+        if (existing) {
+          existing.configs.push(config);
+          continue;
+        }
+        targetsBySource.set(key, {
+          configs: [config],
+          payload: {
+            base_url_id: source.id,
+            base_url: source.url.trim(),
+            endpoint_kind: source.kind,
+            headers,
+            proxy_mode: editor.proxy_mode,
+            channel_proxy: editor.channel_proxy.trim(),
+            credentials: [
+              {
+                id: credential.id,
+                name: credential.name.trim() || fallbackCredentialName(index),
+                api_key: credential.api_key.trim(),
+                base_url_ids: credential.base_url_ids,
+              },
+            ],
+            credential_ids: [credential.id],
+          },
+        });
+      }
+    }
+    const targets = [...targetsBySource.values()];
     if (!targets.length) {
       toast.error(
         locale === "zh-CN"
@@ -140,26 +167,46 @@ export function useChannelModelPicker({
       const credentialIndexById = new Map(
         editor.credentials.map((item, index) => [item.id, index] as const),
       );
-      const items = results.flatMap((result, index) =>
+      const items: RemoteModelItem[] = results.flatMap((result, index) =>
         result.status === "fulfilled"
-          ? result.value.map((item) => {
-              const credentialIndex =
-                credentialIndexById.get(item.credential_id) ?? -1;
+          ? result.value.flatMap((item) => {
+              const credentialIndex = credentialIndexById.get(
+                item.credential_id,
+              )!;
               const credential = editor.credentials[credentialIndex];
-              return {
-                protocol_config_id: targets[index].protocolConfigId,
-                credential_id: item.credential_id,
-                model_name: item.model_name,
-                protocol: item.protocol,
-                context_window: item.context_window,
-                credentialName: credential
-                  ? credentialLabel(credential, credentialIndex, locale)
-                  : item.credential_name,
-                credentialTitle: credential
-                  ? formatCredentialTitle(credential, credentialIndex, locale)
-                  : item.credential_name,
-                baseUrl: targets[index].baseUrl,
-              };
+              return targets[index].configs.flatMap((config) => {
+                const address = editor.base_urls.find(
+                  (url) => url.id === config.base_url_id,
+                )!;
+                const existing = config.models.find(
+                  (model) =>
+                    model.credential_id === item.credential_id &&
+                    model.model_name === item.model_name,
+                );
+                const protocols =
+                  targets[index].payload.endpoint_kind === "models"
+                    ? (existing?.protocols ?? [item.protocol]).filter(
+                        (protocol) =>
+                          endpointSupportsProtocol(address.kind, [protocol]),
+                      )
+                    : [item.protocol];
+                return protocols.map((protocol) => ({
+                  ...item,
+                  protocol,
+                  protocol_config_id: config.id,
+                  credentialName: credentialLabel(
+                    credential,
+                    credentialIndex,
+                    locale,
+                  ),
+                  credentialTitle: formatCredentialTitle(
+                    credential,
+                    credentialIndex,
+                    locale,
+                  ),
+                  baseUrl: address.url,
+                }));
+              });
             })
           : [],
       );
@@ -181,16 +228,27 @@ export function useChannelModelPicker({
         );
       }
       return {
-        items,
-        boundNames: new Set(
+        items: [
+          ...new Map(
+            items.map((item) => [modelSourceKey(item), item]),
+          ).values(),
+        ],
+        boundSources: new Set(
           editor.protocolConfigs.flatMap((config) =>
-            config.models.map((model) => model.model_name),
+            config.models.flatMap((model) =>
+              model.protocols.map((protocol) =>
+                modelSourceKey({
+                  ...model,
+                  protocol_config_id: config.id,
+                  protocol,
+                }),
+              ),
+            ),
           ),
         ),
         credentialCount: new Set(
           targets.flatMap((target) => target.payload.credential_ids),
         ).size,
-        hasMultipleBaseUrls: targets.length > 1,
       };
     } finally {
       if (catalogSignal.current === signal) {
@@ -202,98 +260,94 @@ export function useChannelModelPicker({
 
   function importRemoteModels(items: PickerModelItem[]) {
     if (detectionController.current || !items.length) return;
-    const editor = { ...form, protocolConfigs: rebuildProtocolConfigs(form) };
-    // 优先使用通用目录，避免专用地址把整个目录都归为同一协议。
-    const sources = new Map<string, PickerModelItem>();
-    const sourcePriority = (item: PickerModelItem) => {
-      const config = editor.protocolConfigs.find(
-        (config) => config.id === item.protocol_config_id,
-      );
-      const kind = editor.base_urls.find(
-        (url) => url.id === config?.base_url_id,
-      )?.kind;
-      return kind === "china"
-        ? 2
-        : kind === "default" || kind === "protocol"
-          ? 1
-          : 0;
-    };
-    for (const item of items) {
-      const key = JSON.stringify([item.credential_id, item.model_name]);
-      const current = sources.get(key);
-      if (!current || sourcePriority(item) > sourcePriority(current))
-        sources.set(key, item);
-    }
-    items = [...sources.values()];
+    items = [
+      ...new Map(items.map((item) => [modelSourceKey(item), item])).values(),
+    ];
     const additionsByCredential = new Map<string, string[]>();
     for (const item of items) {
       const names = additionsByCredential.get(item.credential_id) ?? [];
       names.push(escapeModelName(item.model_name));
       additionsByCredential.set(item.credential_id, names);
     }
-    const selectedContexts = new Map(
-      items.map((item) => [
-        JSON.stringify([item.credential_id, item.model_name]),
-        item.context_window,
-      ]),
+    const existingSources = new Set(
+      form.protocolConfigs.flatMap((config) =>
+        config.models.map((model) => protocolConfigModelKey(config, model)),
+      ),
+    );
+    const newModels = items.filter(
+      (item) =>
+        !existingSources.has(
+          protocolConfigModelKey({ id: item.protocol_config_id }, item),
+        ),
+    );
+    const addedSources = new Set(
+      newModels.map((item) =>
+        protocolConfigModelKey({ id: item.protocol_config_id }, item),
+      ),
     );
     setForm((current) => {
-      const existing = new Set(
-        current.protocolConfigs.flatMap((config) =>
-          config.models.map((model) =>
-            JSON.stringify([model.credential_id, model.model_name]),
-          ),
-        ),
-      );
-      const next = {
+      const configs = rebuildProtocolConfigs(current);
+      return {
         ...current,
         credentials: current.credentials.map((credential) => {
           const additions = additionsByCredential.get(credential.id);
           return additions
             ? {
                 ...credential,
-                model_pattern: mergeModelPatterns(
-                  credential.model_pattern,
-                  additions,
-                ),
+                model_pattern: mergeModelPatterns(credential.model_pattern, [
+                  ...new Set(additions),
+                ]),
               }
             : credential;
         }),
-        protocolConfigs: rebuildProtocolConfigs(current).map((config) => {
-          const models = config.models.map((model) => {
-            const contextWindow = selectedContexts.get(
-              JSON.stringify([model.credential_id, model.model_name]),
+        protocolConfigs: configs.map((config) => {
+          const models = [...config.models];
+          for (const item of items) {
+            if (
+              item.protocol_config_id !== config.id ||
+              !config.credential_ids.includes(item.credential_id)
+            )
+              continue;
+            const index = models.findIndex(
+              (model) =>
+                model.credential_id === item.credential_id &&
+                model.model_name === item.model_name,
             );
-            return model.context_window === null && contextWindow != null
-              ? { ...model, context_window: contextWindow }
-              : model;
-          });
-          const additions = items.flatMap((item) => {
-            const key = JSON.stringify([item.credential_id, item.model_name]);
-            if (item.protocol_config_id !== config.id || existing.has(key))
-              return [];
-            existing.add(key);
-            return [
-              {
-                credential_id: item.credential_id,
-                model_name: item.model_name,
-                enabled: true,
-                protocols: [item.protocol],
-                modelIdsByProtocol: {},
-                context_window: item.context_window,
-                upstream_context_window: null,
-              },
-            ];
-          });
-          return { ...config, models: [...models, ...additions] };
+            if (index >= 0) {
+              const existing = models[index];
+              if (!existing.protocols.includes(item.protocol))
+                models[index] = {
+                  ...existing,
+                  protocols: [...existing.protocols, item.protocol],
+                };
+              continue;
+            }
+            const member = configs
+              .flatMap((entry) => entry.models)
+              .find(
+                (model) =>
+                  model.credential_id === item.credential_id &&
+                  model.model_name === item.model_name,
+              );
+            const model = {
+              credential_id: item.credential_id,
+              model_name: item.model_name,
+              enabled: member?.enabled ?? true,
+              protocols: [item.protocol],
+              modelIdsByProtocol: {},
+              context_window: item.context_window,
+              upstream_context_window: null,
+            };
+            models.push(model);
+          }
+          return { ...config, models };
         }),
       };
-      return { ...next, protocolConfigs: rebuildProtocolConfigs(next) };
     });
 
     const contextNames = [
       ...new Set(
-        items
+        newModels
           .filter((item) => item.context_window === null)
           .map((item) => item.model_name),
       ),
@@ -332,12 +386,9 @@ export function useChannelModelPicker({
               protocolConfigs: current.protocolConfigs.map((config) => ({
                 ...config,
                 models: config.models.map((model) => {
-                  const key = JSON.stringify([
-                    model.credential_id,
-                    model.model_name,
-                  ]);
+                  const key = protocolConfigModelKey(config, model);
                   const contextWindow = windows[model.model_name];
-                  return sources.has(key) &&
+                  return addedSources.has(key) &&
                     model.context_window === null &&
                     contextWindow != null
                     ? { ...model, context_window: contextWindow }

@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
+from .credential_scopes import parse_legacy_credential_scopes
 from .protocols import ChannelProxyMode, ProtocolKind
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel, validate_model_pattern
@@ -93,7 +94,7 @@ class SiteCredential(StrictBaseModel):
     name: str
     api_key: str = Field(min_length=1)
     sort_order: int = Field(default=0, ge=0)
-    base_url_id: str = ""
+    base_url_ids: list[str] | None
     # Whole-name filter deciding which upstream models this key keeps. Stored
     # values are validated on input only, so a bad row never breaks a read.
     model_pattern: str = ""
@@ -110,7 +111,7 @@ class SiteCredentialInput(StrictBaseModel):
     id: str | None = None
     name: str
     api_key: str = Field(min_length=1)
-    base_url_id: str = ""
+    base_url_ids: list[str] | None
     model_pattern: str = Field(default="")
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
@@ -119,10 +120,12 @@ class SiteCredentialInput(StrictBaseModel):
     _validate_model_pattern = field_validator("model_pattern")(
         lambda value: validate_model_pattern(value)
     )
+    _validate_base_url_ids = field_validator("base_url_ids")(
+        lambda value: canonicalize_text_list(value) if value else value
+    )
 
     @model_validator(mode="after")
     def validate_rate_config(self) -> "SiteCredentialInput":
-        self.base_url_id = self.base_url_id.strip()
         self.rate_protocol_config_id = self.rate_protocol_config_id.strip()
         self.rate_group = self.rate_group.strip()
         if self.rate_source == "none":
@@ -176,6 +179,10 @@ class SiteProtocolConfigInput(StrictBaseModel):
 
 
 class SiteConfig(StrictBaseModel):
+    _parse_legacy_scopes = model_validator(mode="before")(
+        parse_legacy_credential_scopes
+    )
+
     id: str
     name: str
     enabled: bool
@@ -191,6 +198,10 @@ class SiteConfig(StrictBaseModel):
 
 
 class SiteCreate(StrictBaseModel):
+    _parse_legacy_scopes = model_validator(mode="before")(
+        parse_legacy_credential_scopes
+    )
+
     name: str
     tags: SiteTags = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
@@ -203,6 +214,10 @@ class SiteCreate(StrictBaseModel):
 
 
 class SiteUpdate(StrictBaseModel):
+    _parse_legacy_scopes = model_validator(mode="before")(
+        parse_legacy_credential_scopes
+    )
+
     name: str
     tags: SiteTags = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT

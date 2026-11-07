@@ -734,7 +734,7 @@ def _create_sync_site(client, admin_headers, payload: dict[str, Any]) -> str:
 
 
 def _patch_upstream_models(monkeypatch, fetch: Any) -> None:
-    import app.gateway.service.tasks.model_sync as model_sync
+    import app.gateway.service.tasks.model_discovery as discovery
     from app.gateway.service.tasks.model_discovery import UpstreamModel
 
     async def fetch_models(channel: Any) -> list[UpstreamModel]:
@@ -743,7 +743,7 @@ def _patch_upstream_models(monkeypatch, fetch: Any) -> None:
             for item in await fetch(channel)
         ]
 
-    monkeypatch.setattr(model_sync, "fetch_upstream_models", fetch_models)
+    monkeypatch.setattr(discovery, "fetch_upstream_models", fetch_models)
 
 
 def _run_model_sync(client, admin_headers, **body: Any) -> dict[str, Any]:
@@ -1093,7 +1093,7 @@ def test_channel_model_sync_stores_a_protocol_per_new_model(
 
 
 @pytest.mark.parametrize("china_mode", ["shared", "owned", "absent"])
-def test_multi_url_models_use_one_matching_endpoint_through_save_and_sync(
+def test_multi_url_models_keep_each_source_through_save_and_sync(
     client,
     admin_headers,
     monkeypatch,
@@ -1156,6 +1156,8 @@ def test_multi_url_models_use_one_matching_endpoint_through_save_and_sync(
 
     async def handler(request: httpx.Request) -> httpx.Response:
         fetched.append(request.url.host)
+        if request.url.host == "claude.example":
+            return httpx.Response(200, json={"data": [{"id": "claude-sonnet-4-5"}]})
         return httpx.Response(
             200,
             json={
@@ -1184,22 +1186,18 @@ def test_multi_url_models_use_one_matching_endpoint_through_save_and_sync(
 
     try:
         expected = {
-            "main": set() if china_mode == "shared" else {("gpt-4o", "openai_chat")},
+            "main": {("gpt-4o", "openai_chat"), ("claude-sonnet-4-5", "anthropic")},
             "claude": {("claude-sonnet-4-5", "anthropic")},
         }
         if china_mode != "absent":
             expected["china"] = {("gpt-4o", "openai_chat")}
         assert stored() == expected
-        for url_id in (
-            ["china"]
-            if china_mode == "shared"
-            else ["main", "china"]
-            if china_mode == "owned"
-            else ["main"]
-        ):
-            expected[url_id].add(("text-embedding-3-small", "openai_embedding"))
-        if china_mode == "owned":
-            expected["china"].add(("claude-sonnet-4-5", "anthropic"))
+        expected["main"].add(("text-embedding-3-small", "openai_embedding"))
+        if china_mode != "absent":
+            expected["china"] |= {
+                ("text-embedding-3-small", "openai_embedding"),
+                ("claude-sonnet-4-5", "anthropic"),
+            }
         for _ in range(2):
             result = _run_model_sync(client, admin_headers, site_ids=[site_id])
             assert {item["status"] for item in result["items"]} <= {
@@ -1208,8 +1206,8 @@ def test_multi_url_models_use_one_matching_endpoint_through_save_and_sync(
             }
             assert stored() == expected
         assert fetched.count("china.example") == (0 if china_mode == "absent" else 2)
-        assert fetched.count("main.example") == (0 if china_mode == "shared" else 2)
-        assert "claude.example" not in fetched
+        assert fetched.count("main.example") == 2
+        assert fetched.count("claude.example") == 2
         groups = client.post(
             "/api/admin/model-group-candidates",
             headers=admin_headers,
@@ -1231,13 +1229,13 @@ def test_multi_url_models_use_one_matching_endpoint_through_save_and_sync(
         )
         assert update.status_code == 200, update.text
         assert sum(len(models) for models in stored().values()) == (
-            3 if china_mode == "owned" else 2
+            3 if china_mode == "absent" else 4
         )
     finally:
         run_async(upstream.aclose())
 
 
-def test_protocol_endpoint_wins_shared_model_placement_through_save_and_sync(
+def test_protocol_endpoint_preserves_both_model_sources_through_save_and_sync(
     client,
     admin_headers,
     monkeypatch,
@@ -1277,7 +1275,10 @@ def test_protocol_endpoint_wins_shared_model_placement_through_save_and_sync(
             for config in site["protocols"]
         }
 
-    assert stored() == {"main": set(), "protocol": {("shared-model", "openai_chat")}}
+    assert stored() == {
+        "main": {("shared-model", "openai_chat")},
+        "protocol": {("shared-model", "openai_chat")},
+    }
 
     async def fake_fetch(_channel: Any) -> list[str]:
         return ["shared-model"]
@@ -1287,7 +1288,10 @@ def test_protocol_endpoint_wins_shared_model_placement_through_save_and_sync(
     result = _run_model_sync(client, admin_headers, site_ids=[site_id])
 
     assert {item["status"] for item in result["items"]} <= {"updated", "unchanged"}
-    assert stored() == {"main": set(), "protocol": {("shared-model", "openai_chat")}}
+    assert stored() == {
+        "main": {("shared-model", "openai_chat")},
+        "protocol": {("shared-model", "openai_chat")},
+    }
 
 
 def test_channel_model_sync_keeps_same_name_targets_for_distinct_protocols(
@@ -1504,9 +1508,10 @@ def test_channel_model_sync_handles_each_key_catalog_independently(
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if (
-            request.headers["authorization"]
-            != f"Bearer {payload['credentials'][0]['api_key']}"
-        ):
+            request.headers.get("authorization", "").removeprefix("Bearer ")
+            or request.headers.get("x-api-key")
+            or request.headers.get("x-goog-api-key")
+        ) != payload["credentials"][0]["api_key"]:
             return httpx.Response(200, json={"data": [{"id": "gpt-4o"}]})
         if catalog_mode == "upstream-error":
             return httpx.Response(503, json={"error": {"message": "unavailable"}})
@@ -1647,3 +1652,347 @@ def test_sync_removes_group_members_when_a_rule_stops_matching(
     assert _stored_models(client, admin_headers) == set()
     group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
     assert (group["name"], group["items"]) == ("gpt-4o", [])
+
+
+def test_credential_address_scopes_keep_sources_and_restrict_requests(
+    client, admin_headers, monkeypatch, create_gateway_key
+) -> None:
+    from conftest import gateway_headers
+
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+    import app.gateway.service.tasks.model_discovery as discovery
+
+    payload = {
+        "name": "Scoped keys",
+        "base_urls": [
+            {"id": "main", "kind": "default", "url": "https://main.example/v1"},
+            {"id": "claude", "kind": "anthropic", "url": "https://claude.example/v1"},
+        ],
+        "credentials": [
+            {"id": "cred-a", "name": "A", "api_key": "test-a", "base_url_ids": None},
+            {
+                "id": "cred-b",
+                "name": "B",
+                "api_key": "test-b",
+                "base_url_ids": ["claude", "claude"],
+            },
+        ],
+        "protocols": [
+            {"id": "pc-main", "base_url_id": "main", "models": []},
+            {"id": "pc-claude", "base_url_id": "claude", "models": []},
+        ],
+    }
+    calls: list[tuple[str, str]] = []
+
+    def listing(request: httpx.Request) -> httpx.Response:
+        key = (
+            request.headers.get("authorization", "").removeprefix("Bearer ")
+            or request.headers["x-api-key"]
+        )
+        calls.append((request.url.host, key))
+        return httpx.Response(200, json={"data": [{"id": "scope-model"}]})
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(listing))
+    monkeypatch.setattr(discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        for config, address in zip(
+            payload["protocols"], payload["base_urls"], strict=True
+        ):
+            allowed = [
+                key
+                for key in payload["credentials"]
+                if key["base_url_ids"] is None or address["id"] in key["base_url_ids"]
+            ]
+            response = client.post(
+                "/api/admin/site-model-discoveries",
+                headers=admin_headers,
+                json={
+                    "base_url_id": address["id"],
+                    "base_url": address["url"],
+                    "endpoint_kind": address["kind"],
+                    "credentials": allowed,
+                    "credential_ids": [key["id"] for key in allowed],
+                },
+            )
+            assert response.status_code == 200, response.text
+            config["models"] = [
+                {key: model[key] for key in ("credential_id", "model_name", "protocol")}
+                for model in response.json()
+            ]
+        assert calls == [
+            ("main.example", "test-a"),
+            ("claude.example", "test-a"),
+            ("claude.example", "test-b"),
+        ]
+        denied = client.post(
+            "/api/admin/site-model-discoveries",
+            headers=admin_headers,
+            json={
+                "base_url_id": "main",
+                "base_url": payload["base_urls"][0]["url"],
+                "credentials": [payload["credentials"][1]],
+                "credential_ids": ["cred-b"],
+            },
+        )
+        assert denied.status_code == 400
+        assert len(calls) == 3
+    finally:
+        run_async(upstream.aclose())
+
+    site_id = _create_sync_site(client, admin_headers, payload)
+    site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert site["credentials"][1]["base_url_ids"] == ["claude"]
+    assert {
+        config["base_url_id"]: config["credential_ids"] for config in site["protocols"]
+    } == {
+        "main": ["cred-a"],
+        "claude": ["cred-a", "cred-b"],
+    }
+    assert sum(len(config["models"]) for config in site["protocols"]) == 3
+    group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
+    assert {item["credential_id"] for item in group["items"]} == {"cred-a", "cred-b"}
+    assert (
+        client.put(
+            f"/api/admin/model-groups/{group['id']}",
+            headers=admin_headers,
+            json={"strategy": "round_robin"},
+        ).status_code
+        == 200
+    )
+    routed: list[tuple[str, str]] = []
+
+    async def send(_client, request, *, stream, body_bytes):
+        url = httpx.URL(request.url)
+        routed.append((url.host, request.headers["x-api-key"]))
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={
+                "id": "msg-scope",
+                "type": "message",
+                "role": "assistant",
+                "model": "scope-model",
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    headers = gateway_headers(create_gateway_key())
+    for _ in range(4):
+        response = client.post(
+            "/v1/messages",
+            headers=headers,
+            json={
+                "model": "scope-model",
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 16,
+            },
+        )
+        assert response.status_code == 200, response.text
+    assert routed.count(("claude.example", "test-a")) == 2
+    assert routed.count(("claude.example", "test-b")) == 2
+
+    bundle = client.get("/api/admin/backups/export", headers=admin_headers).json()
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("scopes.json", json.dumps(bundle), "application/json")},
+    )
+    assert response.status_code == 200, response.text
+    restored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert restored["credentials"] == site["credentials"]
+    assert restored["protocols"] == site["protocols"]
+
+    legacy = json.loads(json.dumps(bundle))
+    legacy_site = legacy["sites"][0]
+    for credential in legacy_site["credentials"]:
+        credential.pop("base_url_ids")
+        credential["base_url_id"] = "" if credential["id"] == "cred-a" else "claude"
+    for config in legacy_site["protocols"]:
+        if config["base_url_id"] == "claude":
+            config["models"] = [
+                model
+                for model in config["models"]
+                if model["credential_id"] == "cred-b"
+            ]
+    for group in legacy["groups"]:
+        group["items"] = [
+            item
+            for item in group["items"]
+            if not (
+                item["credential_id"] == "cred-a"
+                and item["channel_id"].startswith("pc-claude_")
+            )
+        ]
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("legacy-scopes.json", json.dumps(legacy), "application/json")},
+    )
+    assert response.status_code == 200, response.text
+    legacy_restored = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert [
+        (key["id"], key["base_url_ids"]) for key in legacy_restored["credentials"]
+    ] == [
+        ("cred-a", ["main"]),
+        ("cred-b", ["claude"]),
+    ]
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("scopes.json", json.dumps(bundle), "application/json")},
+    )
+    assert response.status_code == 200, response.text
+
+    payload["base_urls"] = payload["base_urls"][:1]
+    payload["protocols"] = payload["protocols"][:1]
+    payload["credentials"][1]["base_url_ids"] = []
+    response = client.put(
+        f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+    )
+    assert response.status_code == 200, response.text
+    assert [
+        (key["id"], key["base_url_ids"]) for key in response.json()["credentials"]
+    ] == [
+        ("cred-a", None),
+        ("cred-b", []),
+    ]
+    assert response.json()["protocols"][0]["credential_ids"] == ["cred-a"]
+    group = client.get("/api/admin/model-groups", headers=admin_headers).json()[0]
+    assert {item["credential_id"] for item in group["items"]} == {"cred-a"}
+
+
+@pytest.mark.parametrize("use_catalog", [False, True])
+def test_model_sync_keeps_address_catalogs_and_reuses_only_allowed_listing(
+    client, admin_headers, monkeypatch, use_catalog
+) -> None:
+    import app.gateway.service.tasks.model_discovery as discovery
+
+    payload = {
+        "name": "Address catalogs",
+        "base_urls": [
+            {"id": "main", "kind": "default", "url": "https://main.example/v1"},
+            {"id": "a", "kind": "anthropic", "url": "https://a.example/v1"},
+            {"id": "b", "kind": "anthropic", "url": "https://b.example/v1"},
+            {"id": "list", "kind": "models", "url": "https://list.example/catalog"},
+        ],
+        "credentials": [
+            {
+                "id": "cred-a",
+                "name": "A",
+                "api_key": "test-a",
+                "base_url_ids": None if use_catalog else ["main", "a", "b"],
+                "model_pattern": "*",
+            },
+            {
+                "id": "cred-b",
+                "name": "B",
+                "api_key": "test-b",
+                "base_url_ids": ["b"],
+                "model_pattern": "*",
+            },
+        ],
+        "protocols": [
+            {"id": "pc-main", "base_url_id": "main", "models": []},
+            {"id": "pc-a", "base_url_id": "a", "models": []},
+            {"id": "pc-b", "base_url_id": "b", "models": []},
+        ],
+    }
+    site_id = _create_sync_site(client, admin_headers, payload)
+    failed = False
+    seen: list[tuple[str, str, str]] = []
+
+    def listing(request: httpx.Request) -> httpx.Response:
+        key = (
+            request.headers.get("authorization", "").removeprefix("Bearer ")
+            or request.headers.get("x-api-key")
+            or request.headers.get("x-goog-api-key")
+        )
+        seen.append((request.url.host, request.url.path, key))
+        if failed and (
+            request.url.host == "list.example" or request.url.host == "a.example"
+        ):
+            return httpx.Response(503, json={"error": {"message": "unavailable"}})
+        if request.url.host == "list.example":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "multi",
+                            "supported_endpoints": [
+                                "/v1/chat/completions",
+                                "/v1/messages",
+                            ],
+                        },
+                        {
+                            "id": "chat-only",
+                            "supported_endpoints": ["/v1/chat/completions"],
+                        },
+                    ]
+                },
+            )
+        return httpx.Response(
+            200, json={"data": [{"id": request.url.host + ("-next" if failed else "")}]}
+        )
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(listing))
+    monkeypatch.setattr(discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        run = _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert all(item["status"] == "updated" for item in run["items"])
+        first = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+        records = {
+            config["base_url_id"]: {
+                (model["credential_id"], model["model_name"], model["protocol"])
+                for model in config["models"]
+            }
+            for config in first["protocols"]
+        }
+        if use_catalog:
+            assert seen.count(("list.example", "/catalog", "test-a")) == 1
+            assert ("cred-a", "chat-only", "anthropic") not in records["a"]
+            assert records["a"] == {("cred-a", "multi", "anthropic")}
+            assert records["main"] == {
+                ("cred-a", "multi", "openai_chat"),
+                ("cred-a", "multi", "anthropic"),
+                ("cred-a", "chat-only", "openai_chat"),
+            }
+        else:
+            assert {host for host, _, _ in seen} == {
+                "main.example",
+                "a.example",
+                "b.example",
+            }
+            assert records["a"] == {("cred-a", "a.example", "anthropic")}
+            assert records["b"] == {
+                ("cred-a", "b.example", "anthropic"),
+                ("cred-b", "b.example", "anthropic"),
+            }
+        assert ("list.example", "/catalog", "test-b") not in seen
+
+        failed = True
+        seen.clear()
+        run = _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert any(item["status"] == "failed" for item in run["items"])
+        second = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+        after = {config["base_url_id"]: config for config in second["protocols"]}
+        before = {config["base_url_id"]: config for config in first["protocols"]}
+        assert after["a"]["models"] == before["a"]["models"]
+        if use_catalog:
+            assert after["main"]["models"] == before["main"]["models"]
+            assert {
+                model["model_name"]
+                for model in after["b"]["models"]
+                if model["credential_id"] == "cred-a"
+            } == {"multi"}
+            assert sum(host == "list.example" for host, _, _ in seen) == 3
+        assert {
+            model["model_name"]
+            for model in after["b"]["models"]
+            if model["credential_id"] == "cred-b"
+        } == {"b.example-next"}
+    finally:
+        run_async(upstream.aclose())

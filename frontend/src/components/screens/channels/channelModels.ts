@@ -1,5 +1,18 @@
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { FormModel, FormProtocolConfig } from "./channelTypes";
+import type {
+  FormModel,
+  FormProtocolConfig,
+  PickerModelItem,
+} from "./channelTypes";
+
+export function modelSourceKey(item: Omit<PickerModelItem, "context_window">) {
+  return JSON.stringify([
+    item.protocol_config_id,
+    item.credential_id,
+    item.model_name,
+    item.protocol,
+  ]);
+}
 
 /** Builds a stable model key scoped to a protocol configuration. */
 export function protocolConfigModelKey(

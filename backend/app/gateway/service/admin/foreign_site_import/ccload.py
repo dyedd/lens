@@ -114,7 +114,12 @@ def _build_site(
         for index, url in enumerate(urls)
     ]
     credentials = [
-        SiteImportCredentialInput(ref=f"c{index}", name=f"Key {index + 1}", api_key=key)
+        SiteImportCredentialInput(
+            ref=f"c{index}",
+            name=f"Key {index + 1}",
+            api_key=key,
+            base_url_refs=[url.ref for url in base_urls],
+        )
         for index, key in enumerate(api_keys)
     ]
     protocol_configs = [

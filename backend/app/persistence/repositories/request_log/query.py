@@ -39,7 +39,7 @@ from app.persistence.entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
-from app.persistence.json_columns import load_json_column
+from app.persistence.json_columns import load_base_url_ids, load_json_column
 
 from .agents import user_agent_sql_expression
 from .types import (
@@ -505,7 +505,7 @@ class RequestLogHydrator:
                     SiteCredentialEntity.id,
                     SiteCredentialEntity.site_id,
                     SiteCredentialEntity.name,
-                    SiteCredentialEntity.base_url_id,
+                    SiteCredentialEntity.base_url_ids_json,
                 )
                 .where(SiteCredentialEntity.site_id.in_(list(channels_by_site)))
                 .order_by(
@@ -516,9 +516,14 @@ class RequestLogHydrator:
             )
         ).all()
         credentials_by_site: dict[str, dict[str, tuple[str, int]]] = {}
-        credential_pairs_by_site: dict[str, list[tuple[str, str]]] = {}
+        credential_pairs_by_site: dict[str, list[tuple[str, list[str] | None]]] = {}
         credential_numbers_by_site: dict[str, int] = {}
-        for credential_id, site_id, credential_name, base_url_id in credential_rows:
+        for (
+            credential_id,
+            site_id,
+            credential_name,
+            base_url_ids_json,
+        ) in credential_rows:
             site_id_text = str(site_id)
             credential_numbers_by_site[site_id_text] = (
                 credential_numbers_by_site.get(site_id_text, 0) + 1
@@ -528,7 +533,7 @@ class RequestLogHydrator:
                 credential_numbers_by_site[site_id_text],
             )
             credential_pairs_by_site.setdefault(site_id_text, []).append(
-                (str(credential_id), str(base_url_id or ""))
+                (str(credential_id), load_base_url_ids(base_url_ids_json))
             )
         credential_counts: dict[str, int] = {}
         credential_metadata: dict[tuple[str, str], tuple[str, int]] = {}

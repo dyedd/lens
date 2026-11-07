@@ -1,8 +1,9 @@
 from typing import Literal
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
+from .credential_scopes import parse_legacy_credential_scopes
 from .protocols import ChannelProxyMode, ProtocolKind
 from .sites import (
     SiteBaseUrlKind,
@@ -28,9 +29,12 @@ class SiteImportCredentialInput(StrictBaseModel):
     ref: str
     name: str = ""
     api_key: str = Field(min_length=1)
-    base_url_ref: str = ""
+    base_url_refs: list[str] | None
 
     _require_non_empty_ref = field_validator("ref")(require_non_empty_text)
+    _validate_base_url_refs = field_validator("base_url_refs")(
+        lambda value: canonicalize_text_list(value) if value else value
+    )
 
 
 class SiteImportModelInput(StrictBaseModel):
@@ -63,6 +67,10 @@ class SiteImportProtocolInput(StrictBaseModel):
 
 
 class SiteImportItem(StrictBaseModel):
+    _parse_legacy_scopes = model_validator(mode="before")(
+        lambda value: parse_legacy_credential_scopes(value, reference_field="ref")
+    )
+
     name: str
     enabled: bool
     tags: SiteTags = Field(default_factory=list)

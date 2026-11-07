@@ -8,21 +8,6 @@ import type {
   FormState,
 } from "./channelTypes";
 
-/** Selects the first base URL. */
-function defaultBaseUrlId(items: Array<{ id: string }>) {
-  return items[0]?.id ?? "";
-}
-
-/** Keeps a valid base URL selection or chooses the default selection. */
-export function resolveBaseUrlId(
-  items: Array<{ id: string }>,
-  baseUrlId: string,
-) {
-  return items.some((item) => item.id === baseUrlId)
-    ? baseUrlId
-    : defaultBaseUrlId(items);
-}
-
 /** Resolves the active base URL value for a protocol configuration. */
 export function activeBaseUrlValue(
   form: Pick<FormState, "base_urls">,
@@ -81,7 +66,7 @@ export function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function emptyCredential(baseUrlId = ""): FormCredential {
+function emptyCredential(): FormCredential {
   return {
     id: createLocalId("credential"),
     name: "",
@@ -94,7 +79,7 @@ function emptyCredential(baseUrlId = ""): FormCredential {
     rate_observed_at: null,
     rate_last_synced_at: null,
     rate_last_error: "",
-    baseUrlId,
+    base_url_ids: null,
   };
 }
 
@@ -108,40 +93,15 @@ function parseApiKeyLines(value: string) {
   return keys;
 }
 
-function apiKeyDraft(form: FormState, baseUrlId: string) {
-  if (!baseUrlId) return form.newApiKeysLines;
-  return (
-    form.base_urls.find((item) => item.id === baseUrlId)?.newApiKeysLines ?? ""
-  );
-}
-
-function clearApiKeyDraft(form: FormState, baseUrlId: string): FormState {
-  if (!baseUrlId) return { ...form, newApiKeysLines: "" };
-  return {
-    ...form,
-    base_urls: form.base_urls.map((item) =>
-      item.id === baseUrlId ? { ...item, newApiKeysLines: "" } : item,
-    ),
-  };
-}
-
-/** Appends new keys for one URL. Keys already on that URL stay as they are. */
-function appendApiKeyLines(
-  credentials: FormCredential[],
-  lines: string,
-  baseUrlId: string,
-) {
-  const existing = new Set(
-    credentials
-      .filter((item) => item.baseUrlId === baseUrlId)
-      .map((item) => item.api_key.trim()),
-  );
+/** 批量添加密钥时保留已有 Key 的身份和配置。 */
+function appendApiKeyLines(credentials: FormCredential[], lines: string) {
+  const existing = new Set(credentials.map((item) => item.api_key.trim()));
   const added: FormCredential[] = [];
   for (const apiKey of parseApiKeyLines(lines)) {
     if (existing.has(apiKey)) continue;
     existing.add(apiKey);
     added.push({
-      ...emptyCredential(baseUrlId),
+      ...emptyCredential(),
       id: `pending-${createLocalId("credential")}`,
       api_key: apiKey,
     });
@@ -149,27 +109,24 @@ function appendApiKeyLines(
   return added.length ? [...credentials, ...added] : credentials;
 }
 
-/** Moves one URL's draft into the key list so each key can take a remark. */
-export function addApiKeyDraft(
-  form: FormState,
-  baseUrlId: string,
-): { form: FormState; added: number } {
-  const lines = apiKeyDraft(form, baseUrlId);
+/** 将输入草稿加入统一的 Key 列表。 */
+export function addApiKeyDraft(form: FormState): {
+  form: FormState;
+  added: number;
+} {
+  const lines = form.newApiKeysLines;
   const keys = parseApiKeyLines(lines);
   if (!keys.length) return { form, added: 0 };
-  const credentials = appendApiKeyLines(form.credentials, lines, baseUrlId);
+  const credentials = appendApiKeyLines(form.credentials, lines);
   return {
-    form: { ...clearApiKeyDraft(form, baseUrlId), credentials },
+    form: { ...form, newApiKeysLines: "", credentials },
     added: credentials.length - form.credentials.length,
   };
 }
 
 /** Moves every visible key draft into the list. */
 export function acceptApiKeyDrafts(form: FormState): FormState {
-  const separateUrls = form.base_urls.filter((url) => url.shareKeys === false);
-  let next = addApiKeyDraft(form, "").form;
-  for (const url of separateUrls) next = addApiKeyDraft(next, url.id).form;
-  return next;
+  return addApiKeyDraft(form).form;
 }
 
 /** Includes draft lines that have not been moved into the key list yet. */
@@ -212,8 +169,6 @@ export const emptyForm = (): FormState => {
         id: baseUrlId,
         url: "",
         kind: "default",
-        shareKeys: true,
-        newApiKeysLines: "",
       },
     ],
     credentials: [],

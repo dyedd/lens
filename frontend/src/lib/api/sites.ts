@@ -31,7 +31,7 @@ export type SiteCredential = {
   name: string;
   api_key: string;
   sort_order: number;
-  base_url_id: string;
+  base_url_ids: string[] | null;
   model_pattern: string;
   rate_source: "none" | "sub2api" | "newapi";
   rate_protocol_config_id: string;
@@ -45,7 +45,7 @@ export type SiteCredentialInput = {
   id?: string | null;
   name: string;
   api_key: string;
-  base_url_id?: string;
+  base_url_ids: string[] | null;
   /** Whole-name filter deciding which upstream models this key keeps. */
   model_pattern?: string;
   rate_source: "none" | "sub2api" | "newapi";
@@ -169,7 +169,7 @@ export type SiteBatchImportCredentialInput = {
   ref: string;
   name?: string;
   api_key: string;
-  base_url_ref?: string;
+  base_url_refs: string[] | null;
 };
 export type SiteBatchImportModelInput = {
   model_name: string;
@@ -243,6 +243,7 @@ export type SiteEndpointProbeResult = {
   error_message: string;
 };
 export type SiteModelFetchPayload = {
+  base_url_id: string;
   base_url: string;
   endpoint_kind?: SiteBaseUrlKind;
   /** Picks the list endpoint and auth headers; omitted, each one is tried. */
@@ -254,6 +255,7 @@ export type SiteModelFetchPayload = {
     id?: string | null;
     name: string;
     api_key: string;
+    base_url_ids: string[] | null;
   }[];
   credential_ids: string[];
 };
@@ -274,12 +276,18 @@ export type SiteModelProtocolDetectionResult = {
 };
 export type SiteModelTestPayload = {
   protocol: ProtocolKind;
+  base_url_id: string;
   base_url: string;
   headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
   param_override: ParamOverrideRule[];
-  credential: { id: string; name: string; api_key: string };
+  credential: {
+    id: string;
+    name: string;
+    api_key: string;
+    base_url_ids: string[] | null;
+  };
   model_name: string;
   prompt: string;
 };

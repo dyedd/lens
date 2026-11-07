@@ -69,6 +69,8 @@ def parse_metapi_sites(payload: dict[str, Any]) -> ParsedForeignSites:
             continue
 
         base_urls = _build_base_urls(primary_url, endpoints_by_site.get(site_id, []))
+        for credential in credentials:
+            credential.base_url_refs = [url.ref for url in base_urls]
         headers, header_warning = _parse_custom_headers(site.get("customHeaders"))
         platform = _site_platform(site)
         try:
@@ -191,6 +193,7 @@ def _build_credentials(
                 ref="c-site",
                 name=_unique_name("Site key"),
                 api_key=site_api_key,
+                base_url_refs=[],
             )
         )
 
@@ -214,6 +217,7 @@ def _build_credentials(
                     ref=f"c-{token.get('id')}",
                     name=_unique_name(candidate_name),
                     api_key=token_value,
+                    base_url_refs=[],
                 )
             )
     return credentials

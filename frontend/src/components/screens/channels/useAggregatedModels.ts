@@ -90,6 +90,7 @@ export function useAggregatedModels(
           credentialName: names.name,
           credentialTitle: names.title,
           baseUrl,
+          protocols: model.protocols,
         });
         group.testKey ??= memberKey;
       }

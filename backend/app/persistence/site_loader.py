@@ -28,7 +28,7 @@ from app.persistence.entities import (
 
 from ..core.context_windows import coerce_context_window
 from .group_rule_codec import parse_headers, parse_param_override
-from .json_columns import STRING_LIST, load_json_column
+from .json_columns import STRING_LIST, load_base_url_ids, load_json_column
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +63,8 @@ def protocols_from_bindings(
 
 def credential_pairs(
     credentials: list[SiteCredential],
-) -> list[tuple[str, str]]:
-    return [(item.id, item.base_url_id) for item in credentials]
+) -> list[tuple[str, list[str] | None]]:
+    return [(item.id, item.base_url_ids) for item in credentials]
 
 
 def build_site_configs(rows: SiteRows) -> list[SiteConfig]:
@@ -93,7 +93,7 @@ def build_site_configs(rows: SiteRows) -> list[SiteConfig]:
             name=row.name,
             api_key=row.api_key,
             sort_order=row.sort_order,
-            base_url_id=row.base_url_id,
+            base_url_ids=load_base_url_ids(row.base_url_ids_json),
             model_pattern=row.model_pattern,
             rate_source=rate.source if rate is not None else "none",
             rate_protocol_config_id=(
@@ -148,7 +148,7 @@ def build_site_configs(rows: SiteRows) -> list[SiteConfig]:
                 protocols=protocols_from_bindings(models, configured_protocols),
                 credential_ids=credential_ids_for_url(
                     [
-                        (item.id, item.base_url_id)
+                        (item.id, item.base_url_ids)
                         for item in credentials_by_site.get(row.site_id, [])
                     ],
                     row.base_url_id,
