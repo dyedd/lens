@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { AppLoadingScreen } from "@/components/ui/LoadingState";
 import type { AdminProfile } from "@/lib/api/app";
-import { ApiError, apiRequest } from "@/lib/api/client";
-import { clearStoredToken, getStoredToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/api/client";
+import { getStoredToken, SESSION_CACHE_KEY, signOut } from "@/lib/auth";
 
-const SESSION_CACHE_KEY = "lens_admin_profile_cache";
 const SESSION_CACHE_TTL_MS = 60_000;
 const SESSION_CACHE_VERSION = 1;
 
@@ -63,11 +62,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       );
     }
 
-    function clearCachedProfile() {
-      withSessionStorageFallback(
-        () => window.sessionStorage.removeItem(SESSION_CACHE_KEY),
-        undefined,
-      );
+    function handleStorage(event: StorageEvent) {
+      if (
+        event.storageArea === window.localStorage &&
+        (event.key === "lens_token" || event.key === null) &&
+        !getStoredToken()
+      ) {
+        signOut();
+      }
     }
 
     async function verify() {
@@ -88,22 +90,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           writeCachedProfile(profile);
           setState({ ready: true, profile });
         }
-      } catch (error) {
+      } catch {
         if (cancelled) {
           return;
-        }
-        if (error instanceof ApiError && error.status === 401) {
-          clearStoredToken();
-          clearCachedProfile();
         }
         navigate("/login", { replace: true });
       }
     }
 
     void verify();
+    window.addEventListener("storage", handleStorage);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("storage", handleStorage);
     };
   }, [navigate]);
 

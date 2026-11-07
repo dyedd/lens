@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextvars import ContextVar, Token
-from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from packaging import version
 
 from ...core.config import settings
 from ...core.db import create_engine, create_session_factory
 from ...core.time_zone import load_time_zone
-from ...core.version import read_system_version
 from ...models.plugins import PluginView
-from ...models.settings import SettingItem
+from ...models.settings import RuntimeSettings
 from ...persistence.backup_store import BackupStore
 from ...persistence.channel_store import ChannelStore
 from ...persistence.cronjob_store import CronjobSpec, CronjobStore
@@ -29,11 +27,6 @@ from ...persistence.repositories import (
     SettingsRepository,
     SiteCredentialRateRepository,
 )
-from ...persistence.settings_keys import (
-    SETTING_LATEST_VERSION,
-    SETTING_LATEST_VERSION_URL,
-    SETTING_VERSION_CHECK_AT,
-)
 from ...plugins import PluginRegistry
 from ...plugins.builtin import BUILTIN_PLUGINS
 from ...plugins.discovery import discover_external_plugins
@@ -41,6 +34,7 @@ from ...plugins.observer_queue import ObserverQueue
 from ...plugins.stats import PluginStats
 from ..cronjob_runner import CronjobRunner, TaskHandler
 from ..router import GatewayRouter
+from ..router.cooldown import CooldownPolicy
 
 TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
@@ -135,6 +129,49 @@ class AppState:
             handlers=self._cronjob_handlers(),
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
+        )
+
+    def apply_router_settings(self, runtime: RuntimeSettings) -> None:
+        self.router.configure(
+            health_scoring_enabled=runtime["health_scoring_enabled"],
+            health_window_seconds=runtime["health_window_seconds"],
+            health_penalty_weight=runtime["health_penalty_weight"],
+            health_min_samples=runtime["health_min_samples"],
+            routing_environment_signature=(
+                runtime["proxy_url"],
+                json.dumps(
+                    runtime["upstream_headers_config"].model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            ),
+            cooldown_policy=CooldownPolicy(
+                failure_threshold=runtime["circuit_breaker_threshold"],
+                failure_window_seconds=runtime[
+                    "circuit_breaker_failure_window_seconds"
+                ],
+                timeout_threshold=runtime["circuit_breaker_timeout_threshold"],
+                network_threshold=runtime["circuit_breaker_network_threshold"],
+                server_cooldown_seconds=runtime["circuit_breaker_cooldown"],
+                auth_cooldown_seconds=runtime["circuit_breaker_auth_cooldown"],
+                not_found_cooldown_seconds=runtime[
+                    "circuit_breaker_not_found_cooldown"
+                ],
+                rate_limit_cooldown_seconds=runtime[
+                    "circuit_breaker_rate_limit_cooldown"
+                ],
+                timeout_cooldown_seconds=runtime["circuit_breaker_timeout_cooldown"],
+                network_cooldown_seconds=runtime["circuit_breaker_network_cooldown"],
+                backoff_multiplier=runtime["circuit_breaker_backoff_multiplier"],
+                max_cooldown_seconds=runtime["circuit_breaker_max_cooldown"],
+                escalate_threshold=runtime["circuit_breaker_escalate_threshold"],
+                escalate_window_seconds=runtime[
+                    "circuit_breaker_escalate_window_seconds"
+                ],
+                detection_rules=runtime["cooldown_detection_rules"],
+            ),
+            affinity_seconds=runtime["failover_affinity_seconds"],
         )
 
     def _cronjob_specs(self) -> tuple[CronjobSpec, ...]:
@@ -250,43 +287,9 @@ class AppState:
         await sync_all_site_credential_rates(self)
 
     async def _check_version_update(self) -> None:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                "https://api.github.com/repos/dyedd/lens/releases/latest",
-                headers={"Accept": "application/vnd.github.v3+json"},
-            )
-            response.raise_for_status()
-            data = response.json()
+        from .system_info import sync_version
 
-            latest_version = data.get("tag_name", "").lstrip("v")
-            release_url = data.get("html_url", "")
-
-            current_version = read_system_version()
-
-            if latest_version and version.parse(latest_version) > version.parse(
-                current_version
-            ):
-                await self.settings_repo.upsert_settings(
-                    [
-                        SettingItem(key=SETTING_LATEST_VERSION, value=latest_version),
-                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=release_url),
-                        SettingItem(
-                            key=SETTING_VERSION_CHECK_AT,
-                            value=datetime.now(UTC).isoformat(),
-                        ),
-                    ]
-                )
-            else:
-                await self.settings_repo.upsert_settings(
-                    [
-                        SettingItem(
-                            key=SETTING_VERSION_CHECK_AT,
-                            value=datetime.now(UTC).isoformat(),
-                        ),
-                        SettingItem(key=SETTING_LATEST_VERSION, value=""),
-                        SettingItem(key=SETTING_LATEST_VERSION_URL, value=""),
-                    ]
-                )
+        await sync_version(self)
 
 
 _current_app_state: ContextVar[AppState | None] = ContextVar(

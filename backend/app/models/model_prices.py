@@ -33,7 +33,9 @@ class ModelPriceItem(StrictBaseModel):
 
 
 class ModelPriceUpdate(StrictBaseModel):
-    model_key: str = Field(min_length=1)
+    model_key: str | None = Field(
+        default=None, min_length=1, json_schema_extra={"deprecated": True}
+    )
     display_name: str = ""
     input_price_per_million: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     image_input_price_per_million: float | None = Field(

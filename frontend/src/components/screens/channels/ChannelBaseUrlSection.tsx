@@ -27,7 +27,6 @@ type Props = {
   onRemove: (index: number) => void;
 };
 
-/** Renders the primary channel URL and optional extra endpoints. */
 export function ChannelBaseUrlSection({
   form,
   locale,
@@ -77,6 +76,11 @@ export function ChannelBaseUrlSection({
           onChange={(event) => onUpdate(0, { url: event.target.value })}
         />
         <ChannelEndpointProbe
+          key={JSON.stringify([
+            primary.url,
+            form.proxy_mode,
+            form.channel_proxy,
+          ])}
           url={primary.url}
           proxyMode={form.proxy_mode}
           channelProxy={form.channel_proxy}
@@ -115,7 +119,7 @@ export function ChannelBaseUrlSection({
               return (
                 <div
                   key={baseUrl.id}
-                  className="grid min-w-0 grid-cols-[10rem_minmax(0,1fr)_1.5rem_1.5rem] items-center gap-2 rounded-md bg-muted/35 p-2.5"
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_1.5rem] items-center gap-2 rounded-md bg-muted/35 p-2.5 sm:grid-cols-[10rem_minmax(0,1fr)_auto_1.5rem]"
                 >
                   <Select
                     value={baseUrl.kind}
@@ -125,7 +129,7 @@ export function ChannelBaseUrlSection({
                       })
                     }
                   >
-                    <SelectTrigger className="h-7 w-full min-w-0 gap-1 px-2 text-xs">
+                    <SelectTrigger className="col-span-3 h-7 w-full min-w-0 gap-1 px-2 text-xs sm:col-span-1">
                       <SelectValue className="min-w-0 flex-1 truncate text-left">
                         {endpointLabel(baseUrl.kind)}
                       </SelectValue>
@@ -161,6 +165,11 @@ export function ChannelBaseUrlSection({
                     }
                   />
                   <ChannelEndpointProbe
+                    key={JSON.stringify([
+                      baseUrl.url,
+                      form.proxy_mode,
+                      form.channel_proxy,
+                    ])}
                     url={baseUrl.url}
                     proxyMode={form.proxy_mode}
                     channelProxy={form.channel_proxy}

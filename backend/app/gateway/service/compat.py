@@ -4,9 +4,10 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
+from app.core.model_name_parser import clean_reasoning_effort
+
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind
-from .proxy.routing_request import clean_reasoning_effort
 
 
 def apply_deepseek_thinking_compat(

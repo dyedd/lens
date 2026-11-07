@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.model_endpoints import credential_ids_for_url
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.sites import SiteConfig, SiteCredentialInput
-from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,

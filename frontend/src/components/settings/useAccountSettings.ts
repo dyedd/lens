@@ -135,7 +135,6 @@ export function useAccountSettings(locale: Locale) {
           },
         );
         setStoredToken(response.access_token);
-        window.sessionStorage.removeItem("lens_admin_profile_cache");
         queryClient.setQueryData(["auth-me"], response.profile);
         await queryClient.invalidateQueries({ queryKey: ["auth-me"] });
         toast.success(titleForLocale(locale, "账号已更新", "Account updated"));

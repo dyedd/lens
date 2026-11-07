@@ -6,17 +6,28 @@ from conftest import valid_site_payload
 def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
 
+    preflight = client.options(
+        "/api/admin/sites",
+        headers={
+            "Origin": "https://console.example",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+    assert preflight.status_code == 204
+    assert preflight.headers["access-control-allow-origin"] == "*"
+
     site = create_site(valid_site_payload())
     assert site["name"] == "OpenAI Site"
     assert site["protocols"][0]["models"][0]["model_name"] == "gpt-4o"
 
     update = client.put(
         f"/api/admin/sites/{site['id']}",
-        headers=admin_headers,
+        headers={**admin_headers, "Origin": "https://console.example"},
         json=valid_site_payload(name="Renamed Site", model_name="gpt-4.1"),
     )
     assert update.status_code == 200
     assert update.json()["name"] == "Renamed Site"
+    assert update.headers["access-control-allow-origin"] == "*"
 
     delete = client.delete(f"/api/admin/sites/{site['id']}", headers=admin_headers)
     assert delete.status_code == 204

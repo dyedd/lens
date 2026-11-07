@@ -1,6 +1,7 @@
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import {
   EMPTY_PARAM_OVERRIDE_RULE,
+  isParamOverrideRule,
   type ParamOverrideRule,
   paramOverrideDraftToRules,
   paramOverrideRulesToDraft,
@@ -21,12 +22,7 @@ export function parseUpstreamParamOverrideConfig(
   const payload = rawValue?.trim() ? parseJsonObject(rawValue) : null;
   return {
     rules: Array.isArray(payload?.rules)
-      ? paramOverrideRulesToDraft(
-          payload.rules.filter(
-            (rule): rule is ParamOverrideRule =>
-              Boolean(rule) && typeof rule === "object",
-          ),
-        )
+      ? paramOverrideRulesToDraft(payload.rules.filter(isParamOverrideRule))
       : [{ ...EMPTY_PARAM_OVERRIDE_RULE }],
   };
 }

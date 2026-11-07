@@ -5,14 +5,11 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, field_validator, model_validator
 
 from ..core.context_windows import ContextWindowSource
-from ..core.model_group_matching import MatchRegexOperator
+from ..core.model_group_matching import MAX_MATCH_REGEX_LENGTH, MatchRegexOperator
 from .protocols import ProtocolKind, RoutingStrategy
 from .regex_rules import RegexRuleIds
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel, validate_regex_pattern
-
-# 兼容最多 20 条旧规则各 500 字符的合并结果。
-MAX_MATCH_REGEX_LENGTH = 10_240
 
 # shortcut: 策略列最多 32 字符，需要更长标识时新增迁移。
 MODEL_GROUP_STRATEGY_MAX_LENGTH = 32
@@ -187,7 +184,7 @@ class ModelGroupCreate(StrictBaseModel):
     name: str
     strategy: RoutingStrategyId = RoutingStrategy.FAILOVER.value
     route_group_id: str = ""
-    match_regex: str = Field(default="", max_length=500)
+    match_regex: str = Field(default="", max_length=MAX_MATCH_REGEX_LENGTH)
     match_regex_operator: MatchRegexOperator = "or"
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     headers: list[HeaderRule] = Field(default_factory=list)
@@ -221,7 +218,7 @@ class ModelGroupUpdate(StrictBaseModel):
     name: str | None = None
     strategy: RoutingStrategyId | None = None
     route_group_id: str | None = None
-    match_regex: str | None = Field(default=None, max_length=500)
+    match_regex: str | None = Field(default=None, max_length=MAX_MATCH_REGEX_LENGTH)
     match_regex_operator: MatchRegexOperator | None = None
     param_override: list[ParamOverrideRule] | None = None
     headers: list[HeaderRule] | None = None

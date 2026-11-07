@@ -54,7 +54,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseBatchImportPayload(
   text: string,
   locale: Locale,
-): SiteBatchImportPayload {
+): { sites: unknown[] } {
   const content = text.trim();
   if (!content) {
     throw new Error(locale === "zh-CN" ? "JSON 内容为空" : "JSON is empty");
@@ -77,7 +77,7 @@ export function parseBatchImportPayload(
     );
   }
 
-  return value as SiteBatchImportPayload;
+  return { ...value, sites: value.sites };
 }
 
 export function importReasonLabel(

@@ -11,8 +11,13 @@ import json
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
+from .chat_response import (
+    parse_chat_finish_reason,
+    parse_chat_usage,
+    serialize_chat_finish_reason,
+    serialize_chat_usage,
+)
 from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
-from .unified_response import FinishReason
 from .unified_stream import (
     BlockKind,
     BlockStart,
@@ -120,8 +125,8 @@ async def parse_chat_stream(raw_iterator: AsyncIterator[bytes]) -> AsyncIterator
             yield ToolCallArgsDelta(index=index, arguments=arguments)
 
     yield StreamFinish(
-        reason=_chat_finish_reason(finish_reason),
-        usage=_chat_stream_usage(usage),
+        reason=parse_chat_finish_reason(finish_reason),
+        usage=parse_chat_usage(usage),
     )
 
 
@@ -200,8 +205,8 @@ async def serialize_chat_stream(
             yield chunk({"tool_calls": [{"index": call.index, **delta}]})
             continue
         if isinstance(event, StreamFinish):
-            finish_reason = _chat_wire_finish_reason(event.reason)
-            usage = _chat_stream_usage_wire(event.usage)
+            finish_reason = serialize_chat_finish_reason(event.reason)
+            usage = serialize_chat_usage(event.usage)
             continue
         if isinstance(event, RefusalDelta):
             # Chat has no refusal channel, so the refusal text streams as content
@@ -245,71 +250,9 @@ async def serialize_chat_stream(
     yield b"data: [DONE]\n\n"
 
 
-def _chat_wire_finish_reason(reason: FinishReason) -> str:
-    if reason == FinishReason.MAX_TOKENS:
-        return "length"
-    if reason == FinishReason.TOOL_USE:
-        return "tool_calls"
-    if reason == FinishReason.CONTENT_FILTER:
-        return "content_filter"
-    return "stop"
-
-
-def _chat_finish_reason(value: Any) -> FinishReason:
-    return {
-        "stop": FinishReason.END_TURN,
-        "length": FinishReason.MAX_TOKENS,
-        "tool_calls": FinishReason.TOOL_USE,
-        "function_call": FinishReason.TOOL_USE,
-        "content_filter": FinishReason.CONTENT_FILTER,
-    }.get(value, FinishReason.END_TURN)
-
-
 def _chat_delta_reasoning(delta: Mapping[str, Any]) -> str | None:
     for key in ("reasoning_content", "reasoning"):
         value = delta.get(key)
         if isinstance(value, str):
             return value
     return None
-
-
-def _chat_stream_usage(value: Mapping[str, Any]) -> Any:
-    from .unified_response import Usage
-
-    details = value.get("prompt_tokens_details")
-    cached = details.get("cached_tokens") if isinstance(details, Mapping) else 0
-    completion_details = value.get("completion_tokens_details")
-    reasoning = (
-        completion_details.get("reasoning_tokens")
-        if isinstance(completion_details, Mapping)
-        else 0
-    )
-    return Usage(
-        input_tokens=_usage_int(value, "prompt_tokens"),
-        output_tokens=_usage_int(value, "completion_tokens"),
-        cached_input_tokens=cached if isinstance(cached, int) else 0,
-        reasoning_tokens=reasoning if isinstance(reasoning, int) else 0,
-    )
-
-
-def _chat_stream_usage_wire(usage: Any) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "prompt_tokens": usage.input_tokens,
-        "completion_tokens": usage.output_tokens,
-        "total_tokens": usage.input_tokens + usage.output_tokens,
-    }
-    if usage.cached_input_tokens or usage.cache_creation_input_tokens:
-        result["prompt_tokens_details"] = {
-            "cached_tokens": usage.cached_input_tokens,
-            "cache_write_tokens": usage.cache_creation_input_tokens,
-        }
-    if usage.reasoning_tokens:
-        result["completion_tokens_details"] = {
-            "reasoning_tokens": usage.reasoning_tokens
-        }
-    return result
-
-
-def _usage_int(usage: Mapping[str, Any], key: str) -> int:
-    value = usage.get(key)
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0

@@ -250,6 +250,7 @@ def _record_stream_event_payload(
             status_code=200,
             category=category,
             cooldown_seconds=cooldown_seconds,
+            error_body=json.dumps(payload, ensure_ascii=False),
         )
     is_terminal = error_message is not None or _record_stream_completion(
         protocol, capture, payload

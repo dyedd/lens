@@ -137,16 +137,12 @@ class RoutePlanner:
         available = [
             target
             for target in pool
-            if endpoint_supports_protocol(target.channel, protocol)
-            and target.channel.endpoint_kind != "models"
-            and self._health.is_target_available(target, now=now)
+            if self._health.is_target_available(target, now=now)
         ]
         cooling = [
             target
             for target in pool
-            if endpoint_supports_protocol(target.channel, protocol)
-            and target.channel.endpoint_kind != "models"
-            and not self._health.is_target_available(target, now=now)
+            if not self._health.is_target_available(target, now=now)
         ]
         if not available and not cooling:
             detail = f"No enabled channels available for protocol={protocol.value}"
@@ -305,17 +301,20 @@ class RoutePlanner:
         *,
         required_context_tokens: int | None = None,
     ) -> list[RouteTarget]:
-        pool = _keep_targets_fitting_context(
-            build_route_targets(
+        pool = [
+            target
+            for target in build_route_targets(
                 channels,
                 protocol,
                 requested_model,
                 allowed_channel_ids,
                 use_model_matching,
                 route_targets,
-            ),
-            required_context_tokens,
-        )
+            )
+            if endpoint_supports_protocol(target.channel, protocol)
+            and target.channel.endpoint_kind != "models"
+        ]
+        pool = _keep_targets_fitting_context(pool, required_context_tokens)
         # Native protocol targets win over converted ones regardless of health:
         # a converted sibling must not shadow the channel's own protocol.
         return self._prefer_native_targets(pool, protocol)

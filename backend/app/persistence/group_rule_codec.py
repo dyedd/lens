@@ -6,10 +6,15 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import ModelPriceEntity
+
+from .json_columns import STRING_LIST, load_json_column
+
+_HEADER_RULES = TypeAdapter(list[HeaderRule])
+_PARAM_RULES = TypeAdapter(list[ParamOverrideRule])
 
 
 def dump_rules(
@@ -30,15 +35,15 @@ def dump_fallback_group_ids(fallback_group_ids: list[str]) -> str:
 
 
 def parse_param_override(raw: str) -> list[ParamOverrideRule]:
-    return [ParamOverrideRule.model_validate(item) for item in json.loads(raw)]
+    return load_json_column(raw, _PARAM_RULES, "param_override")
 
 
 def parse_headers(raw: str) -> list[HeaderRule]:
-    return [HeaderRule.model_validate(item) for item in json.loads(raw)]
+    return load_json_column(raw, _HEADER_RULES, "headers_json")
 
 
 def parse_fallback_group_ids(raw: str) -> list[str]:
-    return json.loads(raw)
+    return load_json_column(raw, STRING_LIST, "fallback_group_ids_json")
 
 
 def group_price_kwargs(price: ModelPriceEntity | None) -> dict[str, Any]:

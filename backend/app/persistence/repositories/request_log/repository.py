@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-from zoneinfo import ZoneInfo
-
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from app.core.time_zone import load_time_zone
 
 from .attribution import RequestLogAttribution
 from .overview import RequestLogOverview
@@ -13,10 +8,6 @@ from .query import RequestLogHydrator, RequestLogQueries
 from .statistics import RequestLogStatistics
 from .types import GatewayKeyPort, SettingsPort
 from .write import RequestLogCommands, RequestLogMaintenance
-
-
-def runtime_time_zone(runtime: dict[str, Any]) -> ZoneInfo:
-    return load_time_zone(str(runtime["time_zone"]))
 
 
 class RequestLogRepository:
@@ -29,22 +20,17 @@ class RequestLogRepository:
         gateway_key_repo: GatewayKeyPort,
     ) -> None:
         hydrator = RequestLogHydrator(gateway_key_repo)
-        statistics = RequestLogStatistics(
-            session_factory, settings_repo, runtime_time_zone
-        )
+        statistics = RequestLogStatistics(session_factory, settings_repo)
         self.commands = RequestLogCommands(session_factory, gateway_key_repo)
         self.queries = RequestLogQueries(
             session_factory,
             settings_repo,
             gateway_key_repo,
             hydrator,
-            runtime_time_zone,
         )
         self.maintenance = RequestLogMaintenance(
-            session_factory, settings_repo, statistics, runtime_time_zone
+            session_factory, settings_repo, statistics
         )
-        self.overview = RequestLogOverview(
-            session_factory, settings_repo, statistics, runtime_time_zone
-        )
+        self.overview = RequestLogOverview(session_factory, settings_repo, statistics)
         self.statistics = statistics
         self.attribution = RequestLogAttribution(self.overview)

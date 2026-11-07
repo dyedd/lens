@@ -34,15 +34,10 @@ export function DashboardHeaderActions({ children }: { children: ReactNode }) {
     }
 
     context.setActions(children);
+    return () => {
+      context.setActions((current) => (current === children ? null : current));
+    };
   }, [children, context]);
-
-  useEffect(() => {
-    if (!context) {
-      return;
-    }
-
-    return () => context.setActions(null);
-  }, [context]);
 
   return null;
 }

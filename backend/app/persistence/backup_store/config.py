@@ -27,11 +27,11 @@ from app.persistence.entities import (
     GatewayApiKeyEntity,
     SettingEntity,
 )
+from app.persistence.json_columns import load_allowed_models
 from app.persistence.settings_keys import SETTING_TIME_ZONE
 
 from .serialize import (
     format_optional_datetime,
-    parse_allowed_models,
     parse_optional_datetime,
     parse_weekdays,
 )
@@ -58,7 +58,7 @@ async def load_gateway_api_keys(
             remark=row.remark,
             api_key=row.api_key,
             enabled=bool(row.enabled),
-            allowed_models=parse_allowed_models(row.allowed_models_json),
+            allowed_models=load_allowed_models(row.allowed_models_json),
             max_cost_usd=max(row.max_cost_usd, 0.0),
             spent_cost_usd=max(row.spent_cost_usd, 0.0),
             expires_at=format_optional_datetime(row.expires_at),

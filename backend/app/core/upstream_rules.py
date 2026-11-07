@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from ..models.upstream_rules import HeaderRule, ParamOverrideRule
+from ..models.protocols import ProtocolKind
+from ..models.upstream_rules import (
+    HeaderRule,
+    ParamOverrideRule,
+    UpstreamParamOverrideConfig,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,21 +41,15 @@ class RuleEvaluationError(ValueError):
         self.source = source
 
 
-def request_rule_context(url: str, *, model_name: Any, protocol: Any) -> RuleContext:
+def request_rule_context(
+    url: str, *, model_name: str, protocol: ProtocolKind
+) -> RuleContext:
     """Build the context from the final upstream URL and target model."""
     return RuleContext(
         path=urlsplit(url).path,
-        model_name=str(model_name or ""),
-        protocol=getattr(protocol, "value", str(protocol)),
+        model_name=model_name,
+        protocol=protocol.value,
     )
-
-
-def rules_from_config(config: Mapping[str, Any] | None, key: str) -> list[Any]:
-    """Parse a persisted ``{rules: [...]}`` config through its rule model."""
-    if not config:
-        return []
-    rule_type = HeaderRule if key == "headers" else ParamOverrideRule
-    return [rule_type.model_validate(rule) for rule in config.get("rules", [])]
 
 
 def apply_param_rules(
@@ -69,14 +68,16 @@ def apply_param_rules(
 
 
 def param_rule_layers(
-    global_config: Mapping[str, Any] | None,
+    global_config: UpstreamParamOverrideConfig | None,
     *,
     channel_rules: Sequence[ParamOverrideRule] = (),
     model_group_rules: Sequence[ParamOverrideRule] = (),
 ) -> list[RuleLayer]:
     """Build the standard ordered global/channel/model-group parameter layers."""
     return [
-        RuleLayer("global settings", params=rules_from_config(global_config, "params")),
+        RuleLayer(
+            "global settings", params=global_config.rules if global_config else ()
+        ),
         RuleLayer("channel", params=channel_rules),
         RuleLayer("model group", params=model_group_rules),
     ]

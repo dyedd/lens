@@ -11,12 +11,14 @@ import type {
   SiteModelTestPayload,
   SiteModelTestResult,
 } from "@/lib/api/sites";
+import {
+  fallbackCredentialName,
+  formatCredentialTitle,
+} from "@/lib/credentialLabels";
 import { paramOverrideDraftToRules } from "@/lib/upstreamRules";
 import { paramDraftsFromJson } from "./channelAdvancedJson";
 import { activeBaseUrlValue, formHeaders } from "./channelForm";
 import {
-  fallbackCredentialName,
-  formatCredentialTitle,
   modelSupportedProtocols,
   protocolConfigModelKey,
 } from "./channelModels";

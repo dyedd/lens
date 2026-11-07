@@ -144,11 +144,6 @@ export function formatMoney(value: number) {
   }).format(value);
 }
 
-/** Return an error message with a caller-provided fallback. */
-export function modelGroupErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
-
 /** Return whether a group has at least one currently usable member. */
 export function isGroupEnabled(group: Pick<ModelGroup, "items">) {
   return group.items.some((item) => item.state === "ready");

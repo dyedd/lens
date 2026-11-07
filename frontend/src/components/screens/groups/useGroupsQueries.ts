@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
-import { apiRequest } from "@/lib/api/client";
+import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type {
   ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
@@ -100,15 +100,26 @@ export function useGroupsQueries({
       locale === "zh-CN" ? "模型组加载失败" : "Failed to load groups",
       {
         id: "groups-load-error",
-        description:
-          groupsQuery.error instanceof Error
-            ? groupsQuery.error.message
-            : locale === "zh-CN"
-              ? "无法读取模型组"
-              : "Unable to read groups",
+        description: getApiErrorMessage(
+          groupsQuery.error,
+          locale === "zh-CN" ? "无法读取模型组" : "Unable to read groups",
+        ),
       },
     );
   }, [groupsQuery.error, groupsQuery.isError, locale]);
+
+  useEffect(() => {
+    if (!unplacedQuery.isError) return;
+    toast.error(
+      getApiErrorMessage(
+        unplacedQuery.error,
+        locale === "zh-CN"
+          ? "未分配模型加载失败"
+          : "Failed to load unplaced models",
+      ),
+      { id: "unplaced-models-load-error" },
+    );
+  }, [unplacedQuery.error, unplacedQuery.isError, locale]);
 
   async function invalidateGroupData() {
     await Promise.all([

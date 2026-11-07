@@ -53,3 +53,6 @@ def test_change_password_updates_admin_password(client, admin_headers) -> None:
     )
     assert old_login.status_code == 401
     assert new_login.status_code == 200
+    assert client.get("/api/admin/session", headers=admin_headers).status_code == 401
+    renewed = {"Authorization": f"Bearer {new_login.json()['access_token']}"}
+    assert client.get("/api/admin/session", headers=renewed).status_code == 200

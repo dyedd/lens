@@ -34,7 +34,7 @@ def normalize_cache_control(value: Any) -> dict[str, Any] | None:
         return None
     normalized = dict(value)
     ttl = normalized.get("ttl")
-    if ttl is not None and ttl not in _VALID_TTLS:
+    if ttl is not None and (not isinstance(ttl, str) or ttl not in _VALID_TTLS):
         normalized.pop("ttl", None)
     return normalized
 

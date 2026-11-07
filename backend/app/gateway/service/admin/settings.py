@@ -34,6 +34,9 @@ async def update_settings(
             next_time_zone = time_zone.key
             next_time_zone_value = time_zone
     await app_state.settings_repo.upsert_settings(canonical_items)
+    app_state.apply_router_settings(
+        await app_state.settings_repo.get_runtime_settings()
+    )
     if next_time_zone is not None and next_time_zone != current_time_zone:
         await app_state.request_log_store.statistics.persist_request_log_stats(
             force=True

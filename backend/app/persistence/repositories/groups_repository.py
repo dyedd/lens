@@ -11,25 +11,28 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceConflictError, ResourceNotFoundError
 from app.core.model_group_matching import (
+    combine_model_group_patterns,
     compile_model_group_pattern,
-    matches_model_group,
 )
-from app.core.model_group_status import model_group_item_key
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
     ModelGroupCreate,
     ModelGroupItemInput,
-    ModelGroupItemState,
     ModelGroupItemView,
     ModelGroupMemberSource,
+    ModelGroupPlacementResponse,
+    ModelGroupReconcileReport,
     ModelGroupUpdate,
     ModelGroupView,
+    UnplacedModelRemovalResponse,
+    UnplacedModelView,
 )
 from app.persistence.entities import (
     ModelGroupEntity,
     ModelGroupItemEntity,
+    SiteDiscoveredModelEntity,
 )
 from app.persistence.group_rule_codec import (
     dump_fallback_group_ids,
@@ -41,10 +44,14 @@ from app.persistence.regex_rule_references import (
 )
 
 from ..channel_store import ChannelStore
-from .group_placement import GroupPlacementMixin
-from .group_read import GroupCandidatesMixin, GroupMappingMixin
-from .group_reconcile import GroupReconcileMixin
-from .group_write import GroupValidationMixin
+from .group_placement import build_group_coverage, build_unplaced_models
+from .group_read import build_group_candidates, hydrate_groups, load_group_items
+from .group_reconcile import reconcile_group_members
+from .group_write import (
+    exclude_removed_auto_members,
+    replace_group_items,
+    validate_group_payload,
+)
 
 
 def _view_to_input(item: ModelGroupItemView) -> ModelGroupItemInput:
@@ -57,13 +64,7 @@ def _view_to_input(item: ModelGroupItemView) -> ModelGroupItemInput:
     )
 
 
-class ModelGroupRepository(
-    GroupReconcileMixin,
-    GroupPlacementMixin,
-    GroupCandidatesMixin,
-    GroupValidationMixin,
-    GroupMappingMixin,
-):
+class ModelGroupRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
         self._channel_store = ChannelStore(session_factory)
@@ -87,7 +88,7 @@ class ModelGroupRepository(
                 .scalars()
                 .all()
             )
-            return await self._hydrate_groups(session, entities, effective_channels)
+            return await hydrate_groups(session, entities, effective_channels)
 
     async def get_group(
         self, group_id: str, *, channels: list[ChannelConfig] | None = None
@@ -102,7 +103,7 @@ class ModelGroupRepository(
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise ResourceNotFoundError(group_id)
-            hydrated = await self._hydrate_groups(session, [entity], effective_channels)
+            hydrated = await hydrate_groups(session, [entity], effective_channels)
             return hydrated[0]
 
     async def find_group_by_name(
@@ -131,7 +132,7 @@ class ModelGroupRepository(
             entity = result.scalar_one_or_none()
             if entity is None:
                 return None
-            hydrated = await self._hydrate_groups(session, [entity], effective_channels)
+            hydrated = await hydrate_groups(session, [entity], effective_channels)
             group = hydrated[0]
         return (
             group
@@ -143,13 +144,14 @@ class ModelGroupRepository(
         self, payload: ModelGroupCandidatesRequest
     ) -> ModelGroupCandidatesResponse:
         """Return enabled model candidates and evaluate selected members."""
-        return await self._list_group_candidates(payload)
+        channels = await self._channel_store.list_channels()
+        return build_group_candidates(payload, channels)
 
     async def create_group(self, payload: ModelGroupCreate) -> ModelGroupView:
         """Create and return a validated model group."""
         channels = await self._channel_store.list_channels()
         async with self._session_factory() as session:
-            route_group = await self._validate_group_payload(
+            route_group = await validate_group_payload(
                 session,
                 payload.name,
                 route_group_id=payload.route_group_id,
@@ -175,12 +177,12 @@ class ModelGroupRepository(
             )
             session.add(entity)
             await session.flush()
-            self._replace_group_items(
+            replace_group_items(
                 session, entity.id, payload.items, payload.excluded_items
             )
             await session.commit()
             await session.refresh(entity)
-            hydrated = await self._hydrate_groups(session, [entity], channels)
+            hydrated = await hydrate_groups(session, [entity], channels)
             return hydrated[0]
 
     async def update_group(
@@ -221,7 +223,7 @@ class ModelGroupRepository(
             current_item_views = []
             current_excluded_views = []
             if replaces_items:
-                current_items = await self._load_group_items(
+                current_items = await load_group_items(
                     session,
                     [group_id],
                     channels,
@@ -243,7 +245,7 @@ class ModelGroupRepository(
                 if payload.fallback_group_ids is not None
                 else parse_fallback_group_ids(entity.fallback_group_ids_json)
             )
-            route_group = await self._validate_group_payload(
+            route_group = await validate_group_payload(
                 session,
                 next_name,
                 route_group_id=next_route_group_id,
@@ -295,8 +297,7 @@ class ModelGroupRepository(
                 if not entity.route_group_id and payload.excluded_items is None:
                     next_excluded_items = [
                         *next_excluded_items,
-                        *await self._exclude_removed_auto_members(
-                            session,
+                        *exclude_removed_auto_members(
                             entity,
                             current_item_views,
                             next_items,
@@ -308,7 +309,7 @@ class ModelGroupRepository(
                         ModelGroupItemEntity.group_id == group_id
                     )
                 )
-                self._replace_group_items(
+                replace_group_items(
                     session,
                     group_id,
                     next_items,
@@ -325,46 +326,8 @@ class ModelGroupRepository(
 
             await session.commit()
             await session.refresh(entity)
-            hydrated = await self._hydrate_groups(session, [entity], channels)
+            hydrated = await hydrate_groups(session, [entity], channels)
             return hydrated[0]
-
-    @staticmethod
-    async def _exclude_removed_auto_members(
-        session: AsyncSession,
-        entity: ModelGroupEntity,
-        previous_items: list[ModelGroupItemView],
-        next_items: list[ModelGroupItemInput],
-        next_excluded_items: list[ModelGroupItemInput],
-    ) -> list[ModelGroupItemInput]:
-        """Turn removed members that reconcile would re-add into exclusions."""
-        kept_keys = {
-            model_group_item_key(item) for item in (*next_items, *next_excluded_items)
-        }
-        direct_pattern = compile_model_group_pattern(entity.match_regex)
-        patterns = (direct_pattern,) if direct_pattern is not None else ()
-        operator = (
-            entity.match_regex_operator
-            if entity.match_regex_operator in {"and", "or"}
-            else "or"
-        )
-
-        def rejoins(item: ModelGroupItemView) -> bool:
-            return matches_model_group(entity.name, item.model_name, patterns, operator)
-
-        # A member whose target is gone cannot rejoin, so it needs no exclusion.
-        return [
-            ModelGroupItemInput(
-                channel_id=item.channel_id,
-                credential_id=item.credential_id,
-                model_name=item.model_name,
-                enabled=item.enabled,
-                source=item.source,
-            )
-            for item in previous_items
-            if model_group_item_key(item) not in kept_keys
-            and item.state != ModelGroupItemState.INVALID
-            and rejoins(item)
-        ]
 
     async def delete_group(self, group_id: str) -> None:
         """Delete an unreferenced model group and its members."""
@@ -477,7 +440,9 @@ class ModelGroupRepository(
             target_pattern = target.match_regex.strip()
             source_pattern = source.match_regex.strip()
             if target_pattern and source_pattern:
-                target.match_regex = f"(?:{target_pattern})|(?:{source_pattern})"
+                target.match_regex = combine_model_group_patterns(
+                    [target_pattern, source_pattern]
+                )
                 target.match_regex_operator = "or"
                 target.match_rule_ids_json = dump_rule_ids([])
             elif source_pattern:
@@ -494,18 +459,129 @@ class ModelGroupRepository(
                 target.match_rule_ids_json = dump_rule_ids([])
             await session.delete(source)
             await session.commit()
-            hydrated = await self._hydrate_groups(session, [target], channels)
+            hydrated = await hydrate_groups(session, [target], channels)
             return hydrated[0]
 
     async def list_group_names(self, *, include_routed: bool = False) -> list[str]:
         """Return model group names, optionally including routed groups."""
-        from sqlalchemy import select
-
-        from app.persistence.entities import ModelGroupEntity
-
         async with self._session_factory() as session:
             query = select(ModelGroupEntity.name).order_by(ModelGroupEntity.name.asc())
             if not include_routed:
                 query = query.where(ModelGroupEntity.route_group_id == "")
             rows = await session.execute(query)
             return [str(item) for item in rows.scalars().all() if str(item).strip()]
+
+    async def reconcile_group_members(
+        self,
+        *,
+        placement_names: set[str] | None = None,
+        into_group_id: str | None = None,
+    ) -> ModelGroupReconcileReport:
+        channels = await self._channel_store.list_channels()
+        async with self._session_factory() as session:
+            report = await reconcile_group_members(
+                session,
+                channels,
+                placement_names=placement_names,
+                into_group_id=into_group_id,
+            )
+            await session.commit()
+            return report
+
+    async def list_unplaced_models(self) -> list[UnplacedModelView]:
+        """Return channel models not covered by any execution group."""
+        channels = await self._channel_store.list_channels()
+        groups = await self.list_groups(channels=channels)
+        return build_unplaced_models(
+            [
+                build_group_coverage(
+                    group,
+                    (
+                        (direct_pattern,)
+                        if (
+                            direct_pattern := compile_model_group_pattern(
+                                group.match_regex
+                            )
+                        )
+                        else ()
+                    ),
+                    group.match_regex_operator
+                    if group.match_regex_operator in {"and", "or"}
+                    else "or",
+                )
+                for group in groups
+            ],
+            channels,
+        )
+
+    async def place_models(
+        self, model_names: list[str] | None = None, group_id: str = ""
+    ) -> ModelGroupPlacementResponse:
+        """Join same-named groups or create own groups for unplaced models."""
+        if group_id:
+            return await self._place_models_into_group(model_names or [], group_id)
+        if model_names is None:
+            model_names = [
+                item.model_name for item in await self.list_unplaced_models()
+            ]
+        report = await self.reconcile_group_members(placement_names=set(model_names))
+        created_ids = {group.id for group in report.created_groups}
+        groups = await self.list_groups()
+        return ModelGroupPlacementResponse(
+            created=[group for group in groups if group.id in created_ids],
+            joined=[
+                change
+                for change in report.added
+                if change.source == ModelGroupMemberSource.PLACEMENT
+                and change.group_id not in created_ids
+            ],
+            unplaced=report.pending,
+        )
+
+    async def _place_models_into_group(
+        self, model_names: list[str], group_id: str
+    ) -> ModelGroupPlacementResponse:
+        """Save the given names as members of an existing execution group."""
+        names = [name.strip() for name in model_names if name.strip()]
+        if not names:
+            raise ValueError("At least one model name is required")
+        async with self._session_factory() as session:
+            entity = await session.get(ModelGroupEntity, group_id)
+            if entity is None:
+                raise ResourceNotFoundError(group_id)
+            if entity.route_group_id.strip():
+                raise ValueError("Route groups cannot receive members directly")
+        report = await self.reconcile_group_members(
+            placement_names=set(names), into_group_id=group_id
+        )
+        return ModelGroupPlacementResponse(
+            created=[],
+            joined=[change for change in report.added if change.group_id == group_id],
+            unplaced=report.pending,
+        )
+
+    async def remove_unplaced_models(
+        self, model_names: list[str]
+    ) -> UnplacedModelRemovalResponse:
+        """Remove unplaced model names from every channel that still offers them."""
+        names = set(model_names)
+        unplaced_names = {view.model_name for view in await self.list_unplaced_models()}
+        if covered := sorted(names - unplaced_names):
+            raise ValueError(
+                "Models are still placed in model groups or not offered: "
+                + ", ".join(covered)
+            )
+        async with self._session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(SiteDiscoveredModelEntity)
+                    .where(SiteDiscoveredModelEntity.model_name.in_(names))
+                    .where(SiteDiscoveredModelEntity.enabled == 1)
+                )
+            ).scalars()
+            deleted = 0
+            for entity in rows:
+                await session.delete(entity)
+                deleted += 1
+            await session.commit()
+        return UnplacedModelRemovalResponse(deleted=deleted)

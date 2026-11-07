@@ -19,10 +19,44 @@ export type ParamOverrideRule = {
   value?: unknown;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function isHeaderRule(value: unknown): value is HeaderRule {
+  if (!isRecord(value)) return false;
+  const match = value.match;
+  return (
+    typeof value.name === "string" &&
+    typeof value.value === "string" &&
+    (value.action === "remove" ||
+      value.action === "override" ||
+      value.action === "append") &&
+    (match == null ||
+      (isRecord(match) &&
+        Object.entries(match).every(
+          ([key, pattern]) =>
+            ["path_regex", "model_regex", "protocol_regex"].includes(key) &&
+            (pattern === null || typeof pattern === "string"),
+        )))
+  );
+}
+
+export function isParamOverrideRule(
+  value: unknown,
+): value is ParamOverrideRule {
+  return (
+    isRecord(value) &&
+    typeof value.path === "string" &&
+    (value.action === "set" || value.action === "delete")
+  );
+}
+
 export type HeaderRuleDraft = {
   key: string;
   value: string;
   action: HeaderRuleAction;
+  match?: HeaderRule["match"];
 };
 
 export type ParamOverrideRuleDraft = {
@@ -47,10 +81,11 @@ export const EMPTY_PARAM_OVERRIDE_RULE: ParamOverrideRuleDraft = {
 };
 
 export function headerRulesToDraft(rules: HeaderRule[]): HeaderRuleDraft[] {
-  const drafts = rules.map(({ name, value, action }) => ({
+  const drafts = rules.map(({ name, value, action, match }) => ({
     key: name,
     value,
     action,
+    match,
   }));
   return drafts.length ? drafts : [{ ...EMPTY_HEADER_RULE }];
 }
@@ -62,6 +97,7 @@ export function headerDraftToRules(drafts: HeaderRuleDraft[]): HeaderRule[] {
       name: rule.key.trim(),
       action: rule.action,
       value: rule.action === "remove" ? rule.value.trim() : rule.value,
+      match: rule.match,
     }));
 }
 

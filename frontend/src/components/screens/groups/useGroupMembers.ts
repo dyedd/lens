@@ -296,3 +296,5 @@ export function useGroupMembers(
     visibleFoldedMembers,
   };
 }
+
+export type GroupMembers = ReturnType<typeof useGroupMembers>;

@@ -16,6 +16,7 @@ from ....core.upstream_rules import request_rule_context
 from ....models.channels import ChannelConfig
 from ....models.protocols import ChannelStatus, ProtocolKind
 from ....models.sites import SiteConfig, SiteCredential
+from ....persistence.channel_store import flatten_site
 from ...upstream_request import (
     build_upstream_headers,
     resolve_channel_api_key,
@@ -119,7 +120,7 @@ def _rate_channel(
         update={"protocols": protocol_config.protocols or [ProtocolKind.OPENAI_CHAT]}
     )
     rate_site = site.model_copy(update={"protocols": [rate_config]})
-    for channel in state.channel_store.flatten_site(rate_site):
+    for channel in flatten_site(rate_site):
         if protocol_config_id_from_runtime_channel_id(channel.id) != protocol_config_id:
             continue
         target = channel_for_credential(channel, credential.id)

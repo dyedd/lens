@@ -1,48 +1,54 @@
-import type {
-  HeaderRuleDraft,
-  ParamOverrideRuleDraft,
+import {
+  type HeaderRuleDraft,
+  headerDraftToRules,
+  headerRulesToDraft,
+  isHeaderRule,
+  isParamOverrideRule,
+  type ParamOverrideRuleDraft,
+  paramOverrideDraftToRules,
+  paramOverrideRulesToDraft,
 } from "@/lib/upstreamRules";
 
 type JsonRecord = Record<string, unknown>;
 
-function parseJsonRecord(raw: string): JsonRecord | "empty" | "invalid" {
-  const trimmed = raw.trim();
-  if (!trimmed) return "empty";
+function parseRuleJson(
+  raw: string,
+): JsonRecord | unknown[] | "empty" | "invalid" {
+  if (!raw.trim()) return "empty";
   try {
-    const parsed: unknown = JSON.parse(trimmed);
-    if (
-      parsed === null ||
-      Array.isArray(parsed) ||
-      typeof parsed !== "object"
-    ) {
-      return "invalid";
-    }
-    return parsed as JsonRecord;
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object") return "invalid";
+    return parsed as JsonRecord | unknown[];
   } catch {
     return "invalid";
   }
 }
 
-function stringifyJsonRecord(value: JsonRecord): string {
+function stringifyRuleJson(value: JsonRecord | unknown[]): string {
   return Object.keys(value).length ? JSON.stringify(value, null, 2) : "";
 }
 
-/** Serializes override header drafts as a JSON object. */
-export function headerDraftsToJson(rules: HeaderRuleDraft[]): string {
-  const value: Record<string, string> = {};
-  for (const rule of rules) {
-    const name = rule.key.trim();
-    if (!name || rule.action === "remove") continue;
-    value[name] = rule.value;
+export function headerDraftsToJson(drafts: HeaderRuleDraft[]): string {
+  const rules = headerDraftToRules(drafts);
+  // 条件、动作和同名规则的顺序不能用键值对象表达。
+  if (
+    rules.some((rule) => rule.action !== "override" || rule.match) ||
+    new Set(rules.map((rule) => rule.name)).size !== rules.length
+  ) {
+    return stringifyRuleJson(rules);
   }
-  return stringifyJsonRecord(value);
+  return stringifyRuleJson(
+    Object.fromEntries(rules.map((rule) => [rule.name, rule.value])),
+  );
 }
 
-/** Parses a JSON object into override header drafts. */
 export function headerDraftsFromJson(raw: string): HeaderRuleDraft[] | null {
-  const parsed = parseJsonRecord(raw);
+  const parsed = parseRuleJson(raw);
   if (parsed === "invalid") return null;
   if (parsed === "empty") return [];
+  if (Array.isArray(parsed)) {
+    return parsed.every(isHeaderRule) ? headerRulesToDraft(parsed) : null;
+  }
   const drafts: HeaderRuleDraft[] = [];
   for (const [key, value] of Object.entries(parsed)) {
     if (
@@ -57,46 +63,49 @@ export function headerDraftsFromJson(raw: string): HeaderRuleDraft[] | null {
   return drafts;
 }
 
-/** Serializes set-parameter drafts as a JSON object. */
-export function paramDraftsToJson(rules: ParamOverrideRuleDraft[]): string {
-  const value: JsonRecord = {};
-  for (const rule of rules) {
-    const path = rule.path.trim();
-    if (!path || rule.action === "delete") continue;
-    if (!rule.value.trim()) continue;
-    try {
-      value[path] = JSON.parse(rule.value) as unknown;
-    } catch {
-      value[path] = rule.value;
-    }
+export function paramDraftsToJson(drafts: ParamOverrideRuleDraft[]): string {
+  const rules = paramOverrideDraftToRules(drafts);
+  if (
+    rules.some((rule) => rule.action === "delete") ||
+    new Set(rules.map((rule) => rule.path)).size !== rules.length
+  ) {
+    return stringifyRuleJson(rules);
   }
-  return stringifyJsonRecord(value);
+  return stringifyRuleJson(
+    Object.fromEntries(rules.map((rule) => [rule.path, rule.value])),
+  );
 }
 
-/** Parses a JSON object into set-parameter drafts. */
 export function paramDraftsFromJson(
   raw: string,
 ): ParamOverrideRuleDraft[] | null {
-  const parsed = parseJsonRecord(raw);
+  const parsed = parseRuleJson(raw);
   if (parsed === "invalid") return null;
   if (parsed === "empty") return [];
+  if (Array.isArray(parsed)) {
+    return parsed.every(isParamOverrideRule)
+      ? paramOverrideRulesToDraft(parsed)
+      : null;
+  }
   return Object.entries(parsed).map(([path, value]) => ({
     path,
     action: "set",
-    value: value === undefined ? "" : JSON.stringify(value),
+    value: JSON.stringify(value),
   }));
 }
 
-/** Merges header presets into a JSON object, or null when the draft is invalid. */
 export function mergeHeaderJson(
   raw: string,
   extra: Record<string, string>,
 ): string | null {
-  const parsed = parseJsonRecord(raw);
-  if (parsed === "invalid") return null;
-  const value: JsonRecord = parsed === "empty" ? {} : { ...parsed };
-  for (const [name, headerValue] of Object.entries(extra)) {
-    value[name] = headerValue;
+  const drafts = headerDraftsFromJson(raw);
+  if (drafts === null) return null;
+  for (const [name, value] of Object.entries(extra)) {
+    const existing = drafts.find(
+      (rule) => rule.key === name && rule.action === "override" && !rule.match,
+    );
+    if (existing) existing.value = value;
+    else drafts.push({ key: name, value, action: "override" });
   }
-  return stringifyJsonRecord(value);
+  return headerDraftsToJson(drafts);
 }

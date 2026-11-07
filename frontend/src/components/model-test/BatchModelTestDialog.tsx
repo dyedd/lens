@@ -1,6 +1,6 @@
 import type { BatchModelTestRow } from "@/components/model-test/batchModelTestSession";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { Locale } from "./channelTypes";
+import type { Locale } from "@/lib/I18nContext";
 import { ModelTestDialog } from "./ModelTestDialog";
 
 type Props = {

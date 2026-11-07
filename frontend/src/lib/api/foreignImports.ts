@@ -29,17 +29,18 @@ export type ForeignSiteImportPreview = {
 };
 
 /** Uploads a foreign backup file and previews the sites it would import. */
-export async function previewForeignSiteImport(file: File) {
+export function previewForeignSiteImport(file: File, signal: AbortSignal) {
   const formData = new FormData();
   formData.append("file", file);
   return apiRequest<ForeignSiteImportPreview>("/admin/sites/import/preview", {
     method: "POST",
     body: formData,
+    signal,
   });
 }
 
 /** Imports the sites selected from a foreign backup preview. */
-export async function importForeignSites(payload: SiteBatchImportPayload) {
+export function importForeignSites(payload: SiteBatchImportPayload) {
   return apiRequest<SiteBatchImportResult>("/admin/sites/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

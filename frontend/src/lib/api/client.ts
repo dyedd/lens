@@ -1,4 +1,4 @@
-import { getStoredToken } from "@/lib/auth";
+import { getStoredToken, signOut } from "@/lib/auth";
 
 type ApiErrorPayload = {
   error?: {
@@ -57,6 +57,15 @@ export async function apiFetch(
   if (token) headers.set("authorization", `Bearer ${token}`);
 
   const response = await fetch(`/api${path}`, { ...init, headers });
+  if (
+    response.status === 401 &&
+    path.startsWith("/admin/") &&
+    !(path === "/admin/session" && init?.method === "POST") &&
+    token &&
+    token === getStoredToken()
+  ) {
+    signOut();
+  }
   if (!response.ok) {
     const contentType = response.headers.get("content-type") ?? "";
     const text = await response.text();
@@ -98,7 +107,6 @@ export async function apiRequest<T>(
   init?: RequestInit,
 ): Promise<T> {
   const response = await apiFetch(path, init);
-  if (response.status === 204) return undefined as T;
   return parseJsonResponse<T>(
     await response.text(),
     response.status,

@@ -1,10 +1,35 @@
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
+import pytest
 from conftest import run_async, seed_request_log
 
 from app.persistence.entities import RequestLogEntity
+
+
+@pytest.mark.parametrize("mode", ["model", "channel"])
+def test_request_health_summarizes_success_and_failure(
+    client, admin_headers, app_state, create_site_group_and_key, mode
+) -> None:
+    site, group, _ = create_site_group_and_key()
+    seed_request_log(app_state, success=True)
+    seed_request_log(app_state, success=False)
+
+    response = client.get(
+        "/api/admin/model-health",
+        headers=admin_headers,
+        params={"mode": mode, "hours": 1},
+    )
+    assert response.status_code == 200, response.text
+    name = group["name"] if mode == "model" else site["name"]
+    item = next(item for item in response.json()["items"] if item["name"] == name)
+    assert item["success_count"] == 1
+    assert item["total_count"] == 2
+    assert item["tier"] == "major"
+    assert sum(bucket["total_count"] for bucket in item["buckets"]) == 2
+    assert sum(bucket["success_count"] for bucket in item["buckets"]) == 1
 
 
 def test_request_log_page_returns_seeded_logs(client, admin_headers, app_state) -> None:
@@ -95,6 +120,24 @@ def test_request_log_detail_returns_saved_content(
     assert payload["id"] == log.id
     assert payload["request_content"] == '{"model":"gpt-4o"}'
     assert payload["response_content"] == '{"ok":true}'
+
+    async def store_gemini_request():
+        async with app_state.session_factory.begin() as session:
+            row = await session.get(RequestLogEntity, log.id)
+            row.request_content = json.dumps(
+                {
+                    "model": "gemini-test",
+                    "generationConfig": {"thinkingConfig": {"thinkingLevel": "HIGH"}},
+                    "reasoning_effort": "low",
+                }
+            )
+
+    run_async(store_gemini_request())
+    detail = client.get(f"/api/admin/request-logs/{log.id}", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["reasoning_effort"] == "high"
+    page = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    assert page.json()["items"][0]["reasoning_effort"] == "high"
 
 
 def test_clear_request_logs_removes_saved_logs(

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ...models.protocols import ProtocolKind
-from . import cache, repair
+from . import cache, capabilities, repair
 from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
 from .responses_common import (
     decode_reasoning_item,
@@ -68,6 +68,7 @@ from .unified_response import (
 from .unified_stream import (
     BlockKind,
     BlockStart,
+    BlockStop,
     CitationDelta,
     ReasoningDelta,
     RefusalDelta,
@@ -162,10 +163,9 @@ def parse_responses_request(body: Mapping[str, Any]) -> UnifiedRequest:
     request.tools, request.server_tools = _responses_tools(body.get("tools"))
     request.tool_choice = _responses_tool_choice(body.get("tool_choice"))
     parallel = body.get("parallel_tool_calls")
-    if request.tool_choice is None and isinstance(parallel, bool):
-        request.tool_choice = ToolChoice(
-            mode=ToolChoiceMode.AUTO, allow_parallel=parallel
-        )
+    if isinstance(parallel, bool):
+        request.tool_choice = request.tool_choice or ToolChoice()
+        request.tool_choice.allow_parallel = parallel
     return request
 
 
@@ -1308,18 +1308,6 @@ async def parse_responses_stream(
     raw_iterator: AsyncIterator[bytes],
 ) -> AsyncIterator[Any]:
     """Parse a Responses API SSE stream into unified stream events."""
-    from .sse import parse_sse_json_stream
-    from .unified_stream import (
-        BlockStart,
-        BlockStop,
-        ReasoningDelta,
-        SignatureDelta,
-        StreamFinish,
-        StreamStart,
-        TextDelta,
-        ToolCallArgsDelta,
-    )
-
     text_blocks: dict[tuple[int, int], int] = {}
     item_blocks: dict[int, int] = {}
     open_blocks: set[int] = set()
@@ -1413,81 +1401,71 @@ async def parse_responses_stream(
 async def serialize_responses_stream(
     events: AsyncIterator[Any], original_model: str
 ) -> AsyncIterator[bytes]:
-    """Serialize unified stream events into a Responses API SSE stream.
+    """将统一流事件交给 Responses 状态机，再编码为 SSE。"""
 
-    Reuses the Chat -> Responses stream adapter by re-encoding unified events
-    as chat deltas, so both paths share one SSE emitter.
-    """
-    async for chunk in _serialize_responses_stream(events, original_model):
-        yield chunk
-
-
-async def _serialize_responses_stream(
-    events: AsyncIterator[Any], original_model: str
-) -> AsyncIterator[bytes]:
-
-    async def chat_payloads() -> AsyncIterator[bytes]:
-        tool_identities: dict[int, tuple[str, str]] = {}
+    async def chat_payloads() -> AsyncIterator[dict[str, Any]]:
         tool_announced: set[int] = set()
         async for event in events:
             if isinstance(event, StreamStart):
                 continue
             if isinstance(event, BlockStart):
                 if event.kind == BlockKind.TOOL_CALL:
-                    tool_identities[event.index] = (event.call_id, event.name)
+                    state.tool_identities[event.index] = event
                 continue
             if isinstance(event, TextDelta):
-                yield _chat_chunk({"content": event.text})
+                yield _chat_payload({"content": event.text})
             elif isinstance(event, RefusalDelta):
                 # The chat-shaped state has no refusal channel, so the refusal
                 # text streams as content rather than disappearing.
-                yield _chat_chunk({"content": event.text})
+                yield _chat_payload({"content": event.text})
             elif isinstance(event, CitationDelta):
                 url = event.citation.url
                 if url:
-                    yield _chat_chunk({"content": f" [{url}]"})
+                    yield _chat_payload({"content": f" [{url}]"})
             elif isinstance(event, ServerToolStatusDelta):
                 # Lifecycle ticks carry no content the client can act on.
                 continue
             elif isinstance(event, ToolCallArgsDelta):
-                call_id, name = tool_identities.get(event.index, ("", ""))
+                identity = state.tool_identities[event.index]
                 function: dict[str, Any] = {"arguments": event.arguments}
                 delta: dict[str, Any] = {"function": function}
                 if event.index not in tool_announced:
                     tool_announced.add(event.index)
-                    delta["id"] = call_id
+                    delta["id"] = identity.call_id
                     delta["type"] = "function"
-                    function["name"] = name
-                yield _chat_chunk({"tool_calls": [{"index": event.index, **delta}]})
+                    function["name"] = identity.name
+                yield _chat_payload({"tool_calls": [{"index": event.index, **delta}]})
             elif isinstance(event, ReasoningDelta):
-                yield _chat_chunk({"reasoning_content": event.text})
+                yield _chat_payload({"reasoning_content": event.text})
             elif isinstance(event, SignatureDelta):
                 # Chat has no signature channel, so the envelope travels in its
                 # own internal chunk for the Responses state to re-encode.
-                yield _chat_chunk({"reasoning_signature": event.opaque})
+                yield _chat_payload({"reasoning_signature": event.opaque})
             elif isinstance(event, StreamFinish):
                 # A tool call whose upstream sent no argument delta still needs
                 # an identity frame; otherwise the response omits the call.
-                for index in sorted(tool_identities):
+                for index, identity in sorted(state.tool_identities.items()):
                     if index in tool_announced:
                         continue
-                    call_id, name = tool_identities[index]
-                    if not call_id and not name:
+                    if not identity.call_id and not identity.name:
                         continue
                     tool_announced.add(index)
-                    yield _chat_chunk(
+                    yield _chat_payload(
                         {
                             "tool_calls": [
                                 {
                                     "index": index,
-                                    "id": call_id,
+                                    "id": identity.call_id,
                                     "type": "function",
-                                    "function": {"name": name, "arguments": "{}"},
+                                    "function": {
+                                        "name": identity.name,
+                                        "arguments": "{}",
+                                    },
                                 }
                             ]
                         }
                     )
-                yield _chat_chunk(
+                yield _chat_payload(
                     {},
                     finish_reason=_responses_wire_finish_reason(event.reason),
                     usage={
@@ -1502,30 +1480,37 @@ async def _serialize_responses_stream(
                         },
                     },
                 )
-                yield b"data: [DONE]\n\n"
                 return
         raise ValueError("Unified stream ended before finish event")
 
-    async for chunk in _chat_stream_to_responses_stream(
-        chat_payloads(), original_model
-    ):
-        yield chunk
+    state = _ResponsesStreamState(
+        response_id=f"resp_{uuid.uuid4().hex[:24]}",
+        message_id=f"msg_{uuid.uuid4().hex[:24]}",
+        created_at=int(time.time()),
+        model=original_model,
+    )
+    for event in state.start_events():
+        yield event
+    async for payload in chat_payloads():
+        for event in state.update(payload):
+            yield event
+    for event in state.finish_events():
+        yield event
+    yield b"data: [DONE]\n\n"
 
 
-def _chat_chunk(
+def _chat_payload(
     delta: dict[str, Any],
     *,
     finish_reason: str | None = None,
     usage: dict[str, Any] | None = None,
-) -> bytes:
-    import json
-
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]
     }
     if usage is not None:
         payload["usage"] = usage
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+    return payload
 
 
 def _responses_wire_finish_reason(reason: FinishReason) -> str:
@@ -1545,29 +1530,6 @@ def _event_int(payload: Mapping[str, Any], key: str) -> int:
     return value
 
 
-# Responses stream emission, moved out of the old pairwise Chat ->
-# Responses converter so the hub keeps one emitter per protocol.
-async def _chat_stream_to_responses_stream(
-    raw_iterator: AsyncIterator[bytes],
-    original_model: str,
-) -> AsyncIterator[bytes]:
-    """Convert a chat SSE stream into a Responses API SSE stream."""
-    state = _ResponsesStreamState(
-        response_id=f"resp_{uuid.uuid4().hex[:24]}",
-        message_id=f"msg_{uuid.uuid4().hex[:24]}",
-        created_at=int(time.time()),
-        model=original_model,
-    )
-    for event in state.start_events():
-        yield event
-    async for payload in parse_sse_json_stream(raw_iterator, require_done=True):
-        for event in state.update(payload):
-            yield event
-    for event in state.finish_events():
-        yield event
-    yield b"data: [DONE]\n\n"
-
-
 @dataclass(slots=True)
 class _ResponsesStreamState:
     response_id: str
@@ -1585,6 +1547,7 @@ class _ResponsesStreamState:
     text_output_index: int | None = None
     text_parts: list[str] = field(default_factory=list)
     tool_calls: ChatToolCalls = field(default_factory=ChatToolCalls)
+    tool_identities: dict[int, BlockStart] = field(default_factory=dict)
     next_output_index: int = 0
     finish_reason: str | None = None
     sequence_number: int = 0
@@ -1825,7 +1788,8 @@ class _ResponsesStreamState:
                 tool_call.target_index = self.allocate_output_index()
             if not tool_call.announced and tool_call.call_id and tool_call.name:
                 events.append(self._announce_tool(tool_call))
-            if tool_call.announced:
+            identity = self.tool_identities[tool_call.source_index]
+            if tool_call.announced and identity.tool_kind is not ToolKind.CUSTOM:
                 arguments_delta = tool_call.take_argument_delta()
                 if arguments_delta:
                     events.append(
@@ -1876,26 +1840,45 @@ class _ResponsesStreamState:
         events: list[bytes] = []
         if not tool_call.announced:
             events.append(self._announce_tool(tool_call))
-        arguments_delta = tool_call.take_argument_delta()
-        if arguments_delta:
-            events.append(self._tool_arguments_event(tool_call, arguments_delta))
         output_index = _tool_output_index(tool_call)
-        arguments = tool_call.arguments
         item = _tool_item(self, tool_call, status=status)
-        events.extend(
-            [
+        if item["type"] == "custom_tool_call":
+            raw_input = item["input"]
+            if raw_input:
+                events.append(
+                    self.event(
+                        "response.custom_tool_call_input.delta",
+                        item_id=item["id"],
+                        output_index=output_index,
+                        delta=raw_input,
+                    )
+                )
+            events.append(
+                self.event(
+                    "response.custom_tool_call_input.done",
+                    item_id=item["id"],
+                    output_index=output_index,
+                    input=raw_input,
+                )
+            )
+        else:
+            arguments_delta = tool_call.take_argument_delta()
+            if arguments_delta:
+                events.append(self._tool_arguments_event(tool_call, arguments_delta))
+            events.append(
                 self.event(
                     "response.function_call_arguments.done",
-                    item_id=_tool_item_id(self, tool_call),
+                    item_id=item["id"],
                     output_index=output_index,
-                    arguments=arguments,
-                ),
-                self.event(
-                    "response.output_item.done",
-                    output_index=output_index,
-                    item=item,
-                ),
-            ]
+                    arguments=tool_call.arguments,
+                )
+            )
+        events.append(
+            self.event(
+                "response.output_item.done",
+                output_index=output_index,
+                item=item,
+            )
         )
         return events, output_index, item
 
@@ -1968,18 +1951,32 @@ def _tool_item(
         raise ValueError("Chat tool call stream ended without id")
     if not tool_call.name:
         raise ValueError("Chat tool call stream ended without function.name")
-    return {
+    identity = state.tool_identities[tool_call.source_index]
+    item = {
         "id": _tool_item_id(state, tool_call),
-        "type": "function_call",
         "status": status,
         "name": tool_call.name,
-        "arguments": tool_call.arguments if status != "in_progress" else "",
         "call_id": tool_call.call_id,
     }
+    if identity.namespace:
+        item["namespace"] = identity.namespace
+    if identity.tool_kind is ToolKind.CUSTOM:
+        item["type"] = "custom_tool_call"
+        item["input"] = (
+            capabilities.unwrap_custom_tool_input(tool_call.arguments)
+            if status != "in_progress"
+            else ""
+        )
+    else:
+        item["type"] = "function_call"
+        item["arguments"] = tool_call.arguments if status != "in_progress" else ""
+    return item
 
 
 def _tool_item_id(state: _ResponsesStreamState, tool_call: ChatToolCall) -> str:
-    return f"fc_{state.response_id.removeprefix('resp_')}_{tool_call.index}"
+    identity = state.tool_identities[tool_call.source_index]
+    prefix = "ctc" if identity.tool_kind is ToolKind.CUSTOM else "fc"
+    return f"{prefix}_{state.response_id.removeprefix('resp_')}_{tool_call.index}"
 
 
 def _tool_output_index(tool_call: ChatToolCall) -> int:

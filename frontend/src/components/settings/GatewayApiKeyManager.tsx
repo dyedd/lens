@@ -2,13 +2,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/Alert";
 import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { useRowSelection } from "@/hooks/useRowSelection";
-import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
+import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { GatewayApiKey, GatewayApiKeyPayload } from "@/lib/api/settings";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
@@ -28,7 +29,7 @@ const GatewayApiKeyDialog = lazyComponent(() =>
 export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
   const queryClient = useQueryClient();
   const timeZone = useAppTimeZone();
-  const { data: gatewayKeys = [] } = useQuery({
+  const { data: gatewayKeys = [], error: keysError } = useQuery({
     queryKey: ["gateway-api-keys"],
     queryFn: () => apiRequest<GatewayApiKey[]>("/admin/gateway-api-keys"),
     staleTime: 5_000,
@@ -84,6 +85,30 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     await queryClient.invalidateQueries({ queryKey: ["gateway-api-keys"] });
   }
 
+  async function updateGatewayKeyEnabled(
+    item: GatewayApiKey,
+    enabled: boolean,
+  ) {
+    const updated = await apiRequest<GatewayApiKey>(
+      `/admin/gateway-api-keys/${item.id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          remark: item.remark,
+          enabled,
+          allowed_models: item.allowed_models,
+          max_cost_usd: item.max_cost_usd,
+          expires_at: item.expires_at ?? null,
+        } satisfies GatewayApiKeyPayload),
+      },
+    );
+    queryClient.setQueryData<GatewayApiKey[]>(["gateway-api-keys"], (current) =>
+      (current ?? []).map((entry) =>
+        entry.id === updated.id ? updated : entry,
+      ),
+    );
+  }
+
   async function toggleGatewayKeyEnabled(
     item: GatewayApiKey,
     enabled: boolean,
@@ -94,26 +119,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
 
     setBusyId(item.id);
     try {
-      const updated = await apiRequest<GatewayApiKey>(
-        `/admin/gateway-api-keys/${item.id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            remark: item.remark,
-            enabled,
-            allowed_models: item.allowed_models,
-            max_cost_usd: item.max_cost_usd,
-            expires_at: item.expires_at ?? null,
-          } satisfies GatewayApiKeyPayload),
-        },
-      );
-      queryClient.setQueryData<GatewayApiKey[]>(
-        ["gateway-api-keys"],
-        (current) =>
-          (current ?? []).map((entry) =>
-            entry.id === updated.id ? updated : entry,
-          ),
-      );
+      await updateGatewayKeyEnabled(item, enabled);
       toast.success(
         titleForLocale(
           locale,
@@ -145,26 +151,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     setBusyId("bulk");
     try {
       for (const item of items) {
-        const updated = await apiRequest<GatewayApiKey>(
-          `/admin/gateway-api-keys/${item.id}`,
-          {
-            method: "PUT",
-            body: JSON.stringify({
-              remark: item.remark,
-              enabled,
-              allowed_models: item.allowed_models,
-              max_cost_usd: item.max_cost_usd,
-              expires_at: item.expires_at ?? null,
-            } satisfies GatewayApiKeyPayload),
-          },
-        );
-        queryClient.setQueryData<GatewayApiKey[]>(
-          ["gateway-api-keys"],
-          (current) =>
-            (current ?? []).map((entry) =>
-              entry.id === updated.id ? updated : entry,
-            ),
-        );
+        await updateGatewayKeyEnabled(item, enabled);
       }
       toast.success(
         titleForLocale(
@@ -199,7 +186,7 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
     setBusyId("bulk");
     try {
       for (const item of selectedKeys) {
-        await apiRequest<void>(`/admin/gateway-api-keys/${item.id}`, {
+        await apiFetch(`/admin/gateway-api-keys/${item.id}`, {
           method: "DELETE",
         });
       }
@@ -255,19 +242,36 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
           </>
         }
       >
-        <GatewayApiKeyTable
-          locale={locale}
-          gatewayKeys={gatewayKeys}
-          timeZone={timeZone}
-          selected={selection.selected}
-          busyId={busyId}
-          copiedKey={copiedKey}
-          onSelectAll={(checked) => selection.toggleRows(gatewayKeys, checked)}
-          onSelectOne={selection.toggleId}
-          onCopy={copyGatewayKey}
-          onEdit={openEditDialog}
-          onToggle={toggleGatewayKeyEnabled}
-        />
+        {keysError ? (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {getApiErrorMessage(
+                keysError,
+                titleForLocale(
+                  locale,
+                  "网关密钥加载失败",
+                  "Failed to load gateway keys",
+                ),
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <GatewayApiKeyTable
+            locale={locale}
+            gatewayKeys={gatewayKeys}
+            timeZone={timeZone}
+            selected={selection.selected}
+            busyId={busyId}
+            copiedKey={copiedKey}
+            onSelectAll={(checked) =>
+              selection.toggleRows(gatewayKeys, checked)
+            }
+            onSelectOne={selection.toggleId}
+            onCopy={copyGatewayKey}
+            onEdit={openEditDialog}
+            onToggle={toggleGatewayKeyEnabled}
+          />
+        )}
       </SettingsSection>
 
       <ConfirmDeleteDialog

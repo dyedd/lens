@@ -8,12 +8,19 @@ that speaks Chat Completions.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
 from ...models.protocols import ProtocolKind
 from . import capabilities, repair
 from .cache import normalize_cache_control
+from .chat_response import (
+    parse_chat_finish_reason,
+    parse_chat_usage,
+    serialize_chat_finish_reason,
+    serialize_chat_usage,
+)
 from .unified import (
     AudioPart,
     ContentPart,
@@ -37,7 +44,7 @@ from .unified import (
     ToolResultPart,
     UnifiedRequest,
 )
-from .unified_response import FinishReason, UnifiedResponse, Usage
+from .unified_response import UnifiedResponse
 from .validation import required_string
 
 _ORIGIN = ProtocolKind.OPENAI_CHAT
@@ -56,6 +63,10 @@ def parse_chat_request(body: Mapping[str, Any]) -> UnifiedRequest:
     request.generation = _chat_generation_config(body)
     request.tools = _chat_tools(body.get("tools"))
     request.tool_choice = _chat_tool_choice(body.get("tool_choice"))
+    parallel = body.get("parallel_tool_calls")
+    if isinstance(parallel, bool):
+        request.tool_choice = request.tool_choice or ToolChoice()
+        request.tool_choice.allow_parallel = parallel
     request.response_format = _chat_response_format(body)
     request.reasoning = _chat_reasoning_intent(body)
     request.user_id = _optional_string(body.get("user")) or ""
@@ -177,8 +188,8 @@ def parse_chat_response(body: Mapping[str, Any]) -> UnifiedResponse:
     response = UnifiedResponse(
         id=_optional_string(body.get("id")) or "",
         model=_optional_string(body.get("model")) or "",
-        finish=_chat_finish_reason(choice.get("finish_reason")),
-        usage=_chat_usage(body.get("usage")),
+        finish=parse_chat_finish_reason(choice.get("finish_reason")),
+        usage=parse_chat_usage(body.get("usage")),
     )
     message = choice.get("message")
     if not isinstance(message, Mapping):
@@ -222,10 +233,10 @@ def build_chat_response(response: UnifiedResponse) -> dict[str, Any]:
             {
                 "index": 0,
                 "message": message,
-                "finish_reason": _chat_finish_reason_wire(response.finish),
+                "finish_reason": serialize_chat_finish_reason(response.finish),
             }
         ],
-        "usage": _chat_usage_wire(response.usage),
+        "usage": serialize_chat_usage(response.usage),
     }
     return body
 
@@ -301,7 +312,6 @@ def _chat_passthrough(body: Mapping[str, Any]) -> dict[str, Any]:
         "prompt_cache_key",
         "prompt_cache_options",
         "prompt_cache_retention",
-        "parallel_tool_calls",
         "verbosity",
     ):
         if key in body:
@@ -633,7 +643,7 @@ def _message_to_chat(
         elif isinstance(part, ToolCallPart):
             arguments = part.arguments
             if part.kind is ToolKind.CUSTOM:
-                arguments = capabilities.unwrap_custom_tool_input(arguments)
+                arguments = json.dumps({"input": arguments}, ensure_ascii=False)
             tool_calls.append(
                 {
                     "id": part.call_id,
@@ -842,73 +852,6 @@ def _chat_message_parts(message: Mapping[str, Any]) -> list[ContentPart]:
     if isinstance(raw_tool_calls, list):
         parts.extend(_chat_tool_calls(raw_tool_calls))
     return parts
-
-
-def _chat_finish_reason(value: Any) -> FinishReason:
-    return {
-        "stop": FinishReason.END_TURN,
-        "length": FinishReason.MAX_TOKENS,
-        "tool_calls": FinishReason.TOOL_USE,
-        "function_call": FinishReason.TOOL_USE,
-        "content_filter": FinishReason.CONTENT_FILTER,
-    }.get(value, FinishReason.END_TURN)
-
-
-def _chat_finish_reason_wire(reason: FinishReason) -> str:
-    return {
-        FinishReason.END_TURN: "stop",
-        FinishReason.MAX_TOKENS: "length",
-        FinishReason.TOOL_USE: "tool_calls",
-        FinishReason.CONTENT_FILTER: "content_filter",
-        FinishReason.STOP_SEQUENCE: "stop",
-        FinishReason.OTHER: "stop",
-    }[reason]
-
-
-def _chat_usage(value: Any) -> Usage:
-    if not isinstance(value, Mapping):
-        return Usage()
-    return _chat_payload_usage(value)
-
-
-def _chat_usage_wire(usage: Usage) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "prompt_tokens": usage.input_tokens,
-        "completion_tokens": usage.output_tokens,
-        "total_tokens": usage.input_tokens + usage.output_tokens,
-    }
-    if usage.cached_input_tokens or usage.cache_creation_input_tokens:
-        result["prompt_tokens_details"] = {
-            "cached_tokens": usage.cached_input_tokens,
-            "cache_write_tokens": usage.cache_creation_input_tokens,
-        }
-    if usage.reasoning_tokens:
-        result["completion_tokens_details"] = {
-            "reasoning_tokens": usage.reasoning_tokens
-        }
-    return result
-
-
-def _usage_int(usage: Mapping[str, Any], key: str) -> int:
-    value = usage.get(key)
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
-
-
-def _chat_payload_usage(value: Mapping[str, Any]) -> Usage:
-    details = value.get("prompt_tokens_details")
-    cached = details.get("cached_tokens") if isinstance(details, Mapping) else 0
-    completion_details = value.get("completion_tokens_details")
-    reasoning = (
-        completion_details.get("reasoning_tokens")
-        if isinstance(completion_details, Mapping)
-        else 0
-    )
-    return Usage(
-        input_tokens=_usage_int(value, "prompt_tokens"),
-        output_tokens=_usage_int(value, "completion_tokens"),
-        cached_input_tokens=cached if isinstance(cached, int) else 0,
-        reasoning_tokens=reasoning if isinstance(reasoning, int) else 0,
-    )
 
 
 def _optional_string(value: Any) -> str | None:

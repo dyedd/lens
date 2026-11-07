@@ -7,7 +7,6 @@ from typing import Any
 import httpx
 import pytest
 from conftest import assert_error, run_async
-from fastapi import HTTPException
 
 from app.gateway.service.tasks.litellm_sync_tasks import (
     _fetch_litellm_payload as _original_fetch_litellm_payload,
@@ -59,6 +58,10 @@ def test_fetch_site_models_uses_selected_credentials(
         credential = request.headers["authorization"].removeprefix("Bearer ")
         seen.append(credential)
         assert request.url.path == "/v1/models"
+        assert all(
+            timeout is not None and timeout > 0
+            for timeout in request.extensions["timeout"].values()
+        )
         return httpx.Response(
             200,
             json={
@@ -72,7 +75,7 @@ def test_fetch_site_models_uses_selected_credentials(
             },
         )
 
-    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None)
     monkeypatch.setattr(model_discovery, "resolve_http_client", lambda _proxy: upstream)
     try:
         response = client.post(
@@ -329,29 +332,29 @@ def test_fetch_site_models_returns_bad_gateway_when_all_upstreams_fail(
     admin_headers,
     monkeypatch,
 ) -> None:
-    async def failing_fetch(_channel: Any) -> list[str]:
-        raise HTTPException(status_code=503, detail="upstream unavailable")
-
     import app.gateway.service.tasks.model_discovery as model_discovery
 
-    monkeypatch.setattr(model_discovery, "fetch_upstream_models", failing_fetch)
-
-    response = client.post(
-        "/api/admin/site-model-discoveries",
-        headers=admin_headers,
-        json={
-            "base_url": "https://upstream.example/v1",
-            "headers": [],
-            "credentials": [
-                {
-                    "id": "cred-a",
-                    "name": "primary",
-                    "api_key": "upstream-secret",
-                }
-            ],
-            "credential_ids": ["cred-a"],
-        },
+    upstream = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(503, json={"error": "upstream unavailable"})
+        )
     )
+    monkeypatch.setattr(model_discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        response = client.post(
+            "/api/admin/site-model-discoveries",
+            headers=admin_headers,
+            json={
+                "base_url": "https://upstream.example/v1",
+                "headers": [],
+                "credentials": [
+                    {"id": "cred-a", "name": "primary", "api_key": "upstream-secret"}
+                ],
+                "credential_ids": ["cred-a"],
+            },
+        )
+    finally:
+        run_async(upstream.aclose())
 
     assert_error(response, 502, "Model discovery failed")
 
@@ -779,14 +782,15 @@ def test_model_context_defaults_and_manual_detection(
         ]
     }
     client_type = httpx.AsyncClient
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(
-            200,
-            json=catalog
-            if str(request.url) == metadata.LITELLM_PRICE_URL
-            else upstream,
-        )
-    )
+    catalog_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == metadata.LITELLM_PRICE_URL:
+            catalog_requests.append(request)
+            return httpx.Response(200, json=catalog)
+        return httpx.Response(200, json=upstream)
+
+    transport = httpx.MockTransport(handler)
     monkeypatch.setattr(
         metadata.httpx,
         "AsyncClient",
@@ -809,6 +813,7 @@ def test_model_context_defaults_and_manual_detection(
         return {model["model_name"]: model for model in site["protocols"][0]["models"]}
 
     try:
+        catalog_requests.clear()
         response = client.post(
             "/api/admin/site-model-discoveries",
             headers=admin_headers,
@@ -823,7 +828,16 @@ def test_model_context_defaults_and_manual_detection(
         assert response.status_code == 200, response.text
         assert {
             item["model_name"]: item["context_window"] for item in response.json()
-        } == {"gpt-4o": 128_000, "unknown-128k": None}
+        } == {"gpt-4o": None, "unknown-128k": None}
+        assert not catalog_requests
+        response = client.post(
+            "/api/admin/model-context-detections",
+            headers=admin_headers,
+            json={"model_names": ["gpt-4o", "unknown-128k"]},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"gpt-4o": 128_000, "unknown-128k": None}
+        assert len(catalog_requests) == 1
         _run_model_sync(client, admin_headers, site_ids=[site_id])
         assert models()["gpt-4o"]["context_window"] == 128_000
         assert models()["unknown-128k"]["context_window"] is None
