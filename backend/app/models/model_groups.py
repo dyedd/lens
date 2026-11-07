@@ -8,6 +8,7 @@ from ..core.context_windows import ContextWindowSource
 from ..core.model_group_matching import MAX_MATCH_REGEX_LENGTH, MatchRegexOperator
 from .protocols import ProtocolKind, RoutingStrategy
 from .regex_rules import RegexRuleIds
+from .site_model_test import ModelTestMode
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel, validate_regex_pattern
 
@@ -283,7 +284,7 @@ class ModelGroupModelTestRequest(StrictBaseModel):
     channel_id: str = Field(min_length=1)
     credential_id: str = Field(min_length=1)
     model_name: str = Field(min_length=1)
-    prompt: str = Field(min_length=1, max_length=2000)
+    test_mode: ModelTestMode = "direct"
     protocol: ProtocolKind | None = None
 
 

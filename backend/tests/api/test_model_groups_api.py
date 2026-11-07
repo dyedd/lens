@@ -76,7 +76,7 @@ def test_model_group_model_test_uses_persisted_image_credential(
         assert request.headers["User-Agent"] == "configured-model-group-probe"
         assert json.loads(request.content) == {
             "model": "gpt-image-1",
-            "prompt": "draw a lens",
+            "prompt": "a dot",
             "n": 1,
             "size": "1024x1024",
         }
@@ -95,7 +95,6 @@ def test_model_group_model_test_uses_persisted_image_credential(
         "channel_id": channel_id,
         "credential_id": "cred-1",
         "model_name": "gpt-image-1",
-        "prompt": "draw a lens",
     }
     injected_response = client.post(
         f"/api/admin/model-groups/{group['id']}/model-tests",
@@ -116,6 +115,65 @@ def test_model_group_model_test_uses_persisted_image_credential(
     assert response.json()["success"] is True
     assert response.json()["output_text"] == "a polished lens"
     assert "upstream-secret" not in response.text
+
+
+def test_model_group_test_uses_member_and_rules_with_codex_identity(
+    client, admin_headers, create_site, create_model_group, monkeypatch
+) -> None:
+    create_site(valid_site_payload())
+    group = create_model_group(items=[_member()])
+    updated = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={
+            "name": group["name"],
+            "items": [_member()],
+            "headers": [
+                {"name": "Originator", "action": "override", "value": "group-client"}
+            ],
+            "param_override": [{"path": "temperature", "action": "set", "value": 0.2}],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer upstream-secret"
+        assert request.headers["user-agent"].startswith("codex_cli_rs/")
+        assert request.headers["originator"] == "group-client"
+        assert json.loads(request.content) == {
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "temperature": 0.2,
+        }
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content='data: {"choices": [{"delta": {"content": "hi"}}]}\n\ndata: [DONE]\n\n',
+        )
+
+    import app.gateway.service.tasks.site_model_probe as probe
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(probe, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        response = client.post(
+            f"/api/admin/model-groups/{group['id']}/model-tests",
+            headers=admin_headers,
+            json={
+                "channel_id": openai_chat_channel_id(),
+                "credential_id": "cred-1",
+                "model_name": "gpt-4o",
+                "test_mode": "codex",
+            },
+        )
+    finally:
+        run_async(upstream.aclose())
+
+    assert response.status_code == 200, response.text
+    assert response.json()["success"] is True
+    assert response.json()["output_text"] == "hi"
 
 
 @pytest.mark.parametrize(
@@ -153,7 +211,6 @@ def test_model_group_model_test_rejects_non_member_or_unavailable_member(
             "channel_id": openai_chat_channel_id(),
             "credential_id": "cred-1",
             "model_name": model_name,
-            "prompt": "ping",
         },
     )
 

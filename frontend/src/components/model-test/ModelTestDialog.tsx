@@ -1,5 +1,8 @@
-import { useState } from "react";
-import type { ModelTestDialogTarget } from "@/components/model-test/modelTestSession";
+import { useEffect, useState } from "react";
+import {
+  type ModelTestDialogTarget,
+  modelTestProtocols,
+} from "@/components/model-test/modelTestSession";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -9,23 +12,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
-import { Textarea } from "@/components/ui/Textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/ToggleGroup";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { SiteModelTestResult } from "@/lib/api/sites";
+import type { ModelTestMode, SiteModelTestResult } from "@/lib/api/sites";
+import { cn } from "@/lib/classNames";
 import type { Locale } from "@/lib/I18nContext";
 import { formatJson } from "@/lib/jsonFormatting";
 import { protocolLabel } from "@/lib/protocols";
@@ -44,16 +50,11 @@ type Props = {
   locale: Locale;
   testing: boolean;
   onClose: () => void;
-  prompts: string[];
-  promptMode: string;
-  prompt: string;
-  onPromptModeChange: (value: string) => void;
-  onPromptChange: (value: string) => void;
+  mode: ModelTestMode;
+  onModeChange: (mode: ModelTestMode) => void;
   onRun: () => void;
-  /** Batch only: applies a protocol to every row that offers it. */
   onProtocolChangeAll?: (protocol: ProtocolKind) => void;
   targetName?: string;
-  /** Keys that can run a single test; a selector shows when there are several. */
   credentialOptions?: Array<{ value: string; label: string }>;
   credentialValue?: string;
   onCredentialChange?: (value: string) => void;
@@ -79,7 +80,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 function DebugBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-1.5">
       <div className="text-xs text-muted-foreground">{label}</div>
       <pre className="max-h-52 overflow-auto rounded-md border border-border/60 bg-background p-3 font-mono text-xs leading-5 whitespace-pre-wrap break-all text-foreground/80">
         {value || "-"}
@@ -93,11 +94,8 @@ export function ModelTestDialog({
   locale,
   testing,
   onClose,
-  prompts,
-  promptMode,
-  prompt,
-  onPromptModeChange,
-  onPromptChange,
+  mode,
+  onModeChange,
   onRun,
   onProtocolChangeAll,
   targetName,
@@ -107,21 +105,39 @@ export function ModelTestDialog({
 }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const activeItem = items[Math.min(activeIndex, items.length - 1)];
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!testing) return;
+    const startedAt = performance.now();
+    setElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setElapsedSeconds((performance.now() - startedAt) / 1000);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [testing]);
+  const testItems = items.map((item) => ({
+    ...item,
+    protocols: modelTestProtocols(item.protocols, mode),
+  }));
+  const activeItem = testItems[Math.min(activeIndex, items.length - 1)];
   const { target, result, protocol, protocols, onProtocolChange, onDelete } =
     activeItem ?? {};
   const isChinese = locale === "zh-CN";
   const allProtocols = Array.from(
     new Set(
-      items.flatMap((item) =>
+      testItems.flatMap((item) =>
         item.protocols.length > 1 ? item.protocols : [],
       ),
     ),
   );
+  const testableCount = testItems.filter(
+    (item) => item.protocol !== null,
+  ).length;
   const canRun =
-    Boolean(prompt.trim()) &&
-    items.length > 0 &&
-    items.every((item) => item.protocol !== null) &&
+    testableCount > 0 &&
+    testItems.every(
+      (item) => !item.protocols.length || item.protocol !== null,
+    ) &&
     !testing;
   const debug = result?.debug;
   const requestHeaders = debug
@@ -151,34 +167,77 @@ export function ModelTestDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-            <div className="grid gap-3 border-b border-border/60 pb-4">
-              {items.length === 1 && credentialOptions.length > 1 ? (
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground">
-                    {isChinese ? "使用的 API Key" : "API key"}
-                  </span>
-                  <Select
-                    value={credentialValue ?? ""}
-                    onValueChange={(value) => onCredentialChange?.(value)}
-                    disabled={testing}
-                  >
-                    <SelectTrigger
-                      className="h-8 min-w-44 max-w-72"
-                      aria-label={isChinese ? "使用的 API Key" : "API key"}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5">
+            <FieldGroup className="gap-3 border-b border-border/60 pb-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <ToggleGroup
+                  type="single"
+                  value={mode}
+                  onValueChange={(value) => {
+                    if (value) onModeChange(value as ModelTestMode);
+                  }}
+                  disabled={testing}
+                  aria-label={isChinese ? "测试方式" : "Test mode"}
+                  className="shrink-0"
+                >
+                  {(["direct", "codex", "claude"] as const).map((value) => (
+                    <ToggleGroupItem
+                      key={value}
+                      value={value}
+                      disabled={
+                        !items.some(
+                          (item) =>
+                            modelTestProtocols(item.protocols, value).length,
+                        )
+                      }
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {credentialOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
+                      {value === "direct"
+                        ? isChinese
+                          ? "直接发送"
+                          : "Direct"
+                        : value === "codex"
+                          ? "Codex"
+                          : "Claude"}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+                {items.length === 1 && credentialOptions.length > 1 ? (
+                  <Field
+                    orientation="horizontal"
+                    data-disabled={testing}
+                    className="grid min-w-0 flex-[1_1_280px] grid-cols-[88px_minmax(0,1fr)] gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-2"
+                  >
+                    <FieldLabel
+                      htmlFor="model-test-credential"
+                      className="text-xs font-normal whitespace-nowrap text-muted-foreground"
+                    >
+                      API Key
+                    </FieldLabel>
+                    <Select
+                      value={credentialValue ?? ""}
+                      onValueChange={(value) => onCredentialChange?.(value)}
+                      disabled={testing}
+                    >
+                      <SelectTrigger
+                        id="model-test-credential"
+                        aria-label={isChinese ? "API Key" : "API key"}
+                        className="h-8 min-w-0 [&_[data-slot=select-value]]:truncate"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {credentialOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                ) : null}
+              </div>
               {items.length > 1 &&
               onProtocolChangeAll &&
               allProtocols.length ? (
@@ -206,18 +265,20 @@ export function ModelTestDialog({
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {allProtocols.map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {protocolLabel(value, locale)}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {allProtocols.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {protocolLabel(value, locale)}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 </div>
               ) : null}
               {items.length > 1 ? (
                 <div className="max-h-36 overflow-y-auto rounded-md bg-muted/35 p-1">
-                  {items.map((item, index) => (
+                  {testItems.map((item, index) => (
                     <div
                       key={`${item.target.modelName}-${index}`}
                       className="flex min-w-0 items-center gap-2 px-2 py-1 text-xs"
@@ -226,7 +287,12 @@ export function ModelTestDialog({
                         <TooltipTrigger asChild>
                           <button
                             type="button"
-                            className={`min-w-0 flex-1 truncate text-left ${index === activeIndex ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                            className={cn(
+                              "min-w-0 flex-1 truncate text-left",
+                              index === activeIndex
+                                ? "font-medium text-foreground"
+                                : "text-muted-foreground",
+                            )}
                             onClick={() => setActiveIndex(index)}
                           >
                             {item.target.modelName} · {item.target.upstreamName}
@@ -245,20 +311,29 @@ export function ModelTestDialog({
                               : "text-muted-foreground"
                         }
                       >
-                        {item.result
-                          ? item.result.success
-                            ? isChinese
-                              ? "成功"
-                              : "Success"
-                            : isChinese
-                              ? "失败"
-                              : "Failed"
-                          : testing
-                            ? isChinese
-                              ? "等待"
-                              : "Pending"
-                            : "-"}
+                        {!item.protocols.length
+                          ? isChinese
+                            ? "不支持"
+                            : "Unsupported"
+                          : item.result
+                            ? item.result.success
+                              ? isChinese
+                                ? "成功"
+                                : "Success"
+                              : isChinese
+                                ? "失败"
+                                : "Failed"
+                            : testing
+                              ? isChinese
+                                ? "等待"
+                                : "Pending"
+                              : "-"}
                       </span>
+                      {item.result ? (
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {(item.result.latency_ms / 1000).toFixed(2)} s
+                        </span>
+                      ) : null}
                       {item.protocols.length > 1 ? (
                         <Select
                           value={item.protocol ?? ""}
@@ -280,11 +355,13 @@ export function ModelTestDialog({
                             />
                           </SelectTrigger>
                           <SelectContent>
-                            {item.protocols.map((value) => (
-                              <SelectItem key={value} value={value}>
-                                {protocolLabel(value, locale)}
-                              </SelectItem>
-                            ))}
+                            <SelectGroup>
+                              {item.protocols.map((value) => (
+                                <SelectItem key={value} value={value}>
+                                  {protocolLabel(value, locale)}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           </SelectContent>
                         </Select>
                       ) : null}
@@ -292,10 +369,17 @@ export function ModelTestDialog({
                   ))}
                 </div>
               ) : protocols && protocols.length > 1 ? (
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground">
+                <Field
+                  orientation="horizontal"
+                  data-disabled={testing}
+                  className="grid grid-cols-[88px_minmax(0,1fr)] gap-3"
+                >
+                  <FieldLabel
+                    htmlFor="model-test-protocol"
+                    className="text-xs font-normal text-muted-foreground"
+                  >
                     {isChinese ? "测试协议" : "Test protocol"}
-                  </span>
+                  </FieldLabel>
                   <Select
                     value={protocol ?? ""}
                     onValueChange={(value) =>
@@ -304,64 +388,41 @@ export function ModelTestDialog({
                     disabled={testing}
                   >
                     <SelectTrigger
-                      className="h-8 min-w-44 max-w-60"
+                      id="model-test-protocol"
                       aria-label={isChinese ? "测试协议" : "Test protocol"}
+                      className="h-8 min-w-0 [&_[data-slot=select-value]]:truncate"
                     >
                       <SelectValue
                         placeholder={isChinese ? "选择协议" : "Choose protocol"}
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {protocols.map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {protocolLabel(value, locale)}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {protocols.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {protocolLabel(value, locale)}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
-                </div>
+                </Field>
               ) : null}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {isChinese ? "测试内容" : "Test input"}
-                </span>
-                <Select
-                  value={promptMode}
-                  onValueChange={onPromptModeChange}
-                  disabled={testing}
-                >
-                  <SelectTrigger
-                    className="h-7 w-32"
-                    aria-label={isChinese ? "预设问题" : "Preset prompt"}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {prompts.map((_, index) => (
-                      <SelectItem key={index} value={String(index)}>
-                        {isChinese
-                          ? `预设 ${index + 1}`
-                          : `Preset ${index + 1}`}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="custom">
-                      {isChinese ? "自定义" : "Custom"}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Textarea
-                className="min-h-16 resize-y"
-                value={prompt}
-                onChange={(event) => onPromptChange(event.target.value)}
-                disabled={testing}
-                maxLength={2000}
-                aria-label={isChinese ? "测试输入内容" : "Test input content"}
-              />
-            </div>
+              {testItems.some((item) => !item.protocols.length) ? (
+                <p className="text-xs text-muted-foreground">
+                  {items.length > 1
+                    ? isChinese
+                      ? "不支持此方式的模型会跳过。"
+                      : "Models that do not support this mode will be skipped."
+                    : isChinese
+                      ? "此模型不支持当前测试方式"
+                      : "This model does not support this test mode"}
+                </p>
+              ) : null}
+            </FieldGroup>
             {result ? (
-              <div className="space-y-4">
-                <div className="grid gap-x-5 gap-y-1.5 pt-3 sm:grid-cols-2">
+              <div className="mt-4 flex flex-col gap-4 pb-4">
+                <div className="grid gap-x-5 gap-y-1.5 sm:grid-cols-2">
                   <Detail
                     label={isChinese ? "上游" : "Upstream"}
                     value={target?.upstreamName || "-"}
@@ -379,8 +440,8 @@ export function ModelTestDialog({
                     value={String(result.status_code ?? "-")}
                   />
                   <Detail
-                    label={isChinese ? "延迟" : "Latency"}
-                    value={`${result.latency_ms} ms`}
+                    label={isChinese ? "响应耗时" : "Duration"}
+                    value={`${(result.latency_ms / 1000).toFixed(2)} s`}
                   />
                 </div>
                 {result.success && result.output_text ? (
@@ -395,12 +456,16 @@ export function ModelTestDialog({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span
-                      className={`inline-flex items-center gap-2 text-xs font-medium ${
-                        result.success ? "text-foreground" : "text-destructive"
-                      }`}
+                      className={cn(
+                        "inline-flex items-center gap-2 text-xs font-medium",
+                        result.success ? "text-foreground" : "text-destructive",
+                      )}
                     >
                       <span
-                        className={`size-1.5 rounded-full ${result.success ? "bg-foreground" : "bg-destructive"}`}
+                        className={cn(
+                          "size-1.5 rounded-full",
+                          result.success ? "bg-foreground" : "bg-destructive",
+                        )}
                         aria-hidden="true"
                       />
                       {result.success
@@ -425,7 +490,7 @@ export function ModelTestDialog({
                       {result.error_message}
                     </p>
                   ) : null}
-                  <TabsContent value="request" className="space-y-3">
+                  <TabsContent value="request" className="flex flex-col gap-3">
                     <DebugBlock
                       label={isChinese ? "请求头" : "Request headers"}
                       value={requestHeaders}
@@ -435,7 +500,7 @@ export function ModelTestDialog({
                       value={requestBody}
                     />
                   </TabsContent>
-                  <TabsContent value="response" className="space-y-3">
+                  <TabsContent value="response" className="flex flex-col gap-3">
                     <DebugBlock
                       label={isChinese ? "响应头" : "Response headers"}
                       value={responseHeaders}
@@ -447,23 +512,25 @@ export function ModelTestDialog({
                   </TabsContent>
                 </Tabs>
               </div>
-            ) : (
-              <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
-                {testing ? (
-                  <>
-                    <Spinner />
-                    {isChinese ? "正在测试" : "Testing"}
-                  </>
-                ) : isChinese ? (
-                  "暂无测试结果"
-                ) : (
-                  "No test result"
-                )}
-              </div>
-            )}
+            ) : null}
           </div>
 
           <DialogFooter className="shrink-0 px-5 py-3">
+            {testing ? (
+              <span
+                className="mr-auto self-center text-xs tabular-nums text-muted-foreground"
+                role="timer"
+              >
+                {items.length > 1
+                  ? isChinese
+                    ? "本轮耗时"
+                    : "Batch elapsed"
+                  : isChinese
+                    ? "已等待"
+                    : "Waiting"}{" "}
+                {elapsedSeconds.toFixed(1)} s
+              </span>
+            ) : null}
             {onDelete && !testing ? (
               <Button
                 type="button"
@@ -474,18 +541,18 @@ export function ModelTestDialog({
                 {isChinese ? "删除模型" : "Delete model"}
               </Button>
             ) : null}
+            <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+              {isChinese ? "关闭" : "Close"}
+            </Button>
             <Button type="button" size="sm" onClick={onRun} disabled={!canRun}>
               {testing ? <Spinner /> : null}
               {items.length > 1
                 ? isChinese
-                  ? "测试全部"
-                  : "Test all"
+                  ? `测试 ${testableCount} 个模型`
+                  : `Test ${testableCount} models`
                 : isChinese
                   ? "开始测试"
                   : "Start test"}
-            </Button>
-            <Button type="button" size="sm" onClick={onClose}>
-              {isChinese ? "关闭" : "Close"}
             </Button>
           </DialogFooter>
         </DialogContent>

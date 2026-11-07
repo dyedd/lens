@@ -17,10 +17,7 @@ import { type Locale, titleForLocale, useI18n } from "@/lib/I18nContext";
 
 import { CircuitBreakerSettingsSection } from "./CircuitBreakerSettingsSection";
 import { GatewaySettingsSection } from "./GatewaySettingsSection";
-import {
-  GeneralSettingsSection,
-  ModelTestSettingsSection,
-} from "./ProfileSettingsSections";
+import { GeneralSettingsSection } from "./ProfileSettingsSections";
 import { createSettingsTabs, SettingsNavigation } from "./SettingsNavigation";
 import { useAccountSettings } from "./useAccountSettings";
 import { useSettingsDraft } from "./useSettingsDraft";
@@ -91,7 +88,6 @@ export function SettingsScreen() {
               account={account}
             />
             <GatewaySettingsSection locale={locale} settings={settings} />
-            <ModelTestSettingsSection locale={locale} settings={settings} />
             <CircuitBreakerSettingsSection
               locale={locale}
               settings={settings}

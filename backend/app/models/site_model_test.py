@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, HttpUrl, field_validator, model_validator
 
@@ -13,6 +13,8 @@ from .sites import (
 )
 from .upstream_rules import HeaderRule, ParamOverrideRule
 from .validation import ContextWindow, StrictBaseModel
+
+ModelTestMode = Literal["direct", "codex", "claude"]
 
 
 class SiteModelFetchRequest(StrictBaseModel):
@@ -77,14 +79,12 @@ class SiteModelTestRequest(StrictBaseModel):
     param_override: list[ParamOverrideRule] = Field(default_factory=list)
     credential: SiteModelTestCredential
     model_name: str = Field(min_length=1)
-    prompt: str = Field(min_length=1, max_length=2000)
+    test_mode: ModelTestMode = "direct"
 
     _canonicalize_base_url = field_validator("base_url", mode="before")(
         canonicalize_base_url
     )
-    _require_non_empty_text = field_validator("model_name", "prompt")(
-        require_non_empty_text
-    )
+    _require_non_empty_text = field_validator("model_name")(require_non_empty_text)
 
     @model_validator(mode="after")
     def validate_credential_address(self) -> "SiteModelTestRequest":

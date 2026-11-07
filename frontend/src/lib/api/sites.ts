@@ -274,6 +274,8 @@ export type SiteModelProtocolDetectionResult = {
   model_name: string;
   protocols: ProtocolKind[];
 };
+export type ModelTestMode = "direct" | "codex" | "claude";
+
 export type SiteModelTestPayload = {
   protocol: ProtocolKind;
   base_url_id: string;
@@ -289,7 +291,7 @@ export type SiteModelTestPayload = {
     base_url_ids: string[] | null;
   };
   model_name: string;
-  prompt: string;
+  test_mode: ModelTestMode;
 };
 export type SiteModelTestResult = {
   success: boolean;

@@ -177,7 +177,6 @@ def test_plugins_cover_all_gateway_protocols_and_image_edits(
             "channel_id": "pc-1_openai_chat",
             "credential_id": "cred-1",
             "model_name": "plugin-model",
-            "prompt": "hi",
         },
     )
     assert result.status_code == 200, result.text
