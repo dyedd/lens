@@ -22,7 +22,6 @@ import {
   createLocalId,
   emptyProtocolConfig,
   persistedCredentialId,
-  resolveBaseUrlId,
 } from "./channelForm";
 import {
   coalesceFormModels,
@@ -31,7 +30,6 @@ import {
 import type {
   FormBaseUrl,
   FormCredential,
-  FormModel,
   FormProtocolConfig,
   FormState,
 } from "./channelTypes";
@@ -54,45 +52,17 @@ export function protocolForEndpointKind(
   return (kind && endpointProtocolByKind[kind]) ?? "openai_chat";
 }
 
-function credentialIdsForUrl(
-  form: Pick<FormState, "base_urls" | "credentials">,
+export function credentialIdsForUrl(
+  form: Pick<FormState, "credentials">,
   urlId: string,
 ) {
-  const primaryId = form.base_urls[0]?.id ?? "";
-  const isPrimary = urlId === primaryId;
-  const url = form.base_urls.find((item) => item.id === urlId);
-  if (isPrimary || url?.shareKeys !== false) {
-    return form.credentials
-      .filter((item) => item.api_key.trim() && !item.baseUrlId)
-      .map((item) => item.id);
-  }
   return form.credentials
-    .filter((item) => item.api_key.trim() && item.baseUrlId === urlId)
-    .map((item) => item.id);
-}
-
-function resolveModelBaseUrlId(
-  form: Pick<FormState, "base_urls" | "credentials">,
-  credentialId: string,
-  protocol: ProtocolKind,
-) {
-  return form.base_urls
     .filter(
-      (url) =>
-        url.url.trim() &&
-        url.kind !== "models" &&
-        credentialIdsForUrl(form, url.id).includes(credentialId) &&
-        endpointSupportsProtocol(url.kind, [protocol]),
+      (item) =>
+        item.api_key.trim() &&
+        (item.base_url_ids === null || item.base_url_ids.includes(urlId)),
     )
-    .sort(
-      (left, right) =>
-        endpointPriority(right.kind) - endpointPriority(left.kind),
-    )[0]?.id;
-}
-
-export function endpointPriority(kind: FormBaseUrl["kind"]) {
-  if (endpointProtocolByKind[kind] || kind === "protocol") return 2;
-  return kind === "china" ? 1 : 0;
+    .map((item) => item.id);
 }
 
 /** Rebuilds one protocol config per base URL with the keys it can use. */
@@ -103,37 +73,12 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
   const existingByUrl = new Map(
     form.protocolConfigs.map((config) => [config.base_url_id, config] as const),
   );
-  const modelsByUrl = new Map<string, Map<string, FormModel>>();
-  for (const config of form.protocolConfigs) {
-    for (const model of config.models) {
-      for (const protocol of model.protocols) {
-        const urlId = resolveModelBaseUrlId(
-          form,
-          model.credential_id,
-          protocol,
-        );
-        if (!urlId) continue;
-        const models = modelsByUrl.get(urlId) ?? new Map<string, FormModel>();
-        const key = JSON.stringify([
-          model.credential_id,
-          model.model_name,
-          protocol,
-        ]);
-        if (!models.has(key) || config.base_url_id === urlId)
-          models.set(key, {
-            ...model,
-            protocols: [protocol],
-            modelIdsByProtocol:
-              config.base_url_id === urlId ? model.modelIdsByProtocol : {},
-          });
-        modelsByUrl.set(urlId, models);
-      }
-    }
-  }
   return urls.map((url) => {
     const credentialIds = credentialIdsForUrl(form, url.id);
     const existing = existingByUrl.get(url.id);
-    const models = [...(modelsByUrl.get(url.id)?.values() ?? [])];
+    const models = (existing?.models ?? []).filter((model) =>
+      credentialIds.includes(model.credential_id),
+    );
     const protocols = protocolConfigEffectiveProtocols({ models });
     const fallbackProtocols = (existing?.protocols ?? []).filter((protocol) =>
       endpointSupportsProtocol(url.kind, [protocol]),
@@ -158,12 +103,15 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
   });
 }
 
-function endpointSupportsProtocol(
+export function endpointSupportsProtocol(
   kind: FormBaseUrl["kind"],
   protocols: ProtocolKind[],
 ) {
   const protocol = endpointProtocolByKind[kind];
-  return protocol === undefined || protocols.includes(protocol);
+  return (
+    kind !== "models" &&
+    (protocol === undefined || protocols.includes(protocol))
+  );
 }
 
 /** Converts a persisted site into channel editor state. */
@@ -173,24 +121,14 @@ export function toForm(site: Site): FormState {
         id: item.id,
         url: item.url,
         kind: item.kind ?? (item === site.base_urls[0] ? "default" : "china"),
-        shareKeys: true,
-        newApiKeysLines: "",
       }))
     : [
         {
           id: createLocalId("baseurl"),
           url: "",
           kind: "default",
-          shareKeys: true,
-          newApiKeysLines: "",
         },
       ];
-  const primaryId = baseUrls[0]?.id ?? "";
-  for (const url of baseUrls.slice(1)) {
-    url.shareKeys = !site.credentials.some(
-      (item) => item.base_url_id === url.id,
-    );
-  }
   const credentials: FormCredential[] = site.credentials.map((item) => ({
     id: persistedCredentialId(item.id),
     name: isGeneratedCredentialName(item.name) ? "" : item.name,
@@ -203,10 +141,7 @@ export function toForm(site: Site): FormState {
     rate_observed_at: item.rate_observed_at,
     rate_last_synced_at: item.rate_last_synced_at,
     rate_last_error: item.rate_last_error,
-    baseUrlId:
-      item.base_url_id && item.base_url_id !== primaryId
-        ? item.base_url_id
-        : "",
+    base_url_ids: item.base_url_ids,
   }));
   const protocolConfigs = site.protocols.map((protocolConfig) => {
     const models = coalesceFormModels(
@@ -227,7 +162,7 @@ export function toForm(site: Site): FormState {
     );
     return {
       id: protocolConfig.id,
-      base_url_id: resolveBaseUrlId(baseUrls, protocolConfig.base_url_id),
+      base_url_id: protocolConfig.base_url_id,
       credential_ids: credentialIds,
       protocols: protocolConfig.protocols,
       models,
@@ -251,20 +186,6 @@ export function toForm(site: Site): FormState {
     ...draft,
     protocolConfigs: rebuildProtocolConfigs(draft),
   };
-}
-
-/** Keeps a key's rate config when it still serves the key, else the first that does. */
-function resolveRateProtocolConfigId(
-  credential: FormCredential,
-  protocolConfigs: FormProtocolConfig[],
-) {
-  if (credential.rate_source === "none") return "";
-  const configIds = protocolConfigs
-    .filter((config) => config.credential_ids.includes(credential.id))
-    .map((config) => config.id);
-  return configIds.includes(credential.rate_protocol_config_id)
-    ? credential.rate_protocol_config_id
-    : (configIds[0] ?? "");
 }
 
 /** Prepare base URLs for the site payload. */
@@ -303,20 +224,14 @@ export function toPayload(form: FormState): SitePayload {
       id: persistedCredentialId(item.id),
       name: item.name.trim() || fallbackCredentialName(index),
       api_key: item.api_key.trim(),
-      base_url_id: item.baseUrlId,
+      base_url_ids: item.base_url_ids,
       model_pattern: item.model_pattern.trim(),
       rate_source: item.rate_source,
-      rate_protocol_config_id: resolveRateProtocolConfigId(
-        item,
-        rebuilt.protocolConfigs,
-      ),
+      rate_protocol_config_id:
+        item.rate_source === "none" ? "" : item.rate_protocol_config_id,
       rate_group: item.rate_group.trim(),
     })),
     protocols: rebuilt.protocolConfigs.flatMap((protocolConfig) => {
-      const selectedCredentialIds = protocolConfig.credential_ids.filter((id) =>
-        credentials.some((item) => item.id === id),
-      );
-      if (!selectedCredentialIds.length) return [];
       const models = protocolConfig.models
         .flatMap((model) =>
           model.protocols.map((protocol) => ({

@@ -1,7 +1,6 @@
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
-import { type Dispatch, type SetStateAction, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import {
@@ -12,16 +11,12 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { cn } from "@/lib/classNames";
-import { ChannelCredentialSection } from "./ChannelCredentialSection";
 import { ChannelEndpointProbe } from "./ChannelEndpointProbe";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
 
 type Props = {
   form: FormState;
   locale: Locale;
-  siteId: string | null;
-  canSyncRates: boolean;
-  setForm: Dispatch<SetStateAction<FormState>>;
   onAdd: () => void;
   onUpdate: (index: number, patch: Partial<FormBaseUrl>) => void;
   onRemove: (index: number) => void;
@@ -30,9 +25,6 @@ type Props = {
 export function ChannelBaseUrlSection({
   form,
   locale,
-  siteId,
-  canSyncRates,
-  setForm,
   onAdd,
   onUpdate,
   onRemove,
@@ -115,7 +107,6 @@ export function ChannelBaseUrlSection({
           <div className="space-y-3 pt-1">
             {extraUrls.map((baseUrl, extraIndex) => {
               const index = extraIndex + 1;
-              const shareKeys = baseUrl.shareKeys !== false;
               return (
                 <div
                   key={baseUrl.id}
@@ -187,52 +178,6 @@ export function ChannelBaseUrlSection({
                   >
                     <Trash2 className="size-3.5 stroke-1" />
                   </Button>
-                  <label
-                    htmlFor={`share-keys-${baseUrl.id}`}
-                    className="col-span-3 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
-                  >
-                    <Checkbox
-                      id={`share-keys-${baseUrl.id}`}
-                      checked={shareKeys}
-                      onCheckedChange={(checked) => {
-                        const nextShare = checked === true;
-                        setForm((current) => ({
-                          ...current,
-                          base_urls: current.base_urls.map((item, itemIndex) =>
-                            itemIndex === index
-                              ? {
-                                  ...item,
-                                  shareKeys: nextShare,
-                                  newApiKeysLines: nextShare
-                                    ? ""
-                                    : item.newApiKeysLines,
-                                }
-                              : item,
-                          ),
-                          credentials: nextShare
-                            ? current.credentials.filter(
-                                (item) => item.baseUrlId !== baseUrl.id,
-                              )
-                            : current.credentials,
-                        }));
-                      }}
-                    />
-                    {locale === "zh-CN" ? "共用主地址密钥" : "Use primary keys"}
-                  </label>
-                  {shareKeys ? null : (
-                    <div className="col-span-3 min-w-0">
-                      <ChannelCredentialSection
-                        locale={locale}
-                        inputId={`channel-keys-${baseUrl.id}`}
-                        required={!siteId}
-                        baseUrlId={baseUrl.id}
-                        form={form}
-                        setForm={setForm}
-                        siteId={siteId}
-                        canSyncRates={canSyncRates}
-                      />
-                    </div>
-                  )}
                 </div>
               );
             })}

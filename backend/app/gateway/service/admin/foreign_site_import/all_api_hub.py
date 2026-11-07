@@ -48,7 +48,10 @@ def parse_all_api_hub_sites(payload: dict[str, Any]) -> ParsedForeignSites:
                     base_urls=[SiteImportBaseUrlInput(ref="u0", url=base_url)],
                     credentials=[
                         SiteImportCredentialInput(
-                            ref="c0", name="API key", api_key=api_key
+                            ref="c0",
+                            name="API key",
+                            api_key=api_key,
+                            base_url_refs=["u0"],
                         )
                     ],
                     protocols=[

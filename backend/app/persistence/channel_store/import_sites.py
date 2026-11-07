@@ -112,7 +112,7 @@ def _import_base_urls(
                 )
             )
             continue
-        if base_url.kind in seen_kinds:
+        if base_url.kind in {"default", "models"} and base_url.kind in seen_kinds:
             errors.append(
                 SiteBatchImportFieldError(
                     field=f"base_urls.{base_url_index}.kind",
@@ -183,19 +183,19 @@ def _import_credentials(
             continue
         names.add(name_key)
 
-        base_url_id = ""
-        base_url_ref = credential.base_url_ref.strip()
-        if base_url_ref:
+        base_url_ids: list[str] | None = (
+            [] if credential.base_url_refs is not None else None
+        )
+        for base_url_ref in credential.base_url_refs or []:
             resolved = _resolve_import_ref(
-                f"credentials.{credential_index}.base_url_ref",
+                f"credentials.{credential_index}.base_url_refs",
                 base_url_ref,
                 base_url_refs,
                 "Base URL",
                 errors,
             )
-            if resolved is None:
-                continue
-            base_url_id = resolved
+            if resolved is not None:
+                base_url_ids.append(resolved)
 
         credential_id = str(uuid.uuid4())
         refs[ref] = credential_id
@@ -204,7 +204,7 @@ def _import_credentials(
                 id=credential_id,
                 name=name,
                 api_key=api_key,
-                base_url_id=base_url_id,
+                base_url_ids=base_url_ids,
             )
         )
     return credentials, refs

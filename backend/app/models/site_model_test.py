@@ -1,6 +1,9 @@
-from pydantic import Field, HttpUrl, field_validator
+from typing import Any
+
+from pydantic import Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
+from .credential_scopes import parse_legacy_credential_scopes
 from .protocols import ChannelProxyMode, ProtocolKind
 from .sites import (
     SiteBaseUrlKind,
@@ -13,6 +16,7 @@ from .validation import ContextWindow, StrictBaseModel
 
 
 class SiteModelFetchRequest(StrictBaseModel):
+    base_url_id: str = Field(default="preview", min_length=1)
     base_url: HttpUrl
     endpoint_kind: SiteBaseUrlKind = "default"
     # Omitted: try each listing protocol until the upstream answers.
@@ -26,6 +30,20 @@ class SiteModelFetchRequest(StrictBaseModel):
     _canonicalize_base_url = field_validator("base_url", mode="before")(
         canonicalize_base_url
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_legacy_scopes(cls, payload: Any) -> Any:
+        if not isinstance(payload, dict):
+            return payload
+        # 旧发现请求只有一个地址，只授权这次请求，不生成持久化的任意范围。
+        converted = parse_legacy_credential_scopes(
+            {
+                **payload,
+                "base_urls": [{"id": payload.get("base_url_id", "preview")}],
+            }
+        )
+        return {key: value for key, value in converted.items() if key != "base_urls"}
 
 
 class SiteModelFetchItem(StrictBaseModel):
@@ -46,10 +64,12 @@ class SiteModelTestCredential(StrictBaseModel):
     id: str = Field(min_length=1)
     name: str = ""
     api_key: str = Field(min_length=1)
+    base_url_ids: list[str] | None = None
 
 
 class SiteModelTestRequest(StrictBaseModel):
     protocol: ProtocolKind
+    base_url_id: str = Field(default="preview", min_length=1)
     base_url: HttpUrl
     headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
@@ -65,6 +85,13 @@ class SiteModelTestRequest(StrictBaseModel):
     _require_non_empty_text = field_validator("model_name", "prompt")(
         require_non_empty_text
     )
+
+    @model_validator(mode="after")
+    def validate_credential_address(self) -> "SiteModelTestRequest":
+        scope = self.credential.base_url_ids
+        if scope is not None and self.base_url_id not in scope:
+            raise ValueError("Credential is not allowed for model testing")
+        return self
 
 
 class SiteModelProtocolDetectionRequest(StrictBaseModel):

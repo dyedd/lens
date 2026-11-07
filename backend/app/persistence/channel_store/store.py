@@ -45,6 +45,7 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
 )
 
+from ..json_columns import load_base_url_ids
 from .cleanup import cleanup_deleted_protocol_configs, cleanup_invalid_group_items
 from .import_sites import build_site_batch_import_result, prepare_site_batch
 from .mapping import (
@@ -107,7 +108,7 @@ class ChannelStore:
                 name=item.name.strip(),
                 api_key=item.api_key,
                 sort_order=index,
-                base_url_id=item.base_url_id,
+                base_url_ids=item.base_url_ids,
             )
             for index, item in enumerate(payload.credentials)
             if item.name.strip() and item.api_key.strip()
@@ -123,6 +124,13 @@ class ChannelStore:
             if credential is None:
                 raise ValueError(
                     f"Credential not found for model discovery: {credential_id}"
+                )
+            if (
+                credential.base_url_ids is not None
+                and payload.base_url_id not in credential.base_url_ids
+            ):
+                raise ValueError(
+                    f"Credential is not allowed for model discovery: {credential_id}"
                 )
             previews.append(
                 {
@@ -140,7 +148,7 @@ class ChannelStore:
         upstream_names: set[str],
         upstream_pattern: str = "",
         upstream_context_windows: Mapping[str, int] | None = None,
-        upstream_protocols: Mapping[str, ProtocolKind] | None = None,
+        upstream_protocols: Mapping[str, tuple[ProtocolKind, ...]] | None = None,
         context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
         """Make one credential's rows equal the models its filter keeps.
@@ -175,7 +183,10 @@ class ChannelStore:
             )
             bound_ids = set(
                 credential_ids_for_url(
-                    [(row.id, row.base_url_id) for row in credential_rows],
+                    [
+                        (row.id, load_base_url_ids(row.base_url_ids_json))
+                        for row in credential_rows
+                    ],
                     entity.base_url_id,
                 )
             )
@@ -218,22 +229,23 @@ class ChannelStore:
                     has_context_changes = True
 
             for name in sorted(kept_names - existing_names):
-                session.add(
-                    SiteDiscoveredModelEntity(
-                        id=str(uuid.uuid4()),
-                        protocol_config_id=protocol_config_id,
-                        credential_id=credential_id,
-                        model_name=name,
-                        enabled=1,
-                        sort_order=next_sort_order,
-                        protocol=onboard_protocols.get(
-                            name, ProtocolKind.OPENAI_CHAT
-                        ).value,
-                        upstream_context_window=reported_context_windows.get(name),
-                        context_window=(context_windows or {}).get(name),
+                for protocol in onboard_protocols.get(
+                    name, (ProtocolKind.OPENAI_CHAT,)
+                ):
+                    session.add(
+                        SiteDiscoveredModelEntity(
+                            id=str(uuid.uuid4()),
+                            protocol_config_id=protocol_config_id,
+                            credential_id=credential_id,
+                            model_name=name,
+                            enabled=1,
+                            sort_order=next_sort_order,
+                            protocol=protocol.value,
+                            upstream_context_window=reported_context_windows.get(name),
+                            context_window=(context_windows or {}).get(name),
+                        )
                     )
-                )
-                next_sort_order += 1
+                    next_sort_order += 1
                 added.add(name)
 
             if added or removed or has_context_changes:

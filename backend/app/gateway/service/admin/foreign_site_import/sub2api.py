@@ -82,7 +82,10 @@ def parse_sub2api_sites(payload: dict[str, Any]) -> ParsedForeignSites:
                     base_urls=[_base_url_input(base_url)],
                     credentials=[
                         SiteImportCredentialInput(
-                            ref="c0", name="API key", api_key=api_key
+                            ref="c0",
+                            name="API key",
+                            api_key=api_key,
+                            base_url_refs=["u0"],
                         )
                     ],
                     channel_proxy=proxies.get(

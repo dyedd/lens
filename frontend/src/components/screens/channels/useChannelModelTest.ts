@@ -56,6 +56,11 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
         if (options.has(key) || !model.model_name.trim()) continue;
         const entry = credentials.get(model.credential_id);
         if (!entry?.credential.api_key.trim()) continue;
+        if (
+          entry.credential.base_url_ids !== null &&
+          !entry.credential.base_url_ids.includes(config.base_url_id)
+        )
+          continue;
         const protocols = modelSupportedProtocols(model);
         if (!protocols.length) continue;
         options.set(key, {
@@ -118,6 +123,8 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       !config ||
       !model ||
       !credential?.api_key.trim() ||
+      (credential.base_url_ids !== null &&
+        !credential.base_url_ids.includes(config.base_url_id)) ||
       !baseUrl ||
       !prompt
     ) {
@@ -130,6 +137,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     if (!selectedProtocol) return null;
     return {
       protocol: selectedProtocol,
+      base_url_id: config.base_url_id,
       base_url: baseUrl,
       headers: formHeaders(form),
       proxy_mode: form.proxy_mode,
@@ -141,6 +149,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
         id: credential.id,
         name: credential.name.trim() || fallbackCredentialName(credentialIndex),
         api_key: credential.api_key.trim(),
+        base_url_ids: credential.base_url_ids,
       },
       model_name: model.model_name.trim(),
       prompt,

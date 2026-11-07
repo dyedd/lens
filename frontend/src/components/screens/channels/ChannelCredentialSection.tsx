@@ -9,8 +9,14 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/Popover";
 import {
   Select,
   SelectContent,
@@ -27,15 +33,15 @@ import {
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { SiteCredential } from "@/lib/api/sites";
 import { credentialLabel } from "@/lib/credentialLabels";
+import { formatEndpointLabel } from "./channelDisplay";
 import { addApiKeyDraft } from "./channelForm";
+import { rebuildProtocolConfigs } from "./channelFormConversion";
 import type { FormCredential, FormState, Locale } from "./channelTypes";
 
 type Props = {
   locale: Locale;
   inputId: string;
   required?: boolean;
-  /** Empty for the keys shared by the primary URL and URLs reusing them. */
-  baseUrlId: string;
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
   siteId: string | null;
@@ -151,12 +157,10 @@ function CredentialKeyCell({
   );
 }
 
-/** Renders one URL's keys and a draft box that joins the list on Enter. */
 export function ChannelCredentialSection({
   locale,
   inputId,
   required = false,
-  baseUrlId,
   form,
   setForm,
   siteId,
@@ -166,29 +170,18 @@ export function ChannelCredentialSection({
   const queryClient = useQueryClient();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const newApiKeysLines = baseUrlId
-    ? (form.base_urls.find((item) => item.id === baseUrlId)?.newApiKeysLines ??
-      "")
-    : form.newApiKeysLines;
-  // Keep the site-wide index so fallback labels match the rest of the app.
-  const scopedKeys = form.credentials
-    .map((credential, index) => ({ credential, index }))
-    .filter(({ credential }) => credential.baseUrlId === baseUrlId);
+  const scopedKeys = form.credentials.map((credential, index) => ({
+    credential,
+    index,
+  }));
+  const configs = rebuildProtocolConfigs(form);
 
   function changeDraft(value: string) {
-    setForm((current) => ({
-      ...current,
-      newApiKeysLines: baseUrlId ? current.newApiKeysLines : value,
-      base_urls: baseUrlId
-        ? current.base_urls.map((item) =>
-            item.id === baseUrlId ? { ...item, newApiKeysLines: value } : item,
-          )
-        : current.base_urls,
-    }));
+    setForm((current) => ({ ...current, newApiKeysLines: value }));
   }
 
   function addDraftKeys() {
-    const result = addApiKeyDraft(form, baseUrlId);
+    const result = addApiKeyDraft(form);
     if (result.form === form) return;
     setForm(result.form);
     if (result.added === 0) {
@@ -211,12 +204,34 @@ export function ChannelCredentialSection({
   }
 
   function updateKey(credentialId: string, patch: Partial<FormCredential>) {
-    setForm((current) => ({
-      ...current,
-      credentials: current.credentials.map((item) =>
+    const next = {
+      ...form,
+      credentials: form.credentials.map((item) =>
         item.id === credentialId ? { ...item, ...patch } : item,
       ),
-    }));
+    };
+    const protocolConfigs = rebuildProtocolConfigs(next);
+    const removedCount = form.protocolConfigs.reduce(
+      (count, config) =>
+        count +
+        config.models
+          .filter(
+            (model) =>
+              model.credential_id === credentialId &&
+              !protocolConfigs
+                .find((item) => item.id === config.id)
+                ?.credential_ids.includes(credentialId),
+          )
+          .reduce((total, model) => total + model.protocols.length, 0),
+      0,
+    );
+    if (removedCount)
+      toast.info(
+        isZh
+          ? `保存后将移除 ${removedCount} 个模型出口`
+          : `${removedCount} model outlets will be removed on save`,
+      );
+    setForm({ ...next, protocolConfigs });
   }
 
   function removeKey(credentialId: string) {
@@ -294,7 +309,7 @@ export function ChannelCredentialSection({
             ? "每行输入一个 API Key，按 Enter 添加；Shift+Enter 换行"
             : "One API key per line. Enter adds it; Shift+Enter inserts a new line"
         }
-        value={newApiKeysLines}
+        value={form.newApiKeysLines}
         onChange={(event) => changeDraft(event.target.value)}
         onKeyDown={handleDraftKeyDown}
       />
@@ -338,6 +353,14 @@ export function ChannelCredentialSection({
                       onValueChange={(value) =>
                         updateKey(credential.id, {
                           rate_source: value as FormCredential["rate_source"],
+                          rate_protocol_config_id:
+                            value === "none"
+                              ? ""
+                              : credential.rate_protocol_config_id ||
+                                configs.find((config) =>
+                                  config.credential_ids.includes(credential.id),
+                                )?.id ||
+                                "",
                           rate_group:
                             value === "newapi" ? credential.rate_group : "",
                           ...CLEARED_RATE_STATUS,
@@ -376,8 +399,139 @@ export function ChannelCredentialSection({
                       </TooltipContent>
                     </Tooltip>
                   </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 max-w-full justify-start px-0 text-xs font-normal text-muted-foreground"
+                        aria-label={
+                          credentialLabel(credential, index, locale) +
+                          (isZh ? " 适用地址" : " allowed endpoints")
+                        }
+                      >
+                        <span className="truncate">
+                          {credential.base_url_ids === null
+                            ? isZh
+                              ? "任意地址"
+                              : "Any endpoint"
+                            : credential.base_url_ids.length === 0
+                              ? isZh
+                                ? "未选择地址"
+                                : "No endpoints selected"
+                              : form.base_urls
+                                  .filter((url) =>
+                                    credential.base_url_ids?.includes(url.id),
+                                  )
+                                  .map((url) =>
+                                    formatEndpointLabel(url, locale),
+                                  )
+                                  .join(" · ")}
+                        </span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="w-80 max-w-[calc(100vw-2rem)] p-2"
+                    >
+                      <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+                        <label
+                          htmlFor={`scope-any-${credential.id}`}
+                          className="flex cursor-pointer items-center gap-2 rounded-md p-1.5 text-xs"
+                        >
+                          <Checkbox
+                            id={`scope-any-${credential.id}`}
+                            checked={credential.base_url_ids === null}
+                            onCheckedChange={(checked) =>
+                              updateKey(credential.id, {
+                                base_url_ids: checked === true ? null : [],
+                              })
+                            }
+                          />
+                          {isZh ? "任意地址" : "Any endpoint"}
+                        </label>
+                        {form.base_urls.map((url) => (
+                          <label
+                            key={url.id}
+                            htmlFor={`scope-${credential.id}-${url.id}`}
+                            className="flex cursor-pointer items-start gap-2 rounded-md p-1.5 text-xs"
+                          >
+                            <Checkbox
+                              id={`scope-${credential.id}-${url.id}`}
+                              checked={
+                                credential.base_url_ids?.includes(url.id) ??
+                                false
+                              }
+                              onCheckedChange={(checked) =>
+                                updateKey(credential.id, {
+                                  base_url_ids:
+                                    checked === true
+                                      ? [
+                                          ...(credential.base_url_ids ?? []),
+                                          url.id,
+                                        ]
+                                      : (credential.base_url_ids ?? []).filter(
+                                          (id) => id !== url.id,
+                                        ),
+                                })
+                              }
+                            />
+                            <span className="min-w-0 break-all">
+                              {formatEndpointLabel(url, locale)}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   {credential.rate_source !== "none" ? (
-                    <div className="flex h-7 items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Select
+                        value={
+                          configs.some(
+                            (config) =>
+                              config.id ===
+                                credential.rate_protocol_config_id &&
+                              config.credential_ids.includes(credential.id),
+                          )
+                            ? credential.rate_protocol_config_id
+                            : ""
+                        }
+                        onValueChange={(value) =>
+                          updateKey(credential.id, {
+                            rate_protocol_config_id: value,
+                            ...CLEARED_RATE_STATUS,
+                          })
+                        }
+                      >
+                        <SelectTrigger
+                          className="h-7 min-w-0 flex-1 px-2 text-xs"
+                          aria-label={isZh ? "倍率查询地址" : "Rate endpoint"}
+                        >
+                          <SelectValue
+                            placeholder={
+                              isZh ? "选择倍率查询地址" : "Choose rate endpoint"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {configs
+                            .filter((config) =>
+                              config.credential_ids.includes(credential.id),
+                            )
+                            .map((config) => (
+                              <SelectItem key={config.id} value={config.id}>
+                                {formatEndpointLabel(
+                                  form.base_urls.find(
+                                    (url) => url.id === config.base_url_id,
+                                  )!,
+                                  locale,
+                                )}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                       {credential.rate_source === "newapi" ? (
                         <Input
                           className="h-7 w-20 shrink-0 px-2 text-xs"

@@ -33,9 +33,6 @@ from ..site_loader import (
 def flatten_site(site: SiteConfig) -> list[ChannelConfig]:
     credentials_by_id = {item.id: item for item in site.credentials}
     base_urls_by_id = {item.id: item for item in site.base_urls}
-    model_list_url = next(
-        (item.url for item in site.base_urls if item.kind == "models"), None
-    )
     items: list[ChannelConfig] = []
     for protocol_config in site.protocols:
         bound_base_url = base_urls_by_id.get(protocol_config.base_url_id)
@@ -44,6 +41,8 @@ def flatten_site(site: SiteConfig) -> list[ChannelConfig]:
                 "Base URL not found for protocol config "
                 f"{protocol_config.id}: {protocol_config.base_url_id}"
             )
+        if bound_base_url.kind == "models":
+            continue
         protocols = protocol_config.protocols
         if not protocols:
             continue
@@ -51,7 +50,14 @@ def flatten_site(site: SiteConfig) -> list[ChannelConfig]:
         if not keys:
             continue
         active_key = keys[0]
-        models_by_protocol = _models_by_protocol(protocol_config.models)
+        allowed_key_ids = {key.id for key in keys}
+        models_by_protocol = _models_by_protocol(
+            [
+                model
+                for model in protocol_config.models
+                if model.credential_id in allowed_key_ids
+            ]
+        )
         for protocol in protocols:
             protocol_models = models_by_protocol.get(protocol, [])
             items.append(
@@ -63,7 +69,6 @@ def flatten_site(site: SiteConfig) -> list[ChannelConfig]:
                     protocol=protocol,
                     base_url=bound_base_url.url,
                     endpoint_kind=bound_base_url.kind,
-                    model_list_url=model_list_url,
                     api_key=active_key.key,
                     status=(
                         ChannelStatus.ENABLED
@@ -101,12 +106,7 @@ def _build_channel_keys(
         credential_id: index + 1
         for index, credential_id in enumerate(credentials_by_id)
     }
-    credential_ids = list(
-        dict.fromkeys(
-            protocol_config.credential_ids
-            + [item.credential_id for item in protocol_config.models]
-        )
-    )
+    credential_ids = protocol_config.credential_ids
     return [
         ChannelKeyItem(
             id=credential.id,
@@ -159,16 +159,19 @@ def build_credentials(
         if name_key in seen_names:
             raise ValueError(f"Duplicate credential name: {name}")
         seen_names.add(name_key)
-        base_url_id = item.base_url_id.strip()
-        if base_url_id and base_url_id not in base_url_ids:
-            raise ValueError(f"Credential base URL not found: {base_url_id}")
+        if item.base_url_ids is not None:
+            missing = set(item.base_url_ids) - base_url_ids
+            if missing:
+                raise ValueError(
+                    f"Credential base URL not found: {', '.join(sorted(missing))}"
+                )
         built_credentials.append(
             SiteCredential(
                 id=item.id or str(uuid.uuid4()),
                 name=name,
                 api_key=item.api_key,
                 sort_order=index,
-                base_url_id=base_url_id,
+                base_url_ids=item.base_url_ids,
                 model_pattern=item.model_pattern,
                 rate_source=item.rate_source,
                 rate_protocol_config_id=item.rate_protocol_config_id,
@@ -187,7 +190,7 @@ def build_base_urls(items: list[SiteBaseUrlInput]) -> list[SiteBaseUrl]:
         url_str = str(item.url).strip()
         if not url_str:
             raise ValueError("Base URL is required")
-        if item.kind in seen_kinds:
+        if item.kind in {"default", "models"} and item.kind in seen_kinds:
             raise ValueError(f"Duplicate endpoint purpose: {item.kind}")
         seen_kinds.add(item.kind)
         built_base_urls.append(

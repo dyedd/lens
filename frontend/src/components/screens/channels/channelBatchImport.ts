@@ -21,6 +21,7 @@ export const BATCH_IMPORT_TEMPLATE: SiteBatchImportPayload = {
           ref: "key1",
           name: "Key 1",
           api_key: "sk-...",
+          base_url_refs: ["main"],
         },
       ],
       protocols: [

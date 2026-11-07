@@ -85,6 +85,7 @@ def _append_provider_site(
                         ref=f"c{key_index}",
                         name=f"Key {key_index + 1}",
                         api_key=api_keys[key_index]["api-key"],
+                        base_url_refs=["u0"],
                     )
                     for key_index in range(key_count)
                 ],
