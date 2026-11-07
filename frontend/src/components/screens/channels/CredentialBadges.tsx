@@ -26,7 +26,13 @@ export function CredentialBadges({ keys, totalCount, details, locale }: Props) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex h-7 min-w-0 items-center gap-1">
+        <button
+          type="button"
+          aria-label={
+            locale === "zh-CN" ? "查看模型来源" : "View model sources"
+          }
+          className="flex h-7 min-w-0 items-center gap-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
           {coversAllKeys ? (
             <Badge variant="secondary">
               {locale === "zh-CN"
@@ -49,7 +55,7 @@ export function CredentialBadges({ keys, totalCount, details, locale }: Props) {
               +{hiddenCount}
             </span>
           ) : null}
-        </div>
+        </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="flex-col items-start gap-0.5">
         {details.map((line) => (

@@ -16,6 +16,7 @@ import {
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelDisplay";
+import { modelSourceKey } from "./channelModels";
 import type { Locale, PickerModelItem } from "./channelTypes";
 import type {
   RemoteModelCatalog,
@@ -25,7 +26,7 @@ import type {
 type CatalogFilter = "new" | "bound" | "all";
 type CatalogRow = {
   name: string;
-  status: Exclude<CatalogFilter, "all">;
+  status: "new" | "partial" | "bound";
   sources: RemoteModelItem[];
 };
 
@@ -42,6 +43,8 @@ type Props = {
 };
 
 function statusLabel(status: CatalogRow["status"], locale: Locale) {
+  if (status === "partial")
+    return locale === "zh-CN" ? "部分已添加" : "Partly added";
   if (status === "bound") return locale === "zh-CN" ? "已添加" : "Added";
   return locale === "zh-CN" ? "未添加" : "Not added";
 }
@@ -90,14 +93,23 @@ export function ChannelRemoteModelsDialog({
     return [
       ...Array.from(sourcesByName, ([name, sources]) => ({
         name,
-        status: catalog.boundNames.has(name) ? "bound" : "new",
+        status: sources.every((source) =>
+          catalog.boundSources.has(modelSourceKey(source)),
+        )
+          ? "bound"
+          : sources.some((source) =>
+                catalog.boundSources.has(modelSourceKey(source)),
+              )
+            ? "partial"
+            : "new",
         sources,
       })),
     ] as CatalogRow[];
   }, [catalog]);
   const counts = useMemo(() => {
     const result = { new: 0, bound: 0, all: rows.length };
-    for (const row of rows) result[row.status] += 1;
+    for (const row of rows)
+      result[row.status === "bound" ? "bound" : "new"] += 1;
     return result;
   }, [rows]);
   const visibleRows = useMemo(() => {
@@ -105,7 +117,10 @@ export function ChannelRemoteModelsDialog({
     return rows
       .filter(
         (row) =>
-          (filter === "all" || row.status === filter) &&
+          (filter === "all" ||
+            (filter === "bound"
+              ? row.status === "bound"
+              : row.status !== "bound")) &&
           (!keyword || row.name.toLowerCase().includes(keyword)),
       )
       .sort((left, right) => left.name.localeCompare(right.name));
@@ -314,10 +329,9 @@ export function ChannelRemoteModelsDialog({
                             ).values(),
                           ]}
                           totalCount={catalog?.credentialCount ?? 0}
-                          details={row.sources.map((source) =>
-                            catalog?.hasMultipleBaseUrls
-                              ? `${source.credentialTitle} · ${formatBaseUrlLabel(source.baseUrl)}`
-                              : source.credentialTitle,
+                          details={row.sources.map(
+                            (source) =>
+                              `${source.credentialTitle} · ${formatBaseUrlLabel(source.baseUrl)} · ${source.protocol}`,
                           )}
                           locale={locale}
                         />

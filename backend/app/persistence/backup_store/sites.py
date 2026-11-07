@@ -81,7 +81,10 @@ async def replace_sites(
                 raise ValueError(f"Duplicate base url id in backup: {base_url.id}")
             base_url_ids.add(base_url.id)
             site_base_url_ids.add(base_url.id)
-            if base_url.kind in site_base_url_kinds:
+            if (
+                base_url.kind in {"default", "models"}
+                and base_url.kind in site_base_url_kinds
+            ):
                 raise ValueError(
                     f"Duplicate endpoint purpose in backup site {site.name}: {base_url.kind}"
                 )
@@ -104,7 +107,7 @@ async def replace_sites(
                     "id": credential.id,
                     "name": credential.name,
                     "api_key": credential.api_key,
-                    "base_url_id": credential.base_url_id,
+                    "base_url_ids": credential.base_url_ids,
                     "rate_source": credential.rate_source,
                     "rate_protocol_config_id": credential.rate_protocol_config_id,
                     "rate_group": credential.rate_group,
@@ -112,12 +115,12 @@ async def replace_sites(
             )
             rate_configs[credential.id] = rate_config
             if (
-                credential.base_url_id
-                and credential.base_url_id not in site_base_url_ids
+                credential.base_url_ids is not None
+                and not set(credential.base_url_ids) <= site_base_url_ids
             ):
                 raise ValueError(
                     "Credential base URL not found in backup site "
-                    f"{site.name}: {credential.base_url_id}"
+                    f"{site.name}: {credential.id}"
                 )
             credential_ids.add(credential.id)
             site_credential_ids.add(credential.id)
@@ -128,7 +131,11 @@ async def replace_sites(
                     name=credential.name,
                     api_key=credential.api_key,
                     sort_order=credential.sort_order,
-                    base_url_id=credential.base_url_id,
+                    base_url_ids_json=(
+                        json.dumps(credential.base_url_ids)
+                        if credential.base_url_ids is not None
+                        else None
+                    ),
                     model_pattern=credential.model_pattern,
                 )
             )
@@ -153,7 +160,7 @@ async def replace_sites(
             seen_url_ids.add(protocol_config.base_url_id)
             bound_credential_ids = set(
                 credential_ids_for_url(
-                    [(item.id, item.base_url_id) for item in site.credentials],
+                    [(item.id, item.base_url_ids) for item in site.credentials],
                     protocol_config.base_url_id,
                 )
             )
@@ -221,7 +228,7 @@ async def replace_sites(
                 )
             bound_ids = set(
                 credential_ids_for_url(
-                    [(item.id, item.base_url_id) for item in site.credentials],
+                    [(item.id, item.base_url_ids) for item in site.credentials],
                     protocol.base_url_id,
                 )
             )

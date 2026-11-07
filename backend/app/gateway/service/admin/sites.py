@@ -39,9 +39,8 @@ from ..tasks.litellm_sync_tasks import (
     find_context_window,
 )
 from ..tasks.model_discovery import (
-    LISTING_PROTOCOLS,
-    NATIVE_LISTING_PROTOCOLS,
     fetch_upstream_model_list,
+    model_list_protocols,
 )
 from ..tasks.model_group_reconcile import run_model_group_reconcile
 from ..tasks.site_model_probe import run_site_model_probe
@@ -124,9 +123,7 @@ async def fetch_site_models(
 ) -> list[SiteModelFetchItem]:
     """Discover models available through the supplied site credentials."""
     previews = app_state.channel_store.fetch_models_preview(payload)
-    listing_protocols = (
-        (payload.protocol,) if payload.protocol is not None else LISTING_PROTOCOLS
-    )
+    listing_protocols = (payload.protocol,) if payload.protocol is not None else None
     items: list[SiteModelFetchItem] = []
     seen: set[tuple[str, str]] = set()
     errors: list[str] = []
@@ -148,6 +145,10 @@ async def fetch_site_models(
             name=preview["credential_name"] or "preview",
             protocol=payload.protocol or ProtocolKind.OPENAI_CHAT,
             base_url=payload.base_url,
+            endpoint_kind=payload.endpoint_kind,
+            model_list_url=payload.base_url
+            if payload.endpoint_kind == "models"
+            else None,
             api_key=credential.api_key,
             headers=payload.headers,
             model_patterns=[],
@@ -169,29 +170,20 @@ async def fetch_site_models(
             errors.append(format_channel_error(exc.public_message))
             continue
 
-        pinned = ENDPOINT_KIND_PROTOCOLS.get(payload.endpoint_kind)
         for upstream_model in model_list.models:
             key = (preview["credential_id"], upstream_model.name)
             if key in seen:
                 continue
             seen.add(key)
-            items.append(
+            items.extend(
                 SiteModelFetchItem(
                     credential_id=preview["credential_id"],
                     credential_name=preview["credential_name"],
                     model_name=upstream_model.name,
-                    protocol=resolve_onboard_protocol(
-                        upstream_model.name,
-                        pinned=pinned,
-                        declared=(
-                            *upstream_model.protocols,
-                            *(
-                                (model_list.protocol,)
-                                if model_list.protocol in NATIVE_LISTING_PROTOCOLS
-                                else ()
-                            ),
-                        ),
-                    ),
+                    protocol=protocol,
+                )
+                for protocol in model_list_protocols(
+                    upstream_model, model_list.protocol, payload.endpoint_kind
                 )
             )
     if not items and errors:

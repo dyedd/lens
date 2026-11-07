@@ -1,4 +1,23 @@
 import type { Site } from "@/lib/api/sites";
+import type { FormBaseUrl, Locale } from "./channelTypes";
+
+export function formatEndpointLabel(url: FormBaseUrl, locale: Locale) {
+  const kind =
+    url.kind === "default"
+      ? locale === "zh-CN"
+        ? "默认地址"
+        : "Default"
+      : url.kind === "models"
+        ? locale === "zh-CN"
+          ? "模型列表"
+          : "Model list"
+        : url.kind === "china"
+          ? locale === "zh-CN"
+            ? "国内地址"
+            : "China"
+          : url.kind;
+  return `${kind} · ${formatBaseUrlLabel(url.url)}`;
+}
 
 /** Lists configured base URLs. */
 export function siteEndpointUrls(site: Site) {

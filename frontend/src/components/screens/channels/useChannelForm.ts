@@ -13,9 +13,13 @@ import {
   emptyProtocolConfig,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
-  resolveBaseUrlId,
 } from "./channelForm";
-import { toForm, toPayload } from "./channelFormConversion";
+import {
+  endpointSupportsProtocol,
+  rebuildProtocolConfigs,
+  toForm,
+  toPayload,
+} from "./channelFormConversion";
 import {
   aggregateModelGroupKey,
   protocolConfigModelKey,
@@ -40,23 +44,22 @@ function validateChannelForm(form: FormState, locale: Locale) {
     );
     return false;
   }
+  const configs = rebuildProtocolConfigs({ ...form, credentials });
   if (
-    form.base_urls
-      .slice(1)
-      .some(
-        (item) =>
-          item.url.trim() &&
-          item.shareKeys === false &&
-          !credentials.some(
-            (credential) =>
-              credential.baseUrlId === item.id && credential.api_key.trim(),
-          ),
-      )
+    credentials.some(
+      (credential) =>
+        credential.rate_source !== "none" &&
+        !configs.some(
+          (config) =>
+            config.id === credential.rate_protocol_config_id &&
+            config.credential_ids.includes(credential.id),
+        ),
+    )
   ) {
     toast.error(
       locale === "zh-CN"
-        ? "独立密钥的地址至少填写一个 API Key"
-        : "Enter at least one API key for URLs that do not share keys",
+        ? "请重新选择 Key 的倍率查询地址，或关闭倍率查询"
+        : "Choose an allowed rate endpoint or turn off rate lookup",
     );
     return false;
   }
@@ -165,14 +168,19 @@ export function useChannelForm(locale: Locale) {
     const nextProtocols = Array.from(new Set(protocols));
     setForm((current) => ({
       ...current,
-      // 同一行的修改覆盖该模型的各把 Key，保存时再按协议分配地址。
       protocolConfigs: current.protocolConfigs.map((config) => ({
         ...config,
-        models: config.models.map((model) =>
-          aggregateModelGroupKey(model.model_name) === key
-            ? { ...model, protocols: nextProtocols }
-            : model,
-        ),
+        models: config.models.flatMap((model) => {
+          if (aggregateModelGroupKey(model.model_name) !== key) return [model];
+          const protocols = nextProtocols.filter((protocol) =>
+            endpointSupportsProtocol(
+              current.base_urls.find((url) => url.id === config.base_url_id)
+                ?.kind ?? "default",
+              [protocol],
+            ),
+          );
+          return protocols.length ? [{ ...model, protocols }] : [];
+        }),
       })),
     }));
   }
@@ -219,8 +227,6 @@ export function useChannelForm(locale: Locale) {
                     kind,
                 ),
             ) ?? "china",
-          shareKeys: true,
-          newApiKeysLines: "",
         },
       ],
       protocolConfigs: [...current.protocolConfigs, emptyProtocolConfig(id)],
@@ -235,24 +241,39 @@ export function useChannelForm(locale: Locale) {
     }));
   }
   function removeBaseUrl(index: number) {
-    setForm((current) => {
-      if (current.base_urls.length <= 1 || !current.base_urls[index])
-        return current;
-      const removed = current.base_urls[index];
-      const baseUrls = current.base_urls.filter((_, i) => i !== index);
-      return {
-        ...current,
-        base_urls: baseUrls,
-        credentials: current.credentials.filter(
-          (item) => item.baseUrlId !== removed.id,
-        ),
-        protocolConfigs: current.protocolConfigs.map((config) => ({
-          ...config,
-          base_url_id: resolveBaseUrlId(baseUrls, config.base_url_id),
-        })),
-      };
-    });
+    const removed = form.base_urls[index];
+    if (form.base_urls.length <= 1 || !removed) return;
+    const removedCount = form.protocolConfigs
+      .filter((config) => config.base_url_id === removed.id)
+      .reduce(
+        (count, config) =>
+          count +
+          config.models.reduce(
+            (total, model) => total + model.protocols.length,
+            0,
+          ),
+        0,
+      );
+    if (removedCount)
+      toast.info(
+        locale === "zh-CN"
+          ? `保存后将移除 ${removedCount} 个模型出口`
+          : `${removedCount} model outlets will be removed on save`,
+      );
+    setForm((current) => ({
+      ...current,
+      base_urls: current.base_urls.filter((url) => url.id !== removed.id),
+      credentials: current.credentials.map((credential) => ({
+        ...credential,
+        base_url_ids:
+          credential.base_url_ids?.filter((id) => id !== removed.id) ?? null,
+      })),
+      protocolConfigs: current.protocolConfigs.filter(
+        (config) => config.base_url_id !== removed.id,
+      ),
+    }));
   }
+
   function toggleAggregateEnabled(key: string, enabled: boolean) {
     setForm((current) => ({
       ...current,

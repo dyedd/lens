@@ -232,9 +232,6 @@ export function ChannelBasicInfoSection({
       <ChannelBaseUrlSection
         form={form}
         locale={locale}
-        siteId={siteId}
-        canSyncRates={canSyncRates}
-        setForm={setForm}
         onAdd={addBaseUrl}
         onUpdate={updateBaseUrl}
         onRemove={removeBaseUrl}
@@ -243,7 +240,6 @@ export function ChannelBasicInfoSection({
         locale={locale}
         inputId="channel-keys"
         required={!siteId}
-        baseUrlId=""
         form={form}
         setForm={setForm}
         siteId={siteId}

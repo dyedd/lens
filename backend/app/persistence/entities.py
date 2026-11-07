@@ -107,9 +107,7 @@ class SiteCredentialEntity(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     api_key: Mapped[str] = mapped_column(Text, nullable=False)
     sort_order: Mapped[int] = sort_order_column()
-    base_url_id: Mapped[str] = mapped_column(
-        String(80), nullable=False, default="", server_default=text("''")
-    )
+    base_url_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Whole-name filter deciding which upstream models this key keeps.
     model_pattern: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=text("''")

@@ -428,6 +428,7 @@ function ModelKeyBadges({
         [
           member.credentialTitle,
           showBaseUrl ? formatBaseUrlLabel(member.baseUrl) : "",
+          member.protocols.join(", "),
         ]
           .filter(Boolean)
           .join(" · "),

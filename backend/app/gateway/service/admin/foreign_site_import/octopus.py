@@ -135,6 +135,7 @@ def _build_credentials(keys: list[dict[str, Any]]) -> list[SiteImportCredentialI
                 ref=f"c{key.get('id', index)}",
                 name=name,
                 api_key=api_key,
+                base_url_refs=["u0"],
             )
         )
     return credentials

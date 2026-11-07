@@ -273,6 +273,14 @@ def test_model_requests_follow_endpoint_priority_and_key_binding(
                 "protocol": "anthropic",
             }
         ]
+    for config in payload["protocols"][1:]:
+        if config.get("models"):
+            continue
+        config["models"] = [
+            dict(model)
+            for model in payload["protocols"][0]["models"]
+            if config["base_url_id"] == "china" or model["protocol"] == "anthropic"
+        ]
     site = create_site(payload)
     assert {
         (model["credential_id"], model["model_name"])

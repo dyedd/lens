@@ -12,10 +12,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.model_endpoints import (
-    build_model_endpoint_configs,
-    credential_ids_for_url,
-)
+from app.core.model_endpoints import credential_ids_for_url
 from app.models.sites import (
     SiteBaseUrl,
     SiteCreate,
@@ -81,12 +78,6 @@ async def _upsert_protocol_configs(
                 credential_pairs(credentials), protocol_config.base_url_id
             )
         )
-        if not selected_credential_ids:
-            raise ValueError(
-                "At least one credential is required for protocol config "
-                f"{protocol_config_id}"
-            )
-
         entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
         if entity is None:
             entity = SiteProtocolConfigEntity(id=protocol_config_id)
@@ -151,9 +142,7 @@ async def _upsert_protocol_configs(
         raise ValueError(
             f"Each base URL must have exactly one protocol config: {missing_label}"
         )
-    for config in build_model_endpoint_configs(
-        base_urls, credentials, protocol_configs
-    ):
+    for config in protocol_configs:
         await _upsert_protocol_config_models(
             session,
             configs_by_url[config.base_url_id],
@@ -343,7 +332,11 @@ async def _upsert_credentials(
                 name=item.name,
                 api_key=item.api_key,
                 sort_order=index,
-                base_url_id=item.base_url_id,
+                base_url_ids_json=(
+                    json.dumps(item.base_url_ids)
+                    if item.base_url_ids is not None
+                    else None
+                ),
                 model_pattern=item.model_pattern,
             )
         )

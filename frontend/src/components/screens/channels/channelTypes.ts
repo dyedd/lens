@@ -9,18 +9,11 @@ import type {
 } from "@/lib/api/sites";
 import type { Locale } from "@/lib/I18nContext";
 
-export type FormCredential = Omit<
-  SiteCredential,
-  "sort_order" | "base_url_id"
-> & {
-  baseUrlId: string;
-};
+export type FormCredential = Omit<SiteCredential, "sort_order">;
 export type FormBaseUrl = {
   id: string;
   url: string;
   kind: SiteBaseUrlKind;
-  shareKeys: boolean;
-  newApiKeysLines: string;
 };
 export type { Locale };
 
@@ -81,6 +74,7 @@ export type AggregatedModelMember = {
   /** Key label plus masked value. */
   credentialTitle: string;
   baseUrl: string;
+  protocols: ProtocolKind[];
 };
 
 export type AggregatedModel = {
