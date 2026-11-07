@@ -3,7 +3,6 @@ import {
   type BatchModelTestSource,
   useBatchModelTestSession,
 } from "@/components/model-test/batchModelTestSession";
-import { useModelTestPrompts } from "@/components/model-test/modelTestSession";
 import type {
   ModelGroupItem,
   ModelGroupModelTestPayload,
@@ -23,18 +22,16 @@ type TestTarget = {
 /** Owns batch member testing launched from a persisted model-group card. */
 export function useGroupModelTest(locale: "zh-CN" | "en-US") {
   const [targetGroup, setTargetGroup] = useState<GroupRow | null>(null);
-  const prompts = useModelTestPrompts();
   const modelTest = useBatchModelTestSession<TestTarget>({
     locale,
-    prompts,
-    prepareRequest: (target, protocol, prompt) => {
+    prepareRequest: (target, protocol, mode) => {
       const { item } = target;
       if (item.protocol !== protocol) return null;
       const payload: ModelGroupModelTestPayload = {
         channel_id: item.channel_id,
         credential_id: item.credential_id,
         model_name: item.model_name,
-        prompt,
+        test_mode: mode,
         protocol,
       };
       return {

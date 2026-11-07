@@ -1,10 +1,4 @@
 import type { SettingItem } from "@/lib/api/settings";
-import {
-  DEFAULT_MODEL_TEST_PROMPTS,
-  MODEL_TEST_PROMPTS_SETTING_KEY,
-  parseModelTestPrompts,
-  serializeModelTestPrompts,
-} from "@/lib/modelTestPrompts";
 import type {
   UpstreamHeadersDraft,
   UpstreamParamOverrideDraft,
@@ -95,7 +89,6 @@ export interface SettingsDraft {
   siteName: string;
   siteLogoUrl: string;
   timeZone: string;
-  modelTestPrompts: string;
   upstreamHeadersConfig: UpstreamHeadersDraft;
   upstreamParamOverrideConfig: UpstreamParamOverrideDraft;
 }
@@ -152,7 +145,6 @@ export function createEmptySettingsDraft(): SettingsDraft {
     siteName: "Lens",
     siteLogoUrl: "",
     timeZone: "Asia/Shanghai",
-    modelTestPrompts: DEFAULT_MODEL_TEST_PROMPTS.join("\n"),
     upstreamHeadersConfig: createEmptyUpstreamHeadersDraft(),
     upstreamParamOverrideConfig: createEmptyUpstreamParamOverrideDraft(),
   };
@@ -210,9 +202,6 @@ export function createSettingsDraft(
     siteName: mapping.get(SITE_NAME) ?? "Lens",
     siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
     timeZone: mapping.get(TIME_ZONE) ?? "Asia/Shanghai",
-    modelTestPrompts: parseModelTestPrompts(
-      mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY),
-    ).join("\n"),
     upstreamHeadersConfig: parseUpstreamHeadersConfig(
       mapping.get(UPSTREAM_HEADERS_CONFIG),
     ),
@@ -333,10 +322,6 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
     { key: SITE_NAME, value: draft.siteName.trim() || "Lens" },
     { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
     { key: TIME_ZONE, value: draft.timeZone.trim() || "Asia/Shanghai" },
-    {
-      key: MODEL_TEST_PROMPTS_SETTING_KEY,
-      value: serializeModelTestPrompts(draft.modelTestPrompts),
-    },
     {
       key: UPSTREAM_HEADERS_CONFIG,
       value: serializeUpstreamHeadersConfig(draft.upstreamHeadersConfig),

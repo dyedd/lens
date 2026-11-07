@@ -1,40 +1,39 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { apiRequest } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { SettingItem } from "@/lib/api/settings";
-import {
-  MODEL_TEST_PROMPTS_SETTING_KEY,
-  parseModelTestPrompts,
-} from "@/lib/modelTestPrompts";
+import type { ModelTestMode } from "@/lib/api/sites";
 
 export type ModelTestDialogTarget = {
   modelName: string;
   upstreamName: string;
 };
 
-/** Keeps a valid choice, else the only protocol, else OpenAI Chat as model discovery assumes. */
+export function modelTestProtocols(
+  protocols: ProtocolKind[],
+  mode: ModelTestMode,
+): ProtocolKind[] {
+  if (mode === "codex") {
+    return protocols.filter(
+      (protocol) =>
+        protocol === "openai_responses" || protocol === "openai_chat",
+    );
+  }
+  if (mode === "claude") {
+    return protocols.filter((protocol) => protocol === "anthropic");
+  }
+  return protocols;
+}
+
 export function selectedModelTestProtocol(
   protocols: ProtocolKind[],
   selectedProtocol: ProtocolKind | null,
+  mode: ModelTestMode = "direct",
 ): ProtocolKind | null {
-  if (selectedProtocol && protocols.includes(selectedProtocol)) {
+  const available = modelTestProtocols(protocols, mode);
+  if (selectedProtocol && available.includes(selectedProtocol)) {
     return selectedProtocol;
   }
-  if (protocols.length === 1) return protocols[0];
-  return protocols.includes("openai_chat") ? "openai_chat" : null;
-}
-
-/** Loads the configured model-test prompts with defaults applied. */
-export function useModelTestPrompts() {
-  const { data: settings } = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
-    staleTime: 5 * 60_000,
-  });
-  return useMemo(() => {
-    if (!settings) return [];
-    const mapping = new Map(settings.map((item) => [item.key, item.value]));
-    return parseModelTestPrompts(mapping.get(MODEL_TEST_PROMPTS_SETTING_KEY));
-  }, [settings]);
+  if (available.length === 1) return available[0];
+  if (mode === "codex" && available.includes("openai_responses")) {
+    return "openai_responses";
+  }
+  return available.includes("openai_chat") ? "openai_chat" : null;
 }

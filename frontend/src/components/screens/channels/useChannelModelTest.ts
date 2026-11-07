@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  selectedModelTestProtocol,
-  useModelTestPrompts,
-} from "@/components/model-test/modelTestSession";
+import { selectedModelTestProtocol } from "@/components/model-test/modelTestSession";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
 
 import type {
+  ModelTestMode,
   SiteModelTestPayload,
   SiteModelTestResult,
 } from "@/lib/api/sites";
@@ -33,15 +31,13 @@ import type {
 export function useChannelModelTest(form: FormState, locale: Locale) {
   const [modelTestTarget, setModelTestTarget] =
     useState<ModelTestTarget | null>(null);
-  const [modelTestPromptMode, setModelTestPromptMode] = useState("0");
-  const [modelTestPrompt, setModelTestPrompt] = useState("");
+  const [modelTestMode, setModelTestMode] = useState<ModelTestMode>("direct");
   const [modelTestProtocol, setModelTestProtocol] =
     useState<ProtocolKind | null>(null);
   const [modelTestResult, setModelTestResult] =
     useState<SiteModelTestResult | null>(null);
   const [testingModel, setTestingModel] = useState(false);
   const abortController = useRef<AbortController | null>(null);
-  const modelTestPrompts = useModelTestPrompts();
   const modelTestOptionByKey = useMemo(() => {
     const options = new Map<string, TestableModelOption>();
     const credentials = new Map(
@@ -109,7 +105,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
   function buildModelTestPayload(
     target: ModelTestTarget,
     protocol: ProtocolKind | null,
-    promptValue: string,
+    mode: ModelTestMode,
   ): SiteModelTestPayload | null {
     const config = form.protocolConfigs[target.protocolConfigIndex];
     const model = config?.models[target.modelIndex];
@@ -118,21 +114,20 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       : -1;
     const credential = form.credentials[credentialIndex];
     const baseUrl = config ? activeBaseUrlValue(form, config).trim() : "";
-    const prompt = promptValue.trim();
     if (
       !config ||
       !model ||
       !credential?.api_key.trim() ||
       (credential.base_url_ids !== null &&
         !credential.base_url_ids.includes(config.base_url_id)) ||
-      !baseUrl ||
-      !prompt
+      !baseUrl
     ) {
       return null;
     }
     const selectedProtocol = selectedModelTestProtocol(
       modelSupportedProtocols(model),
       protocol,
+      mode,
     );
     if (!selectedProtocol) return null;
     return {
@@ -152,7 +147,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
         base_url_ids: credential.base_url_ids,
       },
       model_name: model.model_name.trim(),
-      prompt,
+      test_mode: mode,
     };
   }
 
@@ -170,8 +165,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     }
     setModelTestTarget({ protocolConfigIndex: configIndex, modelIndex });
     setModelTestProtocol(selectedModelTestProtocol(protocols, null));
-    setModelTestPromptMode(modelTestPrompts.length ? "0" : "custom");
-    setModelTestPrompt(modelTestPrompts[0] || "");
+    setModelTestMode("direct");
     setModelTestResult(null);
   }
 
@@ -207,31 +201,26 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     if (!option) return;
     setModelTestTarget(option.target);
     setModelTestProtocol(
-      selectedModelTestProtocol(option.protocols, modelTestProtocol),
+      selectedModelTestProtocol(
+        option.protocols,
+        modelTestProtocol,
+        modelTestMode,
+      ),
     );
     setModelTestResult(null);
   }
 
-  function changeModelTestPromptMode(value: string) {
-    setModelTestPromptMode(value);
-    if (value !== "custom")
-      setModelTestPrompt(modelTestPrompts[Number(value)] || "");
-    setModelTestResult(null);
-  }
-
-  function changeModelTestPrompt(value: string) {
-    setModelTestPrompt(value);
-    setModelTestPromptMode("custom");
+  function changeModelTestMode(mode: ModelTestMode) {
+    setModelTestMode(mode);
+    setModelTestProtocol(
+      selectedModelTestProtocol(modelTestProtocols, null, mode),
+    );
     setModelTestResult(null);
   }
 
   async function runModelTest() {
     const payload = modelTestTarget
-      ? buildModelTestPayload(
-          modelTestTarget,
-          modelTestProtocol,
-          modelTestPrompt,
-        )
+      ? buildModelTestPayload(modelTestTarget, modelTestProtocol, modelTestMode)
       : null;
     if (!payload) {
       toast.error(
@@ -246,6 +235,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
     abortController.current = controller;
     setTestingModel(true);
     setModelTestResult(null);
+    const startedAt = performance.now();
     try {
       const result = await apiRequest<SiteModelTestResult>(
         "/admin/site-model-tests",
@@ -262,7 +252,7 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
       setModelTestResult({
         success: false,
         status_code: null,
-        latency_ms: 0,
+        latency_ms: Math.round(performance.now() - startedAt),
         model_name: payload.model_name,
         credential_id: payload.credential.id,
         output_text: "",
@@ -280,17 +270,14 @@ export function useChannelModelTest(form: FormState, locale: Locale) {
   }
 
   return {
-    changeModelTestPrompt,
-    changeModelTestPromptMode,
+    changeModelTestMode,
     changeModelTestProtocol,
     closeModelTest,
     changeModelTestCredential,
     modelTestCredentialOptions,
     modelTestDialogTarget,
     modelTestDeleteKey,
-    modelTestPrompt,
-    modelTestPromptMode,
-    modelTestPrompts,
+    modelTestMode,
     modelTestProtocol,
     modelTestProtocols,
     modelTestResult,

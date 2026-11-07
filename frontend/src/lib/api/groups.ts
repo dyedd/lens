@@ -1,6 +1,7 @@
 import type { ContextWindowSource } from "@/lib/contextWindow";
 import type { HeaderRule, ParamOverrideRule } from "@/lib/upstreamRules";
 import type { ProtocolKind } from "./protocols";
+import type { ModelTestMode } from "./sites";
 
 /** 内置的 "round_robin"、"failover"，或插件提供的 `<插件 id>/<策略名>`。 */
 export type RoutingStrategy = string;
@@ -104,7 +105,7 @@ export type ModelGroupModelTestPayload = {
   channel_id: string;
   credential_id: string;
   model_name: string;
-  prompt: string;
+  test_mode: ModelTestMode;
   protocol?: ProtocolKind;
 };
 export type UnplacedModelProvider = {

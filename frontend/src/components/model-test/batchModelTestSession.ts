@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { SiteModelTestResult } from "@/lib/api/sites";
+import type { ModelTestMode, SiteModelTestResult } from "@/lib/api/sites";
 import { selectedModelTestProtocol } from "./modelTestSession";
 
 export type BatchModelTestRow = {
@@ -32,27 +32,24 @@ type PreparedBatchModelTestRequest = {
 
 type Options<TTarget> = {
   locale: "zh-CN" | "en-US";
-  prompts: string[];
   optionByKey?: ReadonlyMap<string, BatchModelTestSource<TTarget>>;
   prepareRequest: (
     target: TTarget,
     protocol: ProtocolKind,
-    prompt: string,
+    mode: ModelTestMode,
   ) => PreparedBatchModelTestRequest | null;
 };
 
 /** Runs each model probe and keeps the results for the shared detail dialog. */
 export function useBatchModelTestSession<TTarget>({
   locale,
-  prompts,
   optionByKey,
   prepareRequest,
 }: Options<TTarget>) {
   const [batchModelTestOpen, setBatchModelTestOpen] = useState(false);
   const [isBatchModelTestRunning, setIsBatchModelTestRunning] = useState(false);
   const [sources, setSources] = useState<BatchModelTestSource<TTarget>[]>([]);
-  const [batchTestPromptMode, setBatchTestPromptMode] = useState("0");
-  const [batchTestPrompt, setBatchTestPrompt] = useState("");
+  const [batchTestMode, setBatchTestMode] = useState<ModelTestMode>("direct");
   const [batchTestRows, setBatchTestRows] = useState<BatchModelTestRow[]>([]);
   const abortController = useRef<AbortController | null>(null);
 
@@ -90,8 +87,7 @@ export function useBatchModelTestSession<TTarget>({
       return;
     }
     setSources(available);
-    setBatchTestPromptMode(prompts.length ? "0" : "custom");
-    setBatchTestPrompt(prompts[0] || "");
+    setBatchTestMode("direct");
     setBatchTestRows(
       available.map((source) => ({
         key: source.key,
@@ -105,16 +101,15 @@ export function useBatchModelTestSession<TTarget>({
     setBatchModelTestOpen(true);
   }
 
-  function changeBatchTestPromptMode(value: string) {
-    setBatchTestPromptMode(value);
-    if (value !== "custom") setBatchTestPrompt(prompts[Number(value)] || "");
-    setBatchTestRows((rows) => rows.map((row) => ({ ...row, result: null })));
-  }
-
-  function changeBatchTestPrompt(value: string) {
-    setBatchTestPrompt(value);
-    setBatchTestPromptMode("custom");
-    setBatchTestRows((rows) => rows.map((row) => ({ ...row, result: null })));
+  function changeBatchTestMode(mode: ModelTestMode) {
+    setBatchTestMode(mode);
+    setBatchTestRows((rows) =>
+      rows.map((row) => ({
+        ...row,
+        protocol: selectedModelTestProtocol(row.protocols, null, mode),
+        result: null,
+      })),
+    );
   }
 
   function changeBatchTestProtocol(key: string, protocol: ProtocolKind) {
@@ -126,8 +121,6 @@ export function useBatchModelTestSession<TTarget>({
   }
 
   async function runBatchModelTests() {
-    const prompt = batchTestPrompt.trim();
-    if (!prompt || batchTestRows.some((row) => !row.protocol)) return;
     const entries: Array<{
       key: string;
       request: PreparedBatchModelTestRequest;
@@ -139,9 +132,10 @@ export function useBatchModelTestSession<TTarget>({
       const protocol = selectedModelTestProtocol(
         source.protocols,
         selectedProtocols.get(source.key) ?? null,
+        batchTestMode,
       );
       if (!protocol) continue;
-      const request = prepareRequest(source.target, protocol, prompt);
+      const request = prepareRequest(source.target, protocol, batchTestMode);
       if (request) entries.push({ key: source.key, request });
     }
     if (!entries.length) {
@@ -160,6 +154,7 @@ export function useBatchModelTestSession<TTarget>({
       for (const { key, request } of entries) {
         if (controller.signal.aborted) return;
         let result: SiteModelTestResult;
+        const startedAt = performance.now();
         try {
           result = await apiRequest<SiteModelTestResult>(request.path, {
             method: "POST",
@@ -171,7 +166,7 @@ export function useBatchModelTestSession<TTarget>({
           result = {
             success: false,
             status_code: null,
-            latency_ms: 0,
+            latency_ms: Math.round(performance.now() - startedAt),
             model_name: request.modelName,
             credential_id: "",
             output_text: "",
@@ -196,12 +191,9 @@ export function useBatchModelTestSession<TTarget>({
 
   return {
     batchModelTestOpen,
-    batchTestPrompt,
-    batchTestPromptMode,
-    prompts,
+    batchTestMode,
     batchTestRows,
-    changeBatchTestPrompt,
-    changeBatchTestPromptMode,
+    changeBatchTestMode,
     changeBatchTestProtocol,
     changeBatchModelTestOpen,
     clearBatchModelTestResults,
