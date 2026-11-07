@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LockKeyhole, Pencil, RefreshCw, Search, Unlock } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -36,14 +37,11 @@ import {
 } from "@/components/ui/Tooltip";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
-import { apiRequest } from "@/lib/api/client";
+import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ModelGroup } from "@/lib/api/groups";
 import { type Locale, useI18n } from "@/lib/I18nContext";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
-import {
-  formatMoney,
-  modelGroupErrorMessage,
-} from "./groups/modelGroupFormatting";
+import { formatMoney } from "./groups/modelGroupFormatting";
 
 const PRICE_FIELDS = [
   ["input_price_per_million", "输入", "Input"],
@@ -117,7 +115,6 @@ function PriceEditor({
         {
           method: "PUT",
           body: JSON.stringify({
-            model_key: group.name,
             display_name: group.name,
             ...parsed,
             pricing_mode: mode,
@@ -128,7 +125,7 @@ function PriceEditor({
       onClose();
     } catch (error) {
       toast.error(
-        modelGroupErrorMessage(
+        getApiErrorMessage(
           error,
           isChinese ? "保存价格失败" : "Failed to save price",
         ),
@@ -298,7 +295,7 @@ export function ModelPricesScreen() {
       toast.success(isChinese ? "模型价格已同步" : "Model prices synced");
     } catch (error) {
       toast.error(
-        modelGroupErrorMessage(
+        getApiErrorMessage(
           error,
           isChinese ? "同步价格失败" : "Failed to sync prices",
         ),
@@ -452,7 +449,7 @@ export function ModelPricesScreen() {
                                 );
                               } catch (error) {
                                 toast.error(
-                                  modelGroupErrorMessage(
+                                  getApiErrorMessage(
                                     error,
                                     isChinese
                                       ? "恢复自动同步失败"
@@ -484,7 +481,17 @@ export function ModelPricesScreen() {
           </div>
         );
       })}
-      {!groups.isLoading && rows.length === 0 ? (
+      {groups.isError && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {getApiErrorMessage(
+              groups.error,
+              isChinese ? "价格加载失败" : "Failed to load prices",
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+      {!groups.isLoading && !groups.isError && rows.length === 0 ? (
         <Table>
           <TableBody>
             <TableRow>

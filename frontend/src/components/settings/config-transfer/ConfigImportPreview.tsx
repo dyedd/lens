@@ -1,5 +1,4 @@
 import { FileJson } from "lucide-react";
-
 import { Badge } from "@/components/ui/Badge";
 import {
   Item,
@@ -11,8 +10,8 @@ import {
   ItemTitle,
 } from "@/components/ui/Item";
 import { Spinner } from "@/components/ui/Spinner";
-import type { ConfigBackupDump } from "@/lib/api/backups";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import type { ConfigBackupPreview } from "./backupPreview";
 import { formatExportedAt } from "./backupPreview";
 
 export type ConfigPreviewSection = {
@@ -46,7 +45,7 @@ export function ConfigImportPreview({
   timeZone,
 }: {
   selectedFile: File | null;
-  preview: ConfigBackupDump | null;
+  preview: ConfigBackupPreview | null;
   previewError: string;
   isPreviewPending: boolean;
   previewSections: ConfigPreviewSection[];

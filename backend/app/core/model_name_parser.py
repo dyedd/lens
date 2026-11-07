@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 _REASONING_SUFFIXES = frozenset(
     {"none", "auto", "minimal", "low", "medium", "high", "xhigh", "max"}
@@ -60,4 +62,90 @@ def parse_model_name(value: str) -> ParsedModelName:
     raise ValueError(f"Invalid reasoning suffix in model name: {model_name}")
 
 
-__all__ = ["ParsedModelName", "parse_model_name"]
+def clean_reasoning_effort(value: Any) -> str | None:
+    if isinstance(value, int) and value > 0:
+        return str(value)
+    if not isinstance(value, str):
+        return None
+    trimmed_value = value.strip()
+    if not trimmed_value or len(trimmed_value) > 32:
+        return None
+    if any(char.isspace() for char in trimmed_value):
+        return None
+    return trimmed_value
+
+
+def extract_request_reasoning_effort(
+    *bodies: Mapping[str, Any] | None,
+) -> str | None:
+    """按请求体顺序读取首个有效的思考强度。"""
+    for body in bodies:
+        if body is None:
+            continue
+
+        generation = body.get("generationConfig")
+        thinking_config = (
+            generation.get("thinkingConfig")
+            if isinstance(generation, Mapping)
+            else None
+        )
+        if isinstance(thinking_config, Mapping):
+            level = clean_reasoning_effort(thinking_config.get("thinkingLevel"))
+            if level:
+                return level.lower()
+            budget = thinking_config.get("thinkingBudget")
+            if budget == 0:
+                return "none"
+            effort = clean_reasoning_effort(budget)
+            if effort:
+                return effort
+
+        for key in (
+            "reasoning_effort",
+            "reasoningEffort",
+            "model_reasoning_effort",
+            "modelReasoningEffort",
+            "effort",
+            "effortLevel",
+        ):
+            effort = clean_reasoning_effort(body.get(key))
+            if effort:
+                return effort
+
+        reasoning = body.get("reasoning")
+        if isinstance(reasoning, Mapping):
+            effort = clean_reasoning_effort(reasoning.get("effort"))
+            if effort:
+                return effort
+        else:
+            effort = clean_reasoning_effort(reasoning)
+            if effort:
+                return effort
+
+        thinking = body.get("thinking")
+        if isinstance(thinking, Mapping):
+            effort = clean_reasoning_effort(thinking.get("effort"))
+            if effort:
+                return effort
+
+        output_config = body.get("output_config")
+        if isinstance(output_config, Mapping):
+            effort = clean_reasoning_effort(output_config.get("effort"))
+            if effort:
+                return effort
+
+        extra_body = body.get("extra_body")
+        if isinstance(extra_body, Mapping):
+            effort = extract_request_reasoning_effort(extra_body)
+            if effort:
+                return effort
+
+    return None
+
+
+__all__ = [
+    "ParsedModelName",
+    "parse_model_name",
+    "clean_reasoning_effort",
+    "extract_request_reasoning_effort",
+]

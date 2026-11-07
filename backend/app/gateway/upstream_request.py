@@ -11,13 +11,12 @@ from ..core.upstream_rules import (
     apply_header_rules,
     merge_headers,
     request_rule_context,
-    rules_from_config,
     set_header,
 )
 from ..core.urls import append_url_path, canonicalize_base_url
 from ..models.channels import ChannelConfig
 from ..models.protocols import ChannelProxyMode, ProtocolKind
-from ..models.upstream_rules import HeaderRule
+from ..models.upstream_rules import HeaderRule, UpstreamHeadersConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +56,7 @@ def build_upstream_request(
     credential_id: str | None = None,
     user_agent: str | None = None,
     forwarded_headers: Mapping[str, str] | None = None,
-    upstream_headers_config: Mapping[str, Any] | None = None,
+    upstream_headers_config: UpstreamHeadersConfig | None = None,
     model_group_headers: list[HeaderRule] | None = None,
     path_suffix: str | None = None,
 ) -> UpstreamRequest:
@@ -131,7 +130,7 @@ def build_upstream_headers(
     default_headers: dict[str, str],
     channel_headers: list[HeaderRule],
     user_agent: str | None = None,
-    upstream_headers_config: Mapping[str, Any] | None = None,
+    upstream_headers_config: UpstreamHeadersConfig | None = None,
     model_group_headers: list[HeaderRule] | None = None,
     *,
     path: str = "",
@@ -149,7 +148,7 @@ def build_upstream_headers(
         for rule in channel_headers
     ):
         set_header(headers, "user-agent", user_agent)
-    global_rules = rules_from_config(upstream_headers_config, "headers")
+    global_rules = upstream_headers_config.rules if upstream_headers_config else ()
     return apply_header_rules(
         headers,
         [

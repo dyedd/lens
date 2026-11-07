@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .unified import ToolKind
 from .unified_response import Citation, FinishReason, ResponseStatus, Usage
 
 
@@ -39,6 +40,8 @@ class BlockStart:
     item_id: str = ""
     # Server-tool lifecycle marker (``in_progress``, ``searching``, ...).
     status: str = ""
+    tool_kind: ToolKind = ToolKind.FUNCTION
+    namespace: str = ""
 
 
 @dataclass(slots=True)

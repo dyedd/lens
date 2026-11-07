@@ -1,5 +1,5 @@
 import { CloudDownload, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/Table";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import { CredentialBadges } from "./CredentialBadges";
-import { formatBaseUrlLabel } from "./channelModels";
+import { formatBaseUrlLabel } from "./channelDisplay";
 import type { Locale, PickerModelItem } from "./channelTypes";
 import type {
   RemoteModelCatalog,
@@ -37,7 +37,7 @@ type Props = {
   /** 后台正在补齐已加入模型的上下文。 */
   importing: boolean;
   onOpenChange: (open: boolean) => void;
-  onLoad: () => Promise<RemoteModelCatalog | null>;
+  onLoad: (signal: AbortSignal) => Promise<RemoteModelCatalog | null>;
   onImport: (items: PickerModelItem[]) => void;
 };
 
@@ -63,6 +63,14 @@ export function ChannelRemoteModelsDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const onLoadRef = useRef(onLoad);
   onLoadRef.current = onLoad;
+  const loadController = useRef<AbortController | null>(null);
+  const loadCatalog = useCallback(async () => {
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    const result = await onLoadRef.current(controller.signal);
+    if (!controller.signal.aborted && result) setCatalog(result);
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -72,10 +80,9 @@ export function ChannelRemoteModelsDialog({
       setSelected(new Set());
       return;
     }
-    void onLoadRef.current().then((result) => {
-      if (result) setCatalog(result);
-    });
-  }, [open]);
+    void loadCatalog();
+    return () => loadController.current?.abort();
+  }, [open, loadCatalog]);
 
   const rows = useMemo<CatalogRow[]>(() => {
     if (!catalog) return [];
@@ -212,11 +219,7 @@ export function ChannelRemoteModelsDialog({
               size="sm"
               className="h-8"
               disabled={loading}
-              onClick={() => {
-                void onLoad().then((result) => {
-                  if (result) setCatalog(result);
-                });
-              }}
+              onClick={() => void loadCatalog()}
             >
               <RefreshCw
                 className={loading ? "size-3.5 animate-spin" : "size-3.5"}

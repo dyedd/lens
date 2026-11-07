@@ -1,13 +1,12 @@
 import { useMemo } from "react";
 import type { ProtocolKind } from "@/lib/api/protocols";
+import { credentialLabel, formatCredentialTitle } from "@/lib/credentialLabels";
 import {
   activeBaseUrlValue,
   protocolConfigSelectedCredentialIds,
 } from "./channelForm";
 import {
   aggregateModelGroupKey,
-  credentialLabel,
-  formatCredentialTitle,
   protocolConfigModelKey,
 } from "./channelModels";
 import type {

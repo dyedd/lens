@@ -6,17 +6,18 @@ import {
   headerDraftsFromJson,
   paramDraftsFromJson,
 } from "./channelAdvancedJson";
-import { resolveBaseUrlId } from "./channelForm";
-import { toForm, toPayload } from "./channelFormConversion";
 import {
-  aggregateModelGroupKey,
   applyApiKeyDrafts,
   createLocalId,
   emptyForm,
   emptyProtocolConfig,
   invalidModelProtocolCount,
   invalidProtocolBaseUrlCount,
-  isAggregateModelGroupKey,
+  resolveBaseUrlId,
+} from "./channelForm";
+import { toForm, toPayload } from "./channelFormConversion";
+import {
+  aggregateModelGroupKey,
   protocolConfigModelKey,
 } from "./channelModels";
 import type { FormBaseUrl, FormState, Locale } from "./channelTypes";
@@ -178,17 +179,14 @@ export function useChannelForm(locale: Locale) {
   function removeAggregateModel(key: string) {
     setForm((current) => ({
       ...current,
-      protocolConfigs: current.protocolConfigs.map((config) => {
-        const isGroupKey = isAggregateModelGroupKey(key);
-        return {
-          ...config,
-          models: config.models.filter((model) =>
-            isGroupKey
-              ? aggregateModelGroupKey(model.model_name) !== key
-              : protocolConfigModelKey(config, model) !== key,
-          ),
-        };
-      }),
+      protocolConfigs: current.protocolConfigs.map((config) => ({
+        ...config,
+        models: config.models.filter(
+          (model) =>
+            aggregateModelGroupKey(model.model_name) !== key &&
+            protocolConfigModelKey(config, model) !== key,
+        ),
+      })),
     }));
   }
   function addBaseUrl() {

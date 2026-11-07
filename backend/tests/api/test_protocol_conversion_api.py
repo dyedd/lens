@@ -17,6 +17,47 @@ _SCHEMA = {
 }
 
 
+@pytest.mark.parametrize("ttl", [[], {}])
+def test_anthropic_cache_hint_ignores_invalid_optional_ttl(
+    client, monkeypatch, create_site_group_and_key, ttl
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    _, _, key = create_site_group_and_key()
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        body = json.loads(body_bytes)
+        assert body["messages"][0] == {
+            "role": "system",
+            "content": "Be brief",
+        }
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", upstream.url),
+            json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        "/v1/messages",
+        headers=gateway_headers(key),
+        json={
+            "model": "gpt-4o",
+            "max_tokens": 64,
+            "system": [
+                {
+                    "type": "text",
+                    "text": "Be brief",
+                    "cache_control": {"type": "ephemeral", "ttl": ttl},
+                }
+            ],
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["content"][0]["text"] == "ok"
+
+
 def _client_request(protocol: str, stream: bool) -> tuple[str, dict[str, Any]]:
     if protocol == "openai_chat":
         return "/v1/chat/completions", {
@@ -229,7 +270,7 @@ def _upstream_response(protocol: str, model: str) -> dict[str, Any]:
                 "prompt_tokens": 10,
                 "completion_tokens": 7,
                 "total_tokens": 17,
-                "prompt_tokens_details": {"cached_tokens": 4},
+                "prompt_tokens_details": {"cached_tokens": 4, "cache_write_tokens": 2},
                 "completion_tokens_details": {"reasoning_tokens": 3},
             },
         }
@@ -690,6 +731,8 @@ def test_protocol_conversion_preserves_tool_history_response_and_usage(
         assert json.loads(call["arguments"]) == {"city": "Rome"}
         assert payload["usage"]["input_tokens"] == 10
         assert payload["usage"]["input_tokens_details"]["cached_tokens"] == 4
+        if target == "openai_chat":
+            assert payload["usage"]["input_tokens_details"]["cache_write_tokens"] == 2
     elif source == "anthropic":
         if target == "openai_responses":
             if stream:

@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.time_zone import load_time_zone
 from app.models.protocols import RequestLogLifecycleStatus
 from app.persistence.entities import RequestLogEntity, SettingEntity
 from app.persistence.settings_keys import SETTING_STATS_TIME_ZONE
@@ -22,7 +23,7 @@ from app.persistence.stats_entities import (
 
 from .agents import classify_user_agent
 from .query import REQUEST_LOG_STATS_COLUMNS
-from .types import REQUEST_LOG_TERMINAL_STATUSES, RuntimeTimeZone, SettingsPort
+from .types import REQUEST_LOG_TERMINAL_STATUSES, SettingsPort
 
 
 class RequestLogStatistics:
@@ -30,16 +31,14 @@ class RequestLogStatistics:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         settings_repo: SettingsPort,
-        runtime_time_zone: RuntimeTimeZone,
     ) -> None:
         self.session_factory = session_factory
         self.settings_repo = settings_repo
-        self.runtime_time_zone = runtime_time_zone
 
     async def persist_request_log_stats(self, *, force: bool = False) -> None:
         """Archive terminal logs without recounting previously archived rows."""
         runtime = await self.settings_repo.get_runtime_settings()
-        time_zone = self.runtime_time_zone(runtime)
+        time_zone = load_time_zone(runtime["time_zone"])
         before = None
         if not force:
             before = (

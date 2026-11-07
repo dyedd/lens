@@ -3,10 +3,7 @@ import type {
   ModelGroupCandidateItem,
   ModelGroupItemPayload,
 } from "@/lib/api/groups";
-import {
-  formatContextWindow,
-  parseContextWindowInput,
-} from "@/lib/contextWindow";
+import { parseContextWindowInput } from "@/lib/contextWindow";
 import {
   headerDraftToRules,
   headerRulesToDraft,
@@ -95,9 +92,7 @@ export function modelGroupToForm(group: ModelGroup): FormState {
     headers: headerRulesToDraft(group.headers),
     fallback_group_ids: group.fallback_group_ids ?? [],
     context_window:
-      group.context_window === null
-        ? ""
-        : formatContextWindow(group.context_window),
+      group.context_window === null ? "" : String(group.context_window),
     items: group.items
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -135,32 +130,23 @@ export function formToModelGroupPayload(form: FormState) {
 }
 
 function buildSimilarGroupsById(groups: ModelGroup[]) {
-  const groupIdsByKey = new Map<string, Set<string>>();
-  const keysByGroupId = new Map<string, Set<string>>();
+  const groupsByKey = new Map<string, SimilarGroupView[]>();
   for (const group of groups) {
     if (group.route_group_id?.trim()) continue;
-    const keys = new Set([group.name].map(buildModelMatchKey));
-    keys.delete("");
-    keysByGroupId.set(group.id, keys);
-    for (const key of keys) {
-      const ids = groupIdsByKey.get(key) ?? new Set<string>();
-      ids.add(group.id);
-      groupIdsByKey.set(key, ids);
-    }
+    const key = buildModelMatchKey(group.name);
+    if (!key) continue;
+    const matches = groupsByKey.get(key) ?? [];
+    matches.push({ id: group.id, name: group.name });
+    groupsByKey.set(key, matches);
   }
-  const namesById = new Map(groups.map((group) => [group.id, group.name]));
   const similarById = new Map<string, SimilarGroupView[]>();
-  for (const [groupId, keys] of keysByGroupId) {
-    const similarIds = new Set<string>();
-    for (const key of keys) {
-      for (const id of groupIdsByKey.get(key) ?? []) {
-        if (id !== groupId) similarIds.add(id);
-      }
+  for (const matches of groupsByKey.values()) {
+    for (const group of matches) {
+      similarById.set(
+        group.id,
+        matches.filter((match) => match.id !== group.id),
+      );
     }
-    similarById.set(
-      groupId,
-      [...similarIds].map((id) => ({ id, name: namesById.get(id) ?? id })),
-    );
   }
   return similarById;
 }

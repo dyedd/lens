@@ -4,29 +4,25 @@ import { Badge } from "@/components/ui/Badge";
 import { Switch } from "@/components/ui/Switch";
 import type { RoutingStrategy } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
-import type {
-  ChannelMemberGroup,
-  FoldedMember,
-  MemberStatusFilter,
-} from "./groupTypes";
+import type { FoldedMember, MemberStatusFilter } from "./groupTypes";
 import { FoldedMemberRow } from "./ModelGroupMembers";
+import type { GroupMembers } from "./useGroupMembers";
 
-interface ModelGroupSelectedMemberListProps {
+interface ModelGroupSelectedMemberListProps
+  extends Pick<
+    GroupMembers,
+    | "visibleFoldedMembers"
+    | "visibleChannelGroups"
+    | "toggleChannelMembers"
+    | "toggleFoldedMember"
+    | "removeFoldedMember"
+    | "moveChannelGroup"
+    | "moveFoldedMember"
+    | "moveFoldedMemberWithinChannel"
+  > {
   locale: "zh-CN" | "en-US";
   strategy: RoutingStrategy;
   memberStatusFilter: MemberStatusFilter;
-  visibleFoldedMembers: Array<{ member: FoldedMember; index: number }>;
-  visibleChannelGroups: ChannelMemberGroup[];
-  toggleChannelMembers: (channelKey: string, enabled: boolean) => void;
-  toggleFoldedMember: (foldKey: string, enabled: boolean) => void;
-  removeFoldedMember: (foldKey: string) => void;
-  moveChannelGroup: (fromIndex: number, toIndex: number) => void;
-  moveFoldedMember: (fromIndex: number, toIndex: number) => void;
-  moveFoldedMemberWithinChannel: (
-    channelKey: string,
-    fromIndex: number,
-    toIndex: number,
-  ) => void;
 }
 
 type SelectedMemberRowProps = {

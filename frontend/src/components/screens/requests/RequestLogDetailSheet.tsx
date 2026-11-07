@@ -327,13 +327,6 @@ export function RequestLogDetailSheet({
                 onClick={() => {
                   const curl = generateCurl(record, detail?.request_content);
                   void copyText(curl, locale);
-                  toast.success(
-                    titleForLocale(
-                      locale,
-                      "cURL 命令已复制",
-                      "cURL command copied",
-                    ),
-                  );
                 }}
               >
                 <Terminal className="size-3.5 stroke-1" />

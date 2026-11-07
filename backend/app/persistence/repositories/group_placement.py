@@ -5,26 +5,15 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
-
-from app.core.errors import ResourceNotFoundError
 from app.core.model_group_matching import (
     MatchRegexOperator,
-    compile_model_group_pattern,
     matches_model_group,
 )
 from app.models.channels import ChannelConfig
 from app.models.model_groups import (
-    ModelGroupMemberSource,
-    ModelGroupPlacementResponse,
     ModelGroupView,
     UnplacedModelProvider,
-    UnplacedModelRemovalResponse,
     UnplacedModelView,
-)
-from app.persistence.entities import (
-    ModelGroupEntity,
-    SiteDiscoveredModelEntity,
 )
 
 from .group_read import list_ready_channel_items
@@ -149,103 +138,3 @@ def is_placeable_as_new_group(view: UnplacedModelView) -> bool:
         and not view.similar_model_names
         and len(view.model_name) <= MAX_GROUP_NAME_LENGTH
     )
-
-
-class GroupPlacementMixin:
-    async def list_unplaced_models(self) -> list[UnplacedModelView]:
-        """Return channel models not covered by any execution group."""
-        channels = await self._channel_store.list_channels()
-        groups = await self.list_groups(channels=channels)
-        return build_unplaced_models(
-            [
-                build_group_coverage(
-                    group,
-                    (
-                        (direct_pattern,)
-                        if (
-                            direct_pattern := compile_model_group_pattern(
-                                group.match_regex
-                            )
-                        )
-                        else ()
-                    ),
-                    group.match_regex_operator
-                    if group.match_regex_operator in {"and", "or"}
-                    else "or",
-                )
-                for group in groups
-            ],
-            channels,
-        )
-
-    async def place_models(
-        self, model_names: list[str] | None = None, group_id: str = ""
-    ) -> ModelGroupPlacementResponse:
-        """Join same-named groups or create own groups for unplaced models."""
-        if group_id:
-            return await self._place_models_into_group(model_names or [], group_id)
-        if model_names is None:
-            model_names = [
-                item.model_name for item in await self.list_unplaced_models()
-            ]
-        report = await self.reconcile_group_members(placement_names=set(model_names))
-        created_ids = {group.id for group in report.created_groups}
-        groups = await self.list_groups()
-        return ModelGroupPlacementResponse(
-            created=[group for group in groups if group.id in created_ids],
-            joined=[
-                change
-                for change in report.added
-                if change.source == ModelGroupMemberSource.PLACEMENT
-                and change.group_id not in created_ids
-            ],
-            unplaced=report.pending,
-        )
-
-    async def _place_models_into_group(
-        self, model_names: list[str], group_id: str
-    ) -> ModelGroupPlacementResponse:
-        """Save the given names as members of an existing execution group."""
-        names = [name.strip() for name in model_names if name.strip()]
-        if not names:
-            raise ValueError("At least one model name is required")
-        async with self._session_factory() as session:
-            entity = await session.get(ModelGroupEntity, group_id)
-            if entity is None:
-                raise ResourceNotFoundError(group_id)
-            if entity.route_group_id.strip():
-                raise ValueError("Route groups cannot receive members directly")
-        report = await self.reconcile_group_members(
-            placement_names=set(names), into_group_id=group_id
-        )
-        return ModelGroupPlacementResponse(
-            created=[],
-            joined=[change for change in report.added if change.group_id == group_id],
-            unplaced=report.pending,
-        )
-
-    async def remove_unplaced_models(
-        self, model_names: list[str]
-    ) -> UnplacedModelRemovalResponse:
-        """Remove unplaced model names from every channel that still offers them."""
-        names = set(model_names)
-        unplaced_names = {view.model_name for view in await self.list_unplaced_models()}
-        if covered := sorted(names - unplaced_names):
-            raise ValueError(
-                "Models are still placed in model groups or not offered: "
-                + ", ".join(covered)
-            )
-        async with self._session_factory() as session:
-            rows = (
-                await session.execute(
-                    select(SiteDiscoveredModelEntity)
-                    .where(SiteDiscoveredModelEntity.model_name.in_(names))
-                    .where(SiteDiscoveredModelEntity.enabled == 1)
-                )
-            ).scalars()
-            deleted = 0
-            for entity in rows:
-                await session.delete(entity)
-                deleted += 1
-            await session.commit()
-        return UnplacedModelRemovalResponse(deleted=deleted)

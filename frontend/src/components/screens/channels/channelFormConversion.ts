@@ -1,27 +1,31 @@
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { Site, SitePayload } from "@/lib/api/sites";
-import { isGeneratedCredentialName } from "@/lib/credentialLabels";
+import {
+  fallbackCredentialName,
+  isGeneratedCredentialName,
+} from "@/lib/credentialLabels";
 import {
   headerDraftToRules,
   headerRulesToDraft,
   paramOverrideDraftToRules,
   paramOverrideRulesToDraft,
 } from "@/lib/upstreamRules";
-
 import {
   headerDraftsFromJson,
   headerDraftsToJson,
   paramDraftsFromJson,
   paramDraftsToJson,
 } from "./channelAdvancedJson";
-import { canonicalizeCredentialIds, resolveBaseUrlId } from "./channelForm";
 import {
   applyApiKeyDrafts,
-  coalesceFormModels,
+  canonicalizeCredentialIds,
   createLocalId,
   emptyProtocolConfig,
-  fallbackCredentialName,
   persistedCredentialId,
+  resolveBaseUrlId,
+} from "./channelForm";
+import {
+  coalesceFormModels,
   protocolConfigEffectiveProtocols,
 } from "./channelModels";
 import type {
@@ -119,7 +123,8 @@ export function rebuildProtocolConfigs(form: FormState): FormProtocolConfig[] {
           models.set(key, {
             ...model,
             protocols: [protocol],
-            protocolIds: config.base_url_id === urlId ? model.protocolIds : {},
+            modelIdsByProtocol:
+              config.base_url_id === urlId ? model.modelIdsByProtocol : {},
           });
         modelsByUrl.set(urlId, models);
       }
@@ -207,7 +212,9 @@ export function toForm(site: Site): FormState {
     const models = coalesceFormModels(
       protocolConfig.models.map((model) => ({
         protocols: model.protocol ? [model.protocol] : [],
-        protocolIds: model.protocol ? { [model.protocol]: model.id } : {},
+        modelIdsByProtocol: model.protocol
+          ? { [model.protocol]: model.id }
+          : {},
         credential_id: persistedCredentialId(model.credential_id),
         model_name: model.model_name,
         enabled: model.enabled,
@@ -310,42 +317,24 @@ export function toPayload(form: FormState): SitePayload {
         credentials.some((item) => item.id === id),
       );
       if (!selectedCredentialIds.length) return [];
-      const derivedProtocols = protocolConfigEffectiveProtocols(protocolConfig);
-      const configuredProtocols = Array.from(
-        new Set([...protocolConfig.protocols, ...derivedProtocols]),
-      );
-      const protocolConfigProtocols = configuredProtocols.length
-        ? configuredProtocols
-        : [
-            protocolForEndpointKind(
-              baseUrls.find((item) => item.id === protocolConfig.base_url_id)
-                ?.kind,
-            ),
-          ];
       const models = protocolConfig.models
-        .flatMap((model) => {
-          const effectiveProtocols = model.protocols.filter((protocol) =>
-            protocolConfigProtocols.includes(protocol),
-          );
-          if (effectiveProtocols.length === 0) {
-            return [];
-          }
-          return effectiveProtocols.map((protocol) => ({
-            id: model.protocolIds[protocol] ?? null,
+        .flatMap((model) =>
+          model.protocols.map((protocol) => ({
+            id: model.modelIdsByProtocol[protocol] ?? null,
             protocol,
             credential_id: persistedCredentialId(model.credential_id),
             model_name: model.model_name.trim(),
             enabled: model.enabled,
             context_window: model.context_window,
             upstream_context_window: model.upstream_context_window,
-          }));
-        })
+          })),
+        )
         .filter((model) => model.credential_id && model.model_name);
       return [
         {
           id: protocolConfig.id,
           base_url_id: protocolConfig.base_url_id,
-          protocols: protocolConfigProtocols,
+          protocols: protocolConfig.protocols,
           models,
         },
       ];

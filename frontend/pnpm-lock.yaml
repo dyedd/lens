@@ -20,9 +20,6 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.97.0
         version: 5.97.0(react@19.2.4)
-      '@uiw/react-json-view':
-        specifier: 2.0.0-alpha.42
-        version: 2.0.0-alpha.42(@babel/runtime@7.29.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -215,10 +212,6 @@ packages:
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
-
-  '@babel/runtime@7.29.2':
-    resolution: {integrity: sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==}
-    engines: {node: '>=6.9.0'}
 
   '@babel/template@7.28.6':
     resolution: {integrity: sha512-YA6Ma2KsCdGb+WC6UpBVFJGXL58MDA6oyONbjyF/+5sBgxY/dwkhLogbMT2GXXyU84/IhRw/2D1Os1B/giz+BQ==}
@@ -1401,13 +1394,6 @@ packages:
 
   '@types/validate-npm-package-name@4.0.2':
     resolution: {integrity: sha512-lrpDziQipxCEeK5kWxvljWYhUvOiB2A9izZd9B2AFarYAkqZshb4lPbRs7zKEic6eGtH8V/2qJW+dPp9OtF6bw==}
-
-  '@uiw/react-json-view@2.0.0-alpha.42':
-    resolution: {integrity: sha512-PY7IF+zL3gYaW/FG3th0w6JG2SpkYqh/UZOgKm2XuY/UpCZ5inWlopR+pfRadRz/k/uTaOhsQa9jZnlp8QBJDA==}
-    peerDependencies:
-      '@babel/runtime': '>=7.10.0'
-      react: '>=18.0.0'
-      react-dom: '>=18.0.0'
 
   '@vitejs/plugin-react@6.1.1':
     resolution: {integrity: sha512-yxLaQV9gkhS8ezJqCM6+ndU7mDY6gqAg75NQ+0IjwEI8IYOmQCgkRwHKVSfWXW076DsqMo0Dk+0FK1U+M5RgFw==}
@@ -3189,8 +3175,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@babel/runtime@7.29.2': {}
-
   '@babel/template@7.28.6':
     dependencies:
       '@babel/code-frame': 7.29.0
@@ -4342,12 +4326,6 @@ snapshots:
   '@types/use-sync-external-store@0.0.6': {}
 
   '@types/validate-npm-package-name@4.0.2': {}
-
-  '@uiw/react-json-view@2.0.0-alpha.42(@babel/runtime@7.29.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
-    dependencies:
-      '@babel/runtime': 7.29.2
-      react: 19.2.4
-      react-dom: 19.2.4(react@19.2.4)
 
   '@vitejs/plugin-react@6.1.1(vite@8.2.2(@types/node@20.19.39)(jiti@2.7.0))':
     dependencies:

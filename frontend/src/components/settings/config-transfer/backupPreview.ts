@@ -1,64 +1,56 @@
-import type {
-  ConfigBackupDump,
-  ConfigBackupStatsSnapshot,
-} from "@/lib/api/backups";
 import type { Locale } from "@/lib/I18nContext";
 
+export type ConfigBackupPreview = {
+  exported_at: string;
+  lens_version: string;
+  include_request_logs: boolean;
+  include_gateway_api_keys: boolean;
+  counts: Record<
+    | "settings"
+    | "sites"
+    | "groups"
+    | "model_prices"
+    | "cronjobs"
+    | "stats"
+    | "gateway_api_keys"
+    | "request_logs",
+    number
+  >;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseStatsPreview(value: unknown): ConfigBackupStatsSnapshot {
-  if (!isRecord(value)) {
-    return {
-      imported_total: null,
-      imported_daily: [],
-      request_daily: [],
-      model_daily: [],
-    };
-  }
-
-  return {
-    imported_total: isRecord(value.imported_total)
-      ? (value.imported_total as ConfigBackupStatsSnapshot["imported_total"])
-      : null,
-    imported_daily: Array.isArray(value.imported_daily)
-      ? value.imported_daily
-      : [],
-    request_daily: Array.isArray(value.request_daily)
-      ? value.request_daily
-      : [],
-    model_daily: Array.isArray(value.model_daily) ? value.model_daily : [],
-  };
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }
 
-export function parseBackupPreview(rawValue: string): ConfigBackupDump {
-  const payload = JSON.parse(rawValue);
-  if (!isRecord(payload)) {
-    throw new Error("Invalid backup file");
-  }
-
+export function parseBackupPreview(rawValue: string): ConfigBackupPreview {
+  const payload: unknown = JSON.parse(rawValue);
+  if (!isRecord(payload)) throw new Error("Invalid backup file");
+  const stats = isRecord(payload.stats) ? payload.stats : {};
   return {
     exported_at:
       typeof payload.exported_at === "string" ? payload.exported_at : "",
     lens_version:
       typeof payload.lens_version === "string" ? payload.lens_version : "",
-    include_request_logs: Boolean(payload.include_request_logs),
-    include_gateway_api_keys: Boolean(payload.include_gateway_api_keys),
-    settings: Array.isArray(payload.settings) ? payload.settings : [],
-    sites: Array.isArray(payload.sites) ? payload.sites : [],
-    groups: Array.isArray(payload.groups) ? payload.groups : [],
-    model_prices: Array.isArray(payload.model_prices)
-      ? payload.model_prices
-      : [],
-    cronjobs: Array.isArray(payload.cronjobs) ? payload.cronjobs : [],
-    stats: parseStatsPreview(payload.stats),
-    gateway_api_keys: Array.isArray(payload.gateway_api_keys)
-      ? payload.gateway_api_keys
-      : [],
-    request_logs: Array.isArray(payload.request_logs)
-      ? payload.request_logs
-      : [],
+    include_request_logs: payload.include_request_logs === true,
+    include_gateway_api_keys: payload.include_gateway_api_keys === true,
+    counts: {
+      settings: arrayLength(payload.settings),
+      sites: arrayLength(payload.sites),
+      groups: arrayLength(payload.groups),
+      model_prices: arrayLength(payload.model_prices),
+      cronjobs: arrayLength(payload.cronjobs),
+      gateway_api_keys: arrayLength(payload.gateway_api_keys),
+      request_logs: arrayLength(payload.request_logs),
+      stats:
+        Number(isRecord(stats.imported_total)) +
+        arrayLength(stats.imported_daily) +
+        arrayLength(stats.request_daily) +
+        arrayLength(stats.model_daily),
+    },
   };
 }
 

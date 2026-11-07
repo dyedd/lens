@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.errors import ResourceNotFoundError
+from app.core.model_endpoints import credential_ids_for_url
 from app.core.model_names import (
     ModelPatternKind,
     classify_model_pattern,
@@ -35,7 +36,6 @@ from app.models.sites import (
     SiteEnabledUpdate,
     SiteUpdate,
 )
-from app.persistence.channel_store.endpoint_credentials import credential_ids_for_url
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,
@@ -45,9 +45,17 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
 )
 
+from .cleanup import cleanup_deleted_protocol_configs, cleanup_invalid_group_items
 from .import_sites import build_site_batch_import_result, prepare_site_batch
-from .mapping import SiteChannelProjectionMixin, SiteConfigLoadersMixin
-from .write import SiteConfigUpsertsMixin
+from .mapping import (
+    ensure_site_name_unique,
+    flatten_site,
+    load_sites,
+    site_credential_ids,
+    site_name_keys,
+    site_protocol_config_ids,
+)
+from .write import upsert_site_payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +65,10 @@ class UpstreamModelChanges:
     restored: list[str]
 
 
-class SiteOperationsMixin:
+class ChannelStore:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
     async def delete_site(self, site_id: str) -> None:
         """Delete a site and its dependent channel data."""
         async with self._session_factory() as session:
@@ -65,11 +76,9 @@ class SiteOperationsMixin:
             if site is None:
                 raise ResourceNotFoundError(site_id)
 
-            protocol_config_ids = await self._site_protocol_config_ids(session, site_id)
-            credential_ids = await self._site_credential_ids(session, site_id)
-            await self._cleanup_deleted_protocol_configs(
-                session, set(protocol_config_ids)
-            )
+            protocol_config_ids = await site_protocol_config_ids(session, site_id)
+            credential_ids = await site_credential_ids(session, site_id)
+            await cleanup_deleted_protocol_configs(session, set(protocol_config_ids))
             if credential_ids:
                 await session.execute(
                     delete(SiteCredentialRateEntity).where(
@@ -85,10 +94,10 @@ class SiteOperationsMixin:
                 delete(SiteBaseUrlEntity).where(SiteBaseUrlEntity.site_id == site_id)
             )
             await session.delete(site)
-            await self._cleanup_invalid_group_items(session, set(protocol_config_ids))
+            await cleanup_invalid_group_items(session, set(protocol_config_ids))
             await session.commit()
 
-    async def fetch_models_preview(
+    def fetch_models_preview(
         self, payload: SiteModelFetchRequest
     ) -> list[dict[str, str]]:
         """Validate model discovery credentials and return preview entries."""
@@ -233,28 +242,18 @@ class SiteOperationsMixin:
                 added=sorted(added), missing=sorted(removed), restored=[]
             )
 
-
-class ChannelStore(
-    SiteConfigLoadersMixin,
-    SiteChannelProjectionMixin,
-    SiteConfigUpsertsMixin,
-    SiteOperationsMixin,
-):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        self._session_factory = session_factory
-
     async def list_channels(self) -> list[ChannelConfig]:
         """Return all runtime channels flattened from configured sites."""
         sites = await self.list_sites()
         items: list[ChannelConfig] = []
         for site in sites:
-            items.extend(self.flatten_site(site))
+            items.extend(flatten_site(site))
         return sorted(items, key=lambda item: (item.name.lower(), item.id))
 
     async def list_sites(self, tag: str | None = None) -> list[SiteConfig]:
         """Return all configured sites."""
         async with self._session_factory() as session:
-            sites = await self._load_sites(session)
+            sites = await load_sites(session)
         trimmed_tag = tag.strip() if tag else ""
         if not trimmed_tag:
             return sites
@@ -269,7 +268,7 @@ class ChannelStore(
         self, session: AsyncSession, site_id: str
     ) -> SiteConfig:
         """Return a site from a caller-owned transaction."""
-        sites = await self._load_sites(session, site_ids=[site_id])
+        sites = await load_sites(session, site_ids=[site_id])
         if not sites:
             raise ResourceNotFoundError(site_id)
         return sites[0]
@@ -297,14 +296,14 @@ class ChannelStore(
         if creating and site is not None:
             raise ValueError(f"Site already exists: {site_id}")
         if creating:
-            await self._ensure_site_name_unique(session, payload.name)
+            await ensure_site_name_unique(session, payload.name)
             enabled = True
         else:
-            await self._ensure_site_name_unique(
+            await ensure_site_name_unique(
                 session, payload.name, exclude_site_id=site_id
             )
             enabled = bool(site.enabled)
-        await self._upsert_site_payload(session, site_id, payload, enabled=enabled)
+        await upsert_site_payload(session, site_id, payload, enabled=enabled)
 
     async def import_sites(
         self, payload: SiteBatchImportRequest
@@ -313,12 +312,12 @@ class ChannelStore(
         site_ids: dict[int, str] = {}
 
         async with self._session_factory() as session:
-            existing_names = await self._site_name_keys(session)
+            existing_names = await site_name_keys(session)
             batch = prepare_site_batch(payload.sites, existing_names)
             for index, prepared_item in batch.sites.items():
                 site_id = str(uuid.uuid4())
                 site_payload = prepared_item.payload
-                await self._upsert_site_payload(
+                await upsert_site_payload(
                     session,
                     site_id,
                     site_payload,
@@ -329,7 +328,10 @@ class ChannelStore(
                 await session.commit()
 
         if site_ids:
-            created_sites = await self._load_sites_by_ids(list(site_ids.values()))
+            async with self._session_factory() as session:
+                created_sites = await load_sites(
+                    session, site_ids=list(site_ids.values())
+                )
             sites_by_id = {site.id: site for site in created_sites}
             for index, site_id in site_ids.items():
                 site = sites_by_id[site_id]

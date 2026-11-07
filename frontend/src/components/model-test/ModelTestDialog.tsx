@@ -26,9 +26,9 @@ import {
 } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { SiteModelTestResult } from "@/lib/api/sites";
+import type { Locale } from "@/lib/I18nContext";
 import { formatJson } from "@/lib/jsonFormatting";
 import { protocolLabel } from "@/lib/protocols";
-import type { Locale } from "./channelTypes";
 
 export type ModelProbeItem = {
   target: ModelTestDialogTarget;

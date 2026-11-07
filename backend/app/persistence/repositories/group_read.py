@@ -157,304 +157,274 @@ def list_ready_channel_items(
     return items
 
 
-class GroupCandidatesMixin:
-    async def _list_group_candidates(
-        self, payload: ModelGroupCandidatesRequest
-    ) -> ModelGroupCandidatesResponse:
-        all_channels = await self._channel_store.list_channels()
-        channels_by_id = build_model_group_channel_lookups(all_channels)
-        selected_item_keys = {model_group_item_key(item) for item in payload.items}
-        candidate_aggregates: dict[tuple[str, str, str], _CandidateAggregate] = {}
+def build_group_candidates(
+    payload: ModelGroupCandidatesRequest, all_channels: list[ChannelConfig]
+) -> ModelGroupCandidatesResponse:
+    channels_by_id = build_model_group_channel_lookups(all_channels)
+    selected_item_keys = {model_group_item_key(item) for item in payload.items}
+    candidate_aggregates: dict[tuple[str, str, str], _CandidateAggregate] = {}
 
-        for channel in all_channels:
-            for model in channel.models:
-                item = ModelGroupItemInput(
-                    channel_id=channel.id,
-                    credential_id=model.credential_id,
-                    model_name=model.model_name,
-                    enabled=True,
-                )
-                evaluation = evaluate_model_group_item(
-                    item,
-                    channels_by_id,
-                )
-                if evaluation.state != ModelGroupItemState.READY:
-                    continue
-
-                model_key = (
-                    channel.site_id or evaluation.protocol_config_id,
-                    model.credential_id,
-                    model.model_name,
-                )
-                credential = channels_by_id[channel.id].credentials_by_id[
-                    model.credential_id
-                ]
-                if model_key not in candidate_aggregates:
-                    candidate_aggregates[model_key] = _CandidateAggregate(
-                        protocol_config_id=evaluation.protocol_config_id,
-                        site_id=channel.site_id,
-                        credential_id=model.credential_id,
-                        credential_name=credential.remark,
-                        credential_number=credential.number,
-                        credential_mask=format_credential_mask(credential.key),
-                        rate_source=credential.rate_source,
-                        rate_multiplier=credential.rate_multiplier,
-                        model_name=model.model_name,
-                        channel_name=channel.name,
-                        base_url=str(channel.base_url),
-                    )
-                aggregate = candidate_aggregates[model_key]
-                aggregate.channels.append(channel)
-
-        candidates: list[ModelGroupCandidateItem] = []
-        for aggregate in candidate_aggregates.values():
-            recommended_items = self._recommended_candidate_items(
-                aggregate,
-            )
-            remaining_items = [
-                item
-                for item in recommended_items
-                if model_group_item_key(item) not in selected_item_keys
-            ]
-            if not remaining_items:
-                continue
-
-            candidates.append(
-                ModelGroupCandidateItem(
-                    site_id=aggregate.site_id,
-                    channel_name=aggregate.channel_name,
-                    credential_id=aggregate.credential_id,
-                    credential_name=aggregate.credential_name,
-                    credential_number=aggregate.credential_number,
-                    credential_mask=aggregate.credential_mask,
-                    rate_source=aggregate.rate_source,
-                    rate_multiplier=aggregate.rate_multiplier,
-                    base_url=aggregate.base_url,
-                    model_name=aggregate.model_name,
-                    protocol_config_id=aggregate.protocol_config_id,
-                    protocols=sorted(
-                        {channel.protocol for channel in aggregate.channels},
-                        key=lambda protocol: protocol.value,
-                    ),
-                    items=[
-                        ModelGroupCandidateSubitem(
-                            channel_id=item.channel_id,
-                            protocol_config_id=protocol_config_id_from_runtime_channel_id(
-                                item.channel_id
-                            ),
-                            protocol=channels_by_id[item.channel_id].channel.protocol,
-                            credential_id=item.credential_id,
-                            model_name=item.model_name,
-                            enabled=item.enabled,
-                        )
-                        for item in remaining_items
-                    ],
-                )
-            )
-
-        candidates.sort(
-            key=lambda candidate: (candidate.channel_name, candidate.model_name)
-        )
-        evaluated_items = [
-            _build_item_view(item, index, channels_by_id)
-            for index, item in enumerate(payload.items)
-        ]
-        return ModelGroupCandidatesResponse(
-            candidates=candidates,
-            evaluated_items=evaluated_items,
-        )
-
-    @staticmethod
-    def _recommended_candidate_items(
-        aggregate: _CandidateAggregate,
-    ) -> list[ModelGroupItemInput]:
-        return [
-            ModelGroupItemInput(
+    for channel in all_channels:
+        for model in channel.models:
+            item = ModelGroupItemInput(
                 channel_id=channel.id,
-                credential_id=aggregate.credential_id,
-                model_name=aggregate.model_name,
+                credential_id=model.credential_id,
+                model_name=model.model_name,
                 enabled=True,
             )
-            for channel in sorted(
-                aggregate.channels, key=lambda channel: channel.protocol.value
-            )
-        ]
-
-
-class GroupMappingMixin:
-    async def _hydrate_groups(
-        self,
-        session: AsyncSession,
-        entities: list[ModelGroupEntity],
-        channels: list[ChannelConfig],
-    ) -> list[ModelGroupView]:
-        if not entities:
-            return []
-        requested_ids = {item.id for item in entities}
-        route_group_ids = {
-            item.route_group_id for item in entities if item.route_group_id.strip()
-        }
-        missing_route_group_ids = route_group_ids - requested_ids
-        if missing_route_group_ids:
-            route_entities = (
-                (
-                    await session.execute(
-                        select(ModelGroupEntity).where(
-                            ModelGroupEntity.id.in_(missing_route_group_ids)
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            entities = [*entities, *route_entities]
-        item_views = await self._load_group_items(
-            session,
-            [item.id for item in entities],
-            channels,
-        )
-        items_by_group = item_views.members
-        route_name_by_id = {item.id: item.name for item in entities}
-        prices_by_key = await self._load_model_prices_by_keys(
-            session, [canonical_model_price_key(item.name) for item in entities]
-        )
-        client_protocols_by_group = {
-            item.id: infer_client_protocols(
-                member.protocol for member in items_by_group.get(item.id, [])
-            )
-            for item in entities
-        }
-        return [
-            self._to_group(
+            evaluation = evaluate_model_group_item(
                 item,
-                items_by_group.get(item.id, []),
-                item_views.excluded.get(item.id, []),
-                client_protocols_by_group.get(item.route_group_id or item.id, []),
-                prices_by_key.get(canonical_model_price_key(item.name)),
-                route_name_by_id.get(item.route_group_id, ""),
+                channels_by_id,
             )
-            for item in entities
-            if item.id in requested_ids
+            if evaluation.state != ModelGroupItemState.READY:
+                continue
+
+            model_key = (
+                channel.site_id or evaluation.protocol_config_id,
+                model.credential_id,
+                model.model_name,
+            )
+            credential = channels_by_id[channel.id].credentials_by_id[
+                model.credential_id
+            ]
+            if model_key not in candidate_aggregates:
+                candidate_aggregates[model_key] = _CandidateAggregate(
+                    protocol_config_id=evaluation.protocol_config_id,
+                    site_id=channel.site_id,
+                    credential_id=model.credential_id,
+                    credential_name=credential.remark,
+                    credential_number=credential.number,
+                    credential_mask=format_credential_mask(credential.key),
+                    rate_source=credential.rate_source,
+                    rate_multiplier=credential.rate_multiplier,
+                    model_name=model.model_name,
+                    channel_name=channel.name,
+                    base_url=str(channel.base_url),
+                )
+            aggregate = candidate_aggregates[model_key]
+            aggregate.channels.append(channel)
+
+    candidates: list[ModelGroupCandidateItem] = []
+    for aggregate in candidate_aggregates.values():
+        recommended_items = _recommended_candidate_items(
+            aggregate,
+        )
+        remaining_items = [
+            item
+            for item in recommended_items
+            if model_group_item_key(item) not in selected_item_keys
         ]
+        if not remaining_items:
+            continue
 
-    async def _load_model_prices_by_keys(
-        self, session: AsyncSession, keys: list[str]
-    ) -> dict[str, ModelPriceEntity]:
-        canonical_keys = [key for key in dict.fromkeys(keys) if key]
-        if not canonical_keys:
-            return {}
+        candidates.append(
+            ModelGroupCandidateItem(
+                site_id=aggregate.site_id,
+                channel_name=aggregate.channel_name,
+                credential_id=aggregate.credential_id,
+                credential_name=aggregate.credential_name,
+                credential_number=aggregate.credential_number,
+                credential_mask=aggregate.credential_mask,
+                rate_source=aggregate.rate_source,
+                rate_multiplier=aggregate.rate_multiplier,
+                base_url=aggregate.base_url,
+                model_name=aggregate.model_name,
+                protocol_config_id=aggregate.protocol_config_id,
+                protocols=sorted(
+                    {channel.protocol for channel in aggregate.channels},
+                    key=lambda protocol: protocol.value,
+                ),
+                items=[
+                    ModelGroupCandidateSubitem(
+                        channel_id=item.channel_id,
+                        protocol_config_id=protocol_config_id_from_runtime_channel_id(
+                            item.channel_id
+                        ),
+                        protocol=channels_by_id[item.channel_id].channel.protocol,
+                        credential_id=item.credential_id,
+                        model_name=item.model_name,
+                        enabled=item.enabled,
+                    )
+                    for item in remaining_items
+                ],
+            )
+        )
 
-        rows = (
+    candidates.sort(
+        key=lambda candidate: (candidate.channel_name, candidate.model_name)
+    )
+    evaluated_items = [
+        _build_item_view(item, index, channels_by_id)
+        for index, item in enumerate(payload.items)
+    ]
+    return ModelGroupCandidatesResponse(
+        candidates=candidates,
+        evaluated_items=evaluated_items,
+    )
+
+
+def _recommended_candidate_items(
+    aggregate: _CandidateAggregate,
+) -> list[ModelGroupItemInput]:
+    return [
+        ModelGroupItemInput(
+            channel_id=channel.id,
+            credential_id=aggregate.credential_id,
+            model_name=aggregate.model_name,
+            enabled=True,
+        )
+        for channel in sorted(
+            aggregate.channels, key=lambda channel: channel.protocol.value
+        )
+    ]
+
+
+async def hydrate_groups(
+    session: AsyncSession,
+    entities: list[ModelGroupEntity],
+    channels: list[ChannelConfig],
+) -> list[ModelGroupView]:
+    if not entities:
+        return []
+    requested_ids = {item.id for item in entities}
+    route_group_ids = {
+        item.route_group_id for item in entities if item.route_group_id.strip()
+    }
+    missing_route_group_ids = route_group_ids - requested_ids
+    if missing_route_group_ids:
+        route_entities = (
             (
                 await session.execute(
-                    select(ModelPriceEntity).where(
-                        ModelPriceEntity.model_key.in_(canonical_keys)
+                    select(ModelGroupEntity).where(
+                        ModelGroupEntity.id.in_(missing_route_group_ids)
                     )
                 )
             )
             .scalars()
             .all()
         )
-        return {row.model_key: row for row in rows}
-
-    async def _load_group_items(
-        self,
-        session: AsyncSession,
-        group_ids: list[str],
-        channels: list[ChannelConfig],
-    ) -> GroupItemViews:
-        item_views = GroupItemViews(
-            members={group_id: [] for group_id in group_ids}, excluded={}
+        entities = [*entities, *route_entities]
+    item_views = await load_group_items(
+        session,
+        [item.id for item in entities],
+        channels,
+    )
+    items_by_group = item_views.members
+    route_name_by_id = {item.id: item.name for item in entities}
+    prices_by_key = await _load_model_prices_by_keys(
+        session, [canonical_model_price_key(item.name) for item in entities]
+    )
+    client_protocols_by_group = {
+        item.id: infer_client_protocols(
+            member.protocol for member in items_by_group.get(item.id, [])
         )
-        if not group_ids:
-            return item_views
+        for item in entities
+    }
+    return [
+        _to_group(
+            item,
+            items_by_group.get(item.id, []),
+            item_views.excluded.get(item.id, []),
+            client_protocols_by_group.get(item.route_group_id or item.id, []),
+            prices_by_key.get(canonical_model_price_key(item.name)),
+            route_name_by_id.get(item.route_group_id, ""),
+        )
+        for item in entities
+        if item.id in requested_ids
+    ]
 
-        rows = (
-            (
-                await session.execute(
-                    select(ModelGroupItemEntity)
-                    .where(ModelGroupItemEntity.group_id.in_(group_ids))
-                    .order_by(
-                        ModelGroupItemEntity.group_id.asc(),
-                        ModelGroupItemEntity.sort_order.asc(),
-                        ModelGroupItemEntity.id.asc(),
-                    )
+
+async def _load_model_prices_by_keys(
+    session: AsyncSession, keys: list[str]
+) -> dict[str, ModelPriceEntity]:
+    canonical_keys = [key for key in dict.fromkeys(keys) if key]
+    if not canonical_keys:
+        return {}
+
+    rows = (
+        (
+            await session.execute(
+                select(ModelPriceEntity).where(
+                    ModelPriceEntity.model_key.in_(canonical_keys)
                 )
             )
-            .scalars()
-            .all()
         )
+        .scalars()
+        .all()
+    )
+    return {row.model_key: row for row in rows}
 
-        channels_by_id = build_model_group_channel_lookups(channels)
-        for row in rows:
-            item = ModelGroupItemInput(
-                channel_id=row.channel_id,
-                credential_id=row.credential_id,
-                model_name=row.model_name,
-                enabled=bool(row.enabled),
-                source=ModelGroupMemberSource(row.source),
-            )
-            views = item_views.excluded if row.excluded else item_views.members
-            views.setdefault(row.group_id, []).append(
-                _build_item_view(item, row.sort_order, channels_by_id)
-            )
+
+async def load_group_items(
+    session: AsyncSession,
+    group_ids: list[str],
+    channels: list[ChannelConfig],
+) -> GroupItemViews:
+    item_views = GroupItemViews(
+        members={group_id: [] for group_id in group_ids}, excluded={}
+    )
+    if not group_ids:
         return item_views
 
-    def _replace_group_items(
-        self,
-        session: AsyncSession,
-        group_id: str,
-        items: list[ModelGroupItemInput],
-        excluded_items: list[ModelGroupItemInput] | None = None,
-    ) -> None:
-        rows = [
-            *((item, False) for item in items),
-            *((item, True) for item in excluded_items or []),
-        ]
-        for index, (item, is_excluded) in enumerate(rows):
-            session.add(
-                ModelGroupItemEntity(
-                    group_id=group_id,
-                    channel_id=item.channel_id,
-                    credential_id=item.credential_id,
-                    model_name=item.model_name,
-                    enabled=0 if is_excluded or not item.enabled else 1,
-                    # A group an admin saved holds its members explicitly;
-                    # reconcile only manages what it joined by name or rule.
-                    source=ModelGroupMemberSource.MANUAL.value,
-                    excluded=1 if is_excluded else 0,
-                    sort_order=index,
+    rows = (
+        (
+            await session.execute(
+                select(ModelGroupItemEntity)
+                .where(ModelGroupItemEntity.group_id.in_(group_ids))
+                .order_by(
+                    ModelGroupItemEntity.group_id.asc(),
+                    ModelGroupItemEntity.sort_order.asc(),
+                    ModelGroupItemEntity.id.asc(),
                 )
             )
-
-    @staticmethod
-    def _to_group(
-        entity: ModelGroupEntity,
-        items: list[ModelGroupItemView],
-        excluded_items: list[ModelGroupItemView],
-        client_protocols: list[ProtocolKind],
-        price: ModelPriceEntity | None = None,
-        route_group_name: str = "",
-    ) -> ModelGroupView:
-        return ModelGroupView(
-            id=entity.id,
-            name=entity.name,
-            client_protocols=client_protocols,
-            strategy=entity.strategy,
-            route_group_id=entity.route_group_id,
-            route_group_name=route_group_name,
-            match_regex=entity.match_regex,
-            match_regex_operator=(
-                entity.match_regex_operator
-                if entity.match_regex_operator in {"and", "or"}
-                else "or"
-            ),
-            match_rule_ids=parse_rule_ids(entity.match_rule_ids_json),
-            param_override=parse_param_override(entity.param_override),
-            headers=parse_headers(entity.headers_json),
-            fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),
-            context_window=coerce_context_window(entity.context_window),
-            **group_price_kwargs(price),
-            items=items,
-            excluded_items=excluded_items,
         )
+        .scalars()
+        .all()
+    )
+
+    channels_by_id = build_model_group_channel_lookups(channels)
+    for row in rows:
+        item = ModelGroupItemInput(
+            channel_id=row.channel_id,
+            credential_id=row.credential_id,
+            model_name=row.model_name,
+            enabled=bool(row.enabled),
+            source=ModelGroupMemberSource(row.source),
+        )
+        views = item_views.excluded if row.excluded else item_views.members
+        views.setdefault(row.group_id, []).append(
+            _build_item_view(item, row.sort_order, channels_by_id)
+        )
+    return item_views
+
+
+def _to_group(
+    entity: ModelGroupEntity,
+    items: list[ModelGroupItemView],
+    excluded_items: list[ModelGroupItemView],
+    client_protocols: list[ProtocolKind],
+    price: ModelPriceEntity | None = None,
+    route_group_name: str = "",
+) -> ModelGroupView:
+    return ModelGroupView(
+        id=entity.id,
+        name=entity.name,
+        client_protocols=client_protocols,
+        strategy=entity.strategy,
+        route_group_id=entity.route_group_id,
+        route_group_name=route_group_name,
+        match_regex=entity.match_regex,
+        match_regex_operator=(
+            entity.match_regex_operator
+            if entity.match_regex_operator in {"and", "or"}
+            else "or"
+        ),
+        match_rule_ids=parse_rule_ids(entity.match_rule_ids_json),
+        param_override=parse_param_override(entity.param_override),
+        headers=parse_headers(entity.headers_json),
+        fallback_group_ids=parse_fallback_group_ids(entity.fallback_group_ids_json),
+        context_window=coerce_context_window(entity.context_window),
+        **group_price_kwargs(price),
+        items=items,
+        excluded_items=excluded_items,
+    )

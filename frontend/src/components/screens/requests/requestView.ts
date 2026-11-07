@@ -309,12 +309,6 @@ export function formatHtmlErrorContent(value: string) {
     .trim();
 }
 
-export function formatJsonErrorContent(prefix: string, value: JsonValue) {
-  const jsonText = JSON.stringify(value, null, 2);
-  if (!jsonText) return prefix.trim() || null;
-  return jsonText;
-}
-
 /** Extract the first string value of common error shapes, or null. */
 function knownErrorMessage(value: JsonValue): string | null {
   if (typeof value === "string") return value;
@@ -368,13 +362,13 @@ export function formatErrorDisplay(value: string | null | undefined) {
   if (!raw) return null;
 
   const directParsed = tryParseJsonValue(raw);
-  if (directParsed !== null) return formatJsonErrorContent("", directParsed);
+  if (directParsed !== null) return JSON.stringify(directParsed, null, 2);
 
   const jsonStart = raw.indexOf("{");
   if (jsonStart > 0) {
     const nestedParsed = tryParseJsonValue(raw.slice(jsonStart));
     if (nestedParsed !== null) {
-      return formatJsonErrorContent(raw.slice(0, jsonStart), nestedParsed);
+      return JSON.stringify(nestedParsed, null, 2);
     }
   }
 

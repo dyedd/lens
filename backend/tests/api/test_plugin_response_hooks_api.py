@@ -39,7 +39,11 @@ class TagRequest:
         return True
 
     async def apply(self, call, ctx):
-        return replace(call, headers={**call.headers, "x-plugin-model": call.model_name})
+        return replace(
+            call,
+            headers={**call.headers, "x-plugin-model": call.model_name},
+            body={**call.body, "stream": False, "model": "plugin-model"},
+        )
 
 
 PLUGIN = PluginDefinition(
@@ -130,6 +134,8 @@ def _stub_upstream(
         body_bytes: bytes,
     ) -> httpx.Response:
         captured["headers"] = dict(upstream.headers)
+        captured["stream"] = stream
+        captured["body"] = json.loads(body_bytes)
         return httpx.Response(
             200,
             content=content,
@@ -163,7 +169,7 @@ def _chat_group(create_site: Any, create_model_group: Any) -> None:
     )
 
 
-def test_upstream_request_hook_adds_header(
+def test_upstream_request_hook_updates_header_and_body(
     client,
     monkeypatch,
     install_plugin,
@@ -181,10 +187,12 @@ def test_upstream_request_hook_adds_header(
     install_plugin(_HEADER_PLUGIN, "tag_request")
     _chat_group(create_site, create_model_group)
 
-    response = _chat(client, create_gateway_key)
+    response = _chat(client, create_gateway_key, stream=True)
 
     assert response.status_code == 200, response.text
     assert captured["headers"]["x-plugin-model"] == "gpt-4o"
+    assert captured["body"]["model"] == "plugin-model"
+    assert captured["stream"] is False
 
 
 def test_upstream_response_hook_rewrites_reply(

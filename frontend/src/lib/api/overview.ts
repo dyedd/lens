@@ -22,22 +22,6 @@ export type OverviewDailyPoint = {
   successful_requests: number;
   failed_requests: number;
 };
-export type OverviewModelMetricPoint = {
-  model: string;
-  requests: number;
-  total_tokens: number;
-  total_cost_usd: number;
-};
-export type OverviewModelTrendPoint = {
-  date: string;
-  model: string;
-  value: number;
-};
-export type OverviewModelAnalytics = {
-  distribution: OverviewModelMetricPoint[];
-  trend: OverviewModelTrendPoint[];
-  available_models: string[];
-};
 export type AttributionDimension = "model" | "channel" | "agent";
 export type AttributionMetric =
   | "requests"

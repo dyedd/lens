@@ -13,7 +13,7 @@ async def list_cronjobs(
     _: Any = Depends(get_current_admin),
 ) -> list[CronjobItem]:
     """List registered cron jobs and their schedules."""
-    return await app_state.cronjob_runner.list_cronjobs()
+    return await app_state.cronjob_runner.ensure_and_list_cronjobs()
 
 
 async def update_cronjob(

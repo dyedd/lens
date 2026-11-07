@@ -1,19 +1,16 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { FileJson, Upload } from "lucide-react";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SettingsSection } from "@/components/settings/settingsLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
-import {
-  type ConfigBackupDump,
-  type ConfigImportResult,
-  importConfigBackup,
-} from "@/lib/api/backups";
+import { type ConfigImportResult, importConfigBackup } from "@/lib/api/backups";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import type { ConfigBackupPreview } from "./backupPreview";
 import { parseBackupPreview, resultLabelForLocale } from "./backupPreview";
 import { ConfigImportConfirmDialog } from "./ConfigImportConfirmDialog";
 import { ConfigImportPreview } from "./ConfigImportPreview";
@@ -23,13 +20,14 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
   const queryClient = useQueryClient();
   const timeZone = useAppTimeZone();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [isPreviewPending, startPreviewTransition] = useTransition();
+  const previewRequestId = useRef(0);
+  const [isPreviewPending, setIsPreviewPending] = useState(false);
 
   const [isImporting, setIsImporting] = useState(false);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<ConfigBackupDump | null>(null);
+  const [preview, setPreview] = useState<ConfigBackupPreview | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [importResult, setImportResult] = useState<ConfigImportResult | null>(
     null,
@@ -39,55 +37,50 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
     if (!preview) {
       return [];
     }
-    const statsCount =
-      (preview.stats.imported_total ? 1 : 0) +
-      preview.stats.imported_daily.length +
-      preview.stats.request_daily.length +
-      preview.stats.model_daily.length;
     const items = [
       {
         key: "settings",
         label: titleForLocale(locale, "系统设置", "System settings"),
-        count: preview.settings.length,
+        count: preview.counts.settings,
       },
       {
         key: "sites",
         label: titleForLocale(locale, "渠道", "Channels"),
-        count: preview.sites.length,
+        count: preview.counts.sites,
       },
       {
         key: "groups",
         label: titleForLocale(locale, "模型组", "Model groups"),
-        count: preview.groups.length,
+        count: preview.counts.groups,
       },
       {
         key: "model_prices",
         label: titleForLocale(locale, "模型价格", "Model prices"),
-        count: preview.model_prices.length,
+        count: preview.counts.model_prices,
       },
       {
         key: "cronjobs",
         label: titleForLocale(locale, "计划任务", "Scheduled tasks"),
-        count: preview.cronjobs.length,
+        count: preview.counts.cronjobs,
       },
       {
         key: "stats",
         label: titleForLocale(locale, "统计数据", "Stats"),
-        count: statsCount,
+        count: preview.counts.stats,
       },
     ];
     if (preview.include_gateway_api_keys) {
       items.push({
         key: "gateway_api_keys",
         label: titleForLocale(locale, "网关密钥", "Gateway keys"),
-        count: preview.gateway_api_keys.length,
+        count: preview.counts.gateway_api_keys,
       });
     }
     if (preview.include_request_logs) {
       items.push({
         key: "request_logs",
         label: titleForLocale(locale, "请求日志", "Request logs"),
-        count: preview.request_logs.length,
+        count: preview.counts.request_logs,
       });
     }
     return items;
@@ -108,10 +101,13 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
   }, [importResult, locale]);
 
   async function handleFileChange(file: File | null) {
+    const requestId = ++previewRequestId.current;
     setSelectedFile(file);
+    setConfirmImportOpen(false);
     setImportResult(null);
     setPreview(null);
     setPreviewError("");
+    setIsPreviewPending(Boolean(file));
 
     if (!file) {
       return;
@@ -119,21 +115,22 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
 
     try {
       const rawValue = await file.text();
+      if (requestId !== previewRequestId.current) return;
       const nextPreview = parseBackupPreview(rawValue);
-      startPreviewTransition(() => {
-        setPreview(nextPreview);
-      });
+      setPreview(nextPreview);
     } catch {
-      startPreviewTransition(() => {
+      if (requestId === previewRequestId.current) {
         setPreviewError(
           titleForLocale(locale, "备份文件格式无效", "Invalid backup file"),
         );
-      });
+      }
+    } finally {
+      if (requestId === previewRequestId.current) setIsPreviewPending(false);
     }
   }
 
   async function handleImport() {
-    if (!selectedFile) {
+    if (!selectedFile || !preview || isPreviewPending) {
       return;
     }
 
@@ -171,7 +168,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
-            disabled={!selectedFile || Boolean(previewError) || isImporting}
+            disabled={!preview || isPreviewPending || isImporting}
             onClick={() => setConfirmImportOpen(true)}
           >
             {isImporting ? (
@@ -191,6 +188,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
             type="file"
             accept="application/json,.json"
             className="hidden"
+            disabled={isImporting}
             onChange={(event) =>
               void handleFileChange(event.target.files?.[0] ?? null)
             }
@@ -200,6 +198,7 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
             variant="outline"
             size="sm"
             className="h-8 gap-1.5 px-2 text-sm shadow-none"
+            disabled={isImporting}
             onClick={() => fileInputRef.current?.click()}
           >
             {isPreviewPending ? (

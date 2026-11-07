@@ -17,7 +17,14 @@ import {
 } from "@/components/ui/Popover";
 import { cn } from "@/lib/classNames";
 
-type ComboboxProps = Omit<React.ComponentProps<"select">, "size"> & {
+type ComboboxProps = Pick<
+  React.ComponentProps<"button">,
+  "id" | "className" | "disabled" | "autoFocus" | "aria-invalid" | "aria-label"
+> & {
+  children: React.ReactNode;
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
   size?: "sm" | "default";
 };
 
@@ -40,16 +47,14 @@ function Combobox({
   defaultValue,
   disabled,
   id,
-  onChange,
+  onValueChange,
   value,
   "aria-invalid": ariaInvalid,
   "aria-label": ariaLabel,
   autoFocus,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
-  const [internalValue, setInternalValue] = React.useState(() =>
-    stringifySelectValue(defaultValue),
-  );
+  const [internalValue, setInternalValue] = React.useState(defaultValue ?? "");
   const listId = React.useId();
   const optionGroups = React.useMemo(
     () => extractOptionGroups(children),
@@ -59,8 +64,7 @@ function Combobox({
     () => optionGroups.flatMap((group) => group.options),
     [optionGroups],
   );
-  const currentValue =
-    value === undefined ? internalValue : stringifySelectValue(value);
+  const currentValue = value ?? internalValue;
   const selectedOption = options.find(
     (option) => option.value === currentValue,
   );
@@ -84,7 +88,7 @@ function Combobox({
       setInternalValue(nextValue);
     }
 
-    onChange?.(createSelectChangeEvent(nextValue));
+    onValueChange?.(nextValue);
   }
 
   return (
@@ -189,23 +193,6 @@ function ComboboxOptGroup({
       {...props}
     />
   );
-}
-
-function stringifySelectValue(
-  value: ComboboxProps["value"] | ComboboxProps["defaultValue"],
-) {
-  return value === undefined || value === null ? "" : String(value);
-}
-
-function createSelectChangeEvent(
-  value: string,
-): React.ChangeEvent<HTMLSelectElement> {
-  const target = { name: "", value };
-
-  return {
-    currentTarget: target,
-    target,
-  } as unknown as React.ChangeEvent<HTMLSelectElement>;
 }
 
 function extractOptionGroups(children: React.ReactNode): OptionGroup[] {

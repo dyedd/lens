@@ -12,10 +12,9 @@ import {
 } from "@/components/ui/Select";
 import type { ModelGroup } from "@/lib/api/groups";
 import { parseContextWindowInput } from "@/lib/contextWindow";
-import { compileRegexRulePattern } from "@/lib/regexRules";
-
 import type { FormState } from "./groupTypes";
 import { buildPluginStrategyIds } from "./modelGroupFormatting";
+import { compileRegexRulePattern } from "./modelGroupMatching";
 import { usePluginStrategyIds } from "./usePluginStrategyIds";
 
 interface ModelGroupSettingsProps {
@@ -142,7 +141,7 @@ export function ModelGroupSettings({
               id="group-route-target"
               className="w-full"
               value={form.route_group_id}
-              onChange={(event) => changeRouteTarget(event.target.value)}
+              onValueChange={changeRouteTarget}
             >
               {routeTargetOptions.map((group) => (
                 <ComboboxOption key={group.id} value={group.id}>

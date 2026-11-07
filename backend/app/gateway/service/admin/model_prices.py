@@ -4,6 +4,8 @@ from typing import Any
 
 from fastapi import Depends, HTTPException
 
+from ....core.errors import LensError
+from ....core.model_prices import canonical_model_price_key
 from ....models.model_prices import (
     ModelPriceItem,
     ModelPriceListResponse,
@@ -25,9 +27,15 @@ async def update_model_price(
     model_key: str, payload: ModelPriceUpdate, _: Any = Depends(get_current_admin)
 ) -> ModelPriceItem:
     """Create or update the price for a model group."""
-    return await app_state.model_price_repo.upsert_model_price(
-        payload.model_copy(update={"model_key": model_key})
-    )
+    if payload.model_key is not None and canonical_model_price_key(
+        payload.model_key
+    ) != canonical_model_price_key(model_key):
+        raise LensError(
+            "Model key must match the request path",
+            status_code=400,
+            error_type="bad_request",
+        )
+    return await app_state.model_price_repo.upsert_model_price(model_key, payload)
 
 
 async def restore_model_price(

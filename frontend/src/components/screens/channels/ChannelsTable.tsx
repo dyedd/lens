@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import type { Site } from "@/lib/api/sites";
-import { siteEndpointUrls, siteModelCounts } from "./channelModels";
+import { siteEndpointUrls, siteModelCounts } from "./channelDisplay";
 import type { Locale, SiteRow } from "./channelTypes";
 
 const updatedAtOptions: Intl.DateTimeFormatOptions = {

@@ -42,7 +42,7 @@ jobs:
           uv run --no-sync ruff format --check backend
 
       - name: Test backend
-        run: uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal
+        run: uv run --no-sync python -m pytest backend/tests -q --confcutdir=backend/tests -n auto --dist worksteal
 
       - name: Validate backend migrations
         env:

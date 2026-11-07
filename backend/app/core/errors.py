@@ -32,6 +32,11 @@ class ResourceNotFoundError(LensError):
         )
 
 
+class StoredDataError(LensError):
+    def __init__(self) -> None:
+        super().__init__("Stored data is invalid")
+
+
 class RoutingError(LensError):
     """No usable route matches the requested protocol or model."""
 

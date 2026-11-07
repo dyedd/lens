@@ -245,22 +245,22 @@ class PluginRegistry:
     async def _reconcile(self) -> None:
         previous, previous_order = self._entries, self._order
         entries = self._build_entries()
-        going = self._find_going(previous, previous_order, entries)
-        kept_order = [pid for pid in previous_order if pid not in going]
+        retiring_ids = self._find_retiring_plugin_ids(previous, previous_order, entries)
+        kept_order = [pid for pid in previous_order if pid not in retiring_ids]
         for plugin_id in kept_order:
             entries[plugin_id].registration = previous[plugin_id].registration
             entries[plugin_id].state = PluginState.ACTIVE
-        if going:
+        if retiring_ids:
             self._publish(entries, kept_order)
             await self._retire(
                 [
                     (plugin_id, registration)
                     for plugin_id in reversed(previous_order)
-                    if plugin_id in going
+                    if plugin_id in retiring_ids
                     and (registration := previous[plugin_id].registration) is not None
                 ]
             )
-        order = await self._place(entries)
+        order = await self._activate_ready_plugins(entries)
         self._publish(entries, order)
 
     async def _retire(self, registrations: Sequence[tuple[str, _Registration]]) -> None:
@@ -314,14 +314,14 @@ class PluginRegistry:
                 entry.state = PluginState.DISABLED
         return entries
 
-    def _find_going(
+    def _find_retiring_plugin_ids(
         self,
         previous: Mapping[str, _PluginEntry],
         previous_order: Sequence[str],
         entries: Mapping[str, _PluginEntry],
     ) -> set[str]:
         """找出需要卸载的生效插件：定义、设置或所依赖的插件变了，或不再需要。"""
-        going: set[str] = set()
+        retiring_ids: set[str] = set()
         # 依赖总排在依赖方之前，一次正序遍历即可传递。
         for plugin_id in previous_order:
             registration = previous[plugin_id].registration
@@ -333,12 +333,14 @@ class PluginRegistry:
                 or entry.definition is not previous[plugin_id].definition
                 or self._resolve_settings(entry.definition.manifest)
                 != registration.settings
-                or any(r in going for r in entry.definition.manifest.requires)
+                or any(r in retiring_ids for r in entry.definition.manifest.requires)
             ):
-                going.add(plugin_id)
-        return going
+                retiring_ids.add(plugin_id)
+        return retiring_ids
 
-    async def _place(self, entries: Mapping[str, _PluginEntry]) -> list[str]:
+    async def _activate_ready_plugins(
+        self, entries: Mapping[str, _PluginEntry]
+    ) -> list[str]:
         """按依赖顺序注册等待中的插件，返回生效插件的顺序。"""
         order: list[str] = []
         placed: set[str] = set()

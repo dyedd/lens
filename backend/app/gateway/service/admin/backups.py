@@ -7,9 +7,10 @@ from fastapi import Depends, File, UploadFile
 from fastapi.responses import JSONResponse
 
 from ....core.time_zone import load_time_zone
+from ....core.version import read_system_version
 from ....models.backups import ConfigImportResult
 from ....persistence.backup_store import BackupStore
-from ..app_state import app_state, read_system_version
+from ..app_state import app_state
 from ..auth import get_current_admin
 from ..tasks.model_group_reconcile import run_model_group_reconcile
 
@@ -63,6 +64,9 @@ async def import_settings_bundle(
     result = await app_state.backup_store.import_dump(dump)
 
     app_state.settings_repo.invalidate_settings_cache()
+    app_state.apply_router_settings(
+        await app_state.settings_repo.get_runtime_settings()
+    )
     await run_model_group_reconcile(app_state)
     await app_state.load_plugins()
     return result

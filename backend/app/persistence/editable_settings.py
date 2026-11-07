@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Mapping
 from math import isfinite
 from urllib.parse import urlsplit
@@ -276,6 +277,9 @@ def resolve_effective_setting(key: str, raw_value: str, default: str) -> str:
     try:
         return canonicalize_editable_setting(key, raw_value)
     except ValueError:
+        logging.getLogger(__name__).warning(
+            "Invalid persisted setting %s; using its default", key
+        )
         return canonicalize_editable_setting(key, default)
 
 

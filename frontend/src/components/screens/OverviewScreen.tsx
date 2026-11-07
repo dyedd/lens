@@ -12,7 +12,7 @@ import type {
 import { getDateBucketPrefix } from "@/lib/datetime";
 import { useI18n } from "@/lib/I18nContext";
 import { ActivityTrendCard } from "./overview/ActivityTrendCard";
-import { ModelAnalyticsCard } from "./overview/ModelAnalyticsCard";
+import { AttributionAnalyticsCard } from "./overview/AttributionAnalyticsCard";
 import { OverviewStats } from "./overview/OverviewStats";
 import {
   type AnalysisMetric,
@@ -220,7 +220,7 @@ export function OverviewScreen() {
         isHeatmapLoading={heatmapQuery.isPending}
         isHeatmapError={heatmapQuery.isError}
       />
-      <ModelAnalyticsCard
+      <AttributionAnalyticsCard
         key={timeRange}
         timeRange={timeRange}
         analytics={attributionQuery.data}

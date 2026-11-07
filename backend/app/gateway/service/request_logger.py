@@ -225,7 +225,7 @@ class RequestLogger:
         """终态行写入后把请求摘要交给观察者；连接中与流式中的中间写入不算。"""
         if payload.lifecycle_status not in _TERMINAL_LIFECYCLE_STATUSES:
             return
-        await finish_run(self.plugin_run, build_request_record(payload))
+        finish_run(self.plugin_run, build_request_record(payload))
 
 
 _TERMINAL_LIFECYCLE_STATUSES = frozenset(

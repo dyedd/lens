@@ -1,7 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { getApiErrorMessage } from "@/lib/api/client";
 import {
   type ForeignSiteImportPreview,
   importForeignSites,
@@ -22,32 +23,44 @@ export function useForeignImport(locale: Locale) {
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] =
     useState<SiteBatchImportResult | null>(null);
+  const previewController = useRef<AbortController | null>(null);
+
+  useEffect(() => () => previewController.current?.abort(), []);
 
   async function loadFile(nextFile: File | null) {
+    if (isImporting) return;
+    previewController.current?.abort();
+    const controller = new AbortController();
+    previewController.current = controller;
     setFile(nextFile);
     setPreview(null);
     setSelectedIndexes(new Set());
     setImportResult(null);
     if (!nextFile) {
+      setIsPreviewing(false);
       return;
     }
 
     setIsPreviewing(true);
     try {
-      const nextPreview = await previewForeignSiteImport(nextFile);
+      const nextPreview = await previewForeignSiteImport(
+        nextFile,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
       setPreview(nextPreview);
       setSelectedIndexes(new Set(nextPreview.sites.map((_, index) => index)));
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted) return;
       setFile(null);
       toast.error(
-        titleForLocale(
-          locale,
-          "无法识别该备份文件的格式",
-          "Could not recognize this backup file",
+        getApiErrorMessage(
+          error,
+          titleForLocale(locale, "预览失败", "Failed to preview backup"),
         ),
       );
     } finally {
-      setIsPreviewing(false);
+      if (previewController.current === controller) setIsPreviewing(false);
     }
   }
 
@@ -75,7 +88,7 @@ export function useForeignImport(locale: Locale) {
   }
 
   async function importSelected() {
-    if (!preview?.payload) {
+    if (!preview?.payload || isImporting) {
       return;
     }
 
@@ -86,21 +99,40 @@ export function useForeignImport(locale: Locale) {
       );
       const result = await importForeignSites({ sites: payloadSites });
       setImportResult(result);
+      if (result.error_count > 0) {
+        toast.error(
+          titleForLocale(
+            locale,
+            "校验失败，整批未导入",
+            "Validation failed; no channels were imported",
+          ),
+        );
+        return;
+      }
       setSelectedIndexes(new Set());
       await queryClient.invalidateQueries();
-      toast.success(
-        titleForLocale(
-          locale,
-          `已导入 ${result.created_count} 个渠道`,
-          `Imported ${result.created_count} channels`,
-        ),
-      );
-    } catch {
+      if (result.created_count > 0) {
+        toast.success(
+          titleForLocale(
+            locale,
+            `已导入 ${result.created_count} 个渠道`,
+            `Imported ${result.created_count} channels`,
+          ),
+        );
+      } else {
+        toast(
+          titleForLocale(
+            locale,
+            "所有渠道均已跳过",
+            "All channels were skipped",
+          ),
+        );
+      }
+    } catch (error) {
       toast.error(
-        titleForLocale(
-          locale,
-          "导入失败，请重试",
-          "Import failed, please retry",
+        getApiErrorMessage(
+          error,
+          titleForLocale(locale, "导入失败", "Failed to import channels"),
         ),
       );
     } finally {

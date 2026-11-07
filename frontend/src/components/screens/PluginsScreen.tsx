@@ -45,6 +45,7 @@ export function PluginsScreen() {
       ),
     onSuccess: (plugin) => {
       replacePlugin(plugin);
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
       toast.success(
         titleForLocale(
           locale,
@@ -80,6 +81,7 @@ export function PluginsScreen() {
       ),
     onSuccess: (plugin) => {
       replacePlugin(plugin);
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
       toast.success(
         titleForLocale(locale, "插件设置已保存", "Plugin settings saved"),
       );

@@ -222,20 +222,6 @@
   }
 }
 
-/* Row metrics for @uiw/react-json-view, previously injected from RequestsScreen. */
-.json-view-shell .w-rjv-inner > span,
-.json-view-shell .w-rjv-line,
-.json-view-shell .w-rjv-inner > div:not(.w-rjv-wrap) {
-  min-height: 1.5rem;
-  line-height: 1.5rem;
-}
-
-.json-view-shell .w-rjv-inner > span {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
 @layer components {
   .data-table-header {
     background-color: var(--accent);

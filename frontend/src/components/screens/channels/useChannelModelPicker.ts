@@ -13,18 +13,22 @@ import type {
   SiteModelProtocolDetectionPayload,
   SiteModelProtocolDetectionResult,
 } from "@/lib/api/sites";
-import { headerDraftToRules } from "@/lib/upstreamRules";
-import { headerDraftsFromJson } from "./channelAdvancedJson";
-import { activeBaseUrlValue } from "./channelForm";
-import { rebuildProtocolConfigs } from "./channelFormConversion";
 import {
-  acceptApiKeyDrafts,
-  activeSelectedCredentialIds,
-  aggregateModelGroupKey,
   credentialLabel,
-  escapeModelName,
   fallbackCredentialName,
   formatCredentialTitle,
+} from "@/lib/credentialLabels";
+import { headerDraftToRules } from "@/lib/upstreamRules";
+import { headerDraftsFromJson } from "./channelAdvancedJson";
+import {
+  acceptApiKeyDrafts,
+  activeBaseUrlValue,
+  activeSelectedCredentialIds,
+} from "./channelForm";
+import { rebuildProtocolConfigs } from "./channelFormConversion";
+import {
+  aggregateModelGroupKey,
+  escapeModelName,
   mergeModelPatterns,
   protocolConfigModelKey,
 } from "./channelModels";
@@ -60,6 +64,7 @@ export function useChannelModelPicker({
   locale: Locale;
 }) {
   const [fetching, setFetching] = useState(false);
+  const catalogSignal = useRef<AbortSignal | null>(null);
   const [detecting, setDetecting] = useState(false);
   const detectionController = useRef<AbortController | null>(null);
 
@@ -73,8 +78,10 @@ export function useChannelModelPicker({
   }, [sessionKey]);
 
   /** Fetches every base URL with each of its keys; failures only warn. */
-  async function discoverRemoteCatalog(): Promise<RemoteModelCatalog | null> {
-    if (fetching) return null;
+  async function discoverRemoteCatalog(
+    signal: AbortSignal,
+  ): Promise<RemoteModelCatalog | null> {
+    if (signal.aborted) return null;
     const drafted = acceptApiKeyDrafts(form);
     const editor = {
       ...drafted,
@@ -117,6 +124,7 @@ export function useChannelModelPicker({
       );
       return null;
     }
+    catalogSignal.current = signal;
     setFetching(true);
     try {
       const results = await Promise.allSettled(
@@ -124,9 +132,11 @@ export function useChannelModelPicker({
           apiRequest<SiteModelFetchItem[]>("/admin/site-model-discoveries", {
             method: "POST",
             body: JSON.stringify(target.payload),
+            signal,
           }),
         ),
       );
+      if (signal.aborted) return null;
       const credentialIndexById = new Map(
         editor.credentials.map((item, index) => [item.id, index] as const),
       );
@@ -183,7 +193,10 @@ export function useChannelModelPicker({
         hasMultipleBaseUrls: targets.length > 1,
       };
     } finally {
-      setFetching(false);
+      if (catalogSignal.current === signal) {
+        catalogSignal.current = null;
+        setFetching(false);
+      }
     }
   }
 
@@ -266,7 +279,7 @@ export function useChannelModelPicker({
                 model_name: item.model_name,
                 enabled: true,
                 protocols: [item.protocol],
-                protocolIds: {},
+                modelIdsByProtocol: {},
                 context_window: item.context_window,
                 upstream_context_window: null,
               },

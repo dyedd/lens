@@ -4,10 +4,13 @@ import type {
   ModelGroupCandidateItem,
   ModelGroupCandidatesResponse,
 } from "@/lib/api/groups";
-import { compileRegexRulePattern, matchesModelGroup } from "@/lib/regexRules";
 import type { FormState } from "./groupTypes";
 import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
 import { modelFoldKey, modelGroupItemKey } from "./modelGroupFormatting";
+import {
+  compileRegexRulePattern,
+  matchesModelGroup,
+} from "./modelGroupMatching";
 
 type GroupCandidateOptions = {
   candidateResponse?: ModelGroupCandidatesResponse;
@@ -72,29 +75,18 @@ export function useGroupCandidates({
   const closedMarker = `__closed__:${groupedCandidates
     .map((candidateGroup) => candidateGroup.key)
     .join("\u0000")}`;
-  const availableExpandedChannels = expandedChannels.filter((key) =>
-    availableGroupKeys.has(key),
-  );
-  const visibleExpandedChannels = availableExpandedChannels.length
-    ? availableExpandedChannels
-    : expandedChannels.includes(closedMarker)
-      ? []
-      : groupedCandidates.length
-        ? [groupedCandidates[0].key]
-        : [];
+  function resolveExpandedChannels(keys: string[]) {
+    const available = keys.filter((key) => availableGroupKeys.has(key));
+    if (available.length) return available;
+    if (keys.includes(closedMarker)) return [];
+    return groupedCandidates.length ? [groupedCandidates[0].key] : [];
+  }
+
+  const visibleExpandedChannels = resolveExpandedChannels(expandedChannels);
 
   function toggleChannel(channelId: string) {
     setExpandedChannels((current) => {
-      const availableExpanded = current.filter((key) =>
-        availableGroupKeys.has(key),
-      );
-      const visibleExpanded = availableExpanded.length
-        ? availableExpanded
-        : current.includes(closedMarker)
-          ? []
-          : groupedCandidates.length
-            ? [groupedCandidates[0].key]
-            : [];
+      const visibleExpanded = resolveExpandedChannels(current);
       if (!visibleExpanded.includes(channelId)) {
         return [...visibleExpanded, channelId];
       }

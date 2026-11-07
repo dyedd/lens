@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from logging.config import fileConfig
 
 from alembic import context
+from alembic.runtime.migration import MigrationContext, MigrationStep
 from sqlalchemy import engine_from_config, pool
 
+from app.alembic.group_rule_bridge import preserve_group_rules, restore_group_rules
 from app.core.config import settings
 from app.core.db import Base, to_sync_database_url
 from app.persistence import entities as _entities  # noqa: F401
@@ -51,12 +54,24 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        context.configure(connection=connection)
+        migration_fn = context.get_context().opts["fn"]
+
+        def migrations(
+            heads: tuple[str, ...], migration_context: MigrationContext
+        ) -> Iterator[MigrationStep]:
+            yield from preserve_group_rules(
+                migration_fn(heads, migration_context), connection
+            )
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,
             render_as_batch=connection.dialect.name == "sqlite",
+            on_version_apply=restore_group_rules,
+            fn=migrations,
         )
 
         with context.begin_transaction():

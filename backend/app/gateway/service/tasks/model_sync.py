@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from fastapi import HTTPException
-
 from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
 from ....core.model_endpoints import resolve_model_base_url_id
 from ....core.model_names import ModelPatternKind, classify_model_pattern
@@ -20,6 +18,7 @@ from ....models.channels import (
 from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus, ProtocolKind
 from ....models.sites import SiteConfig, SiteProtocolConfig
+from ....persistence.channel_store import flatten_site
 from ..app_state import logger
 from .litellm_sync_tasks import (
     ModelPriceSyncError,
@@ -148,7 +147,7 @@ async def _sync_site_models(
         credential.id: credential.model_pattern for credential in site.credentials
     }
     channels_by_config: dict[str, list[ChannelConfig]] = defaultdict(list)
-    for channel in state.channel_store.flatten_site(site):
+    for channel in flatten_site(site):
         channels_by_config[
             protocol_config_id_from_runtime_channel_id(channel.id)
         ].append(channel)
@@ -196,19 +195,12 @@ async def _sync_site_models(
                 ].kind in {"default", "china", "protocol"}:
                     catalogs[credential_id] = catalog
             except (
-                HTTPException,
                 ModelDiscoveryError,
                 ResourceNotFoundError,
                 ValueError,
             ) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
-                item.error = str(
-                    exc.detail
-                    if isinstance(exc, HTTPException)
-                    else exc.public_message
-                    if isinstance(exc, ModelDiscoveryError)
-                    else exc
-                )
+                item.error = str(exc)
     return items
 
 

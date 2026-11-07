@@ -59,7 +59,7 @@ type Props = {
   isError: boolean;
 };
 
-export function ModelAnalyticsCard({
+export function AttributionAnalyticsCard({
   timeRange,
   analytics,
   dimension,

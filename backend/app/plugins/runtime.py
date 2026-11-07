@@ -452,7 +452,7 @@ def _resolve_event_names(hook: Any) -> frozenset[str] | None:
         return frozenset()
 
 
-async def finish_run(run: PluginRun, record: RequestRecord) -> None:
+def finish_run(run: PluginRun, record: RequestRecord) -> None:
     """终态日志写入后调用一次：把请求摘要交给观察者，不阻塞客户端。重复调用不做任何事。"""
     if run._is_finished:
         return

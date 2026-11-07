@@ -84,9 +84,7 @@ export function ChannelModelPatternDialog({
         <div className="grid gap-3">
           {credentialOptions.length > 1 ? (
             <Field>
-              <FieldLabel>
-                {locale === "zh-CN" ? "API Key" : "API Key"}
-              </FieldLabel>
+              <FieldLabel>API Key</FieldLabel>
               <Select
                 value={credentialId}
                 onValueChange={(value) => {

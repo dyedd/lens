@@ -18,6 +18,7 @@ from ....core.model_name_parser import ParsedModelName, parse_model_name
 from ....models.channels import ChannelConfig
 from ....models.gateway_keys import GatewayApiKey
 from ....models.protocols import ProtocolKind
+from ....models.settings import RuntimeSettings
 from ....plugins.contract import InboundRequest, PluginRejection
 from ....plugins.runtime import (
     PluginRun,
@@ -31,7 +32,6 @@ from ..app_state import app_state
 from ..auth import gateway_key_allows_model
 from ..context_tokens import estimate_request_context_tokens
 from ..error_responses import protocol_error_response
-from ..http_handlers import apply_router_runtime_settings
 from ..multimodal import body_has_multimodal_content
 from ..payload_serialization import dump_log_json
 from ..request_logger import RequestLogger
@@ -552,7 +552,9 @@ async def _prepare_proxy_context(
     *,
     body: dict[str, Any],
     inbound_user_agent: str | None,
-) -> tuple[list[ChannelConfig], dict[str, Any], RequestDeadline, str, bool, str | None]:
+) -> tuple[
+    list[ChannelConfig], RuntimeSettings, RequestDeadline, str, bool, str | None
+]:
     started_at = perf_counter()
     channels, runtime = await asyncio.gather(
         app_state.channel_store.list_channels(),
@@ -563,7 +565,7 @@ async def _prepare_proxy_context(
         float(runtime["first_token_timeout_seconds"]),
         float(runtime["stream_idle_timeout_seconds"]),
     )
-    apply_router_runtime_settings(runtime)
+    app_state.apply_router_settings(runtime)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
     request_content = dump_log_json(body) if log_body_enabled else None
     inbound_ua = sanitize_user_agent(inbound_user_agent)
@@ -585,10 +587,9 @@ async def _prepare_proxy_context(
 def _cooled_wait_seconds(
     failures: FailureLedger,
     deadline: RequestDeadline,
-    runtime: Mapping[str, Any],
+    cap: int,
 ) -> float | None:
     """Return how long to wait for the soonest cooling target, when worth it."""
-    cap = float(runtime.get("failover_cooled_wait_seconds") or 0)
     if cap <= 0 or not failures.cooled_waits:
         return None
     remaining = min(failures.cooled_waits.values())
@@ -709,6 +710,7 @@ async def _proxy_protocol(
         request_content=request_content,
         plugin_run=plugin_run,
     )
+    plan: RoutingPlan | None = None
     try:
         try:
             rewritten_body = await run_request_rewrite(plugin_run, body)
@@ -826,7 +828,9 @@ async def _proxy_protocol(
         wait_seconds = (
             None
             if response is not None
-            else _cooled_wait_seconds(failures, deadline, runtime)
+            else _cooled_wait_seconds(
+                failures, deadline, runtime["failover_cooled_wait_seconds"]
+            )
         )
         if wait_seconds is not None:
             await asyncio.sleep(wait_seconds)
@@ -866,7 +870,7 @@ async def _proxy_protocol(
     except Exception as exc:
         await _log_unexpected_proxy_error(
             log_ctx=log_ctx,
-            plan=plan if "plan" in locals() else None,
+            plan=plan,
             requested_model=requested_model,
             is_stream_body=is_stream_body,
             exc=exc,
