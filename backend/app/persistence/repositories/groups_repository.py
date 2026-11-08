@@ -43,7 +43,7 @@ from app.persistence.regex_rule_references import (
     dump_rule_ids,
 )
 
-from ..channel_store import ChannelStore
+from ..channel_store import ChannelStore, bump_channel_config_revision
 from .group_placement import build_group_coverage, build_unplaced_models
 from .group_read import build_group_candidates, hydrate_groups, load_group_items
 from .group_reconcile import reconcile_group_members
@@ -65,9 +65,13 @@ def _view_to_input(item: ModelGroupItemView) -> ModelGroupItemInput:
 
 
 class ModelGroupRepository:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        channel_store: ChannelStore,
+    ) -> None:
         self._session_factory = session_factory
-        self._channel_store = ChannelStore(session_factory)
+        self._channel_store = channel_store
 
     async def list_groups(
         self, *, channels: list[ChannelConfig] | None = None
@@ -583,5 +587,7 @@ class ModelGroupRepository:
             for entity in rows:
                 await session.delete(entity)
                 deleted += 1
+            if deleted:
+                await bump_channel_config_revision(session)
             await session.commit()
         return UnplacedModelRemovalResponse(deleted=deleted)

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime, timedelta
+
+import pytest
 from conftest import run_async, seed_request_log, valid_site_payload
 
 from app.persistence.entities import RequestLogEntity
@@ -31,6 +35,111 @@ def test_overview_attribution_groups_agents_and_keeps_history(
     )
     assert after.status_code == 200, after.text
     assert after.json()["items"] == response.json()["items"]
+
+
+def test_overview_keeps_batched_history_after_time_zone_changes(
+    client, admin_headers
+) -> None:
+    count = 2101
+    backup = {
+        "exported_at": "2026-01-02T00:00:00",
+        "lens_version": "test",
+        "settings": [{"key": "time_zone", "value": "UTC"}],
+        "include_request_logs": True,
+        "request_logs": [
+            {
+                "protocol": "openai_chat",
+                "success": index % 2 == 0,
+                "created_at": "2026-01-01T20:00:00",
+                "resolved_group_name": "gpt-4o",
+                "upstream_model_name": "gpt-4o",
+                "input_tokens": 10,
+                "output_tokens": 2,
+                "total_tokens": 12,
+                "total_cost_usd": 0.125,
+            }
+            for index in range(count)
+        ],
+    }
+    imported = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("history.json", json.dumps(backup), "application/json")},
+    )
+    assert imported.status_code == 200, imported.text
+    before = client.get("/api/admin/overview-summary?days=0", headers=admin_headers)
+    assert before.status_code == 200, before.text
+    assert before.json()["request_count"]["value"] == count
+    assert before.json()["total_tokens"]["value"] == count * 12
+    assert before.json()["total_cost_usd"]["value"] == pytest.approx(count * 0.125)
+
+    for time_zone, date in (("Asia/Shanghai", "20260102"), ("UTC", "20260101")):
+        saved = client.put(
+            "/api/admin/settings",
+            headers=admin_headers,
+            json={"items": [{"key": "time_zone", "value": time_zone}]},
+        )
+        assert saved.status_code == 200, saved.text
+        daily = client.get("/api/admin/overview-daily?days=0", headers=admin_headers)
+        assert daily.status_code == 200, daily.text
+        [point] = daily.json()
+        assert point["date"] == date
+        assert point["request_count"] == count
+        assert point["successful_requests"] == 1051
+        assert point["failed_requests"] == 1050
+        exported = client.get("/api/admin/backups/export", headers=admin_headers)
+        assert exported.status_code == 200, exported.text
+        assert (
+            sum(
+                row["request_count"]
+                for row in exported.json()["stats"]["attribution_hourly"]
+            )
+            == count
+        )
+
+    cleared = client.delete("/api/admin/request-logs", headers=admin_headers)
+    assert cleared.status_code == 204, cleared.text
+    after = client.get("/api/admin/overview-summary?days=0", headers=admin_headers)
+    assert after.status_code == 200, after.text
+    assert after.json() == before.json()
+
+
+def test_overview_summary_keeps_post_import_activity(client, admin_headers, app_state):
+    now = datetime.now(UTC)
+    old = (now - timedelta(seconds=1)).isoformat()
+    backup = {
+        "exported_at": now.isoformat(),
+        "lens_version": "test",
+        "settings": [{"key": "time_zone", "value": "UTC"}],
+        "stats": {
+            "imported_total": {"request_success": 5, "input_token": 50},
+            "imported_daily": [
+                {
+                    "date": now.strftime("%Y%m%d"),
+                    "request_success": 5,
+                    "input_token": 50,
+                }
+            ],
+        },
+        "include_request_logs": True,
+        "request_logs": [
+            {"protocol": "openai_chat", "success": True, "created_at": old}
+        ],
+    }
+    imported = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("history.json", json.dumps(backup), "application/json")},
+    )
+    assert imported.status_code == 200, imported.text
+    seed_request_log(app_state)
+    for days in (0, -1):
+        summary = client.get(
+            "/api/admin/overview-summary", params={"days": days}, headers=admin_headers
+        )
+        assert summary.status_code == 200, summary.text
+        assert summary.json()["request_count"]["value"] == 6
+        assert summary.json()["input_tokens"]["value"] == 60
 
 
 def test_overview_attribution_survives_channel_deletion_and_log_cleanup(

@@ -95,7 +95,8 @@ class AppState:
         self.admin_repo = AdminRepository(self.session_factory)
         self.settings_repo = SettingsRepository(self.session_factory)
         self.gateway_api_key_repo = GatewayApiKeyRepository(self.session_factory)
-        self.group_repo = ModelGroupRepository(self.session_factory)
+        self.channel_store = ChannelStore(self.session_factory)
+        self.group_repo = ModelGroupRepository(self.session_factory, self.channel_store)
         self.model_price_repo = ModelPriceRepository(self.session_factory)
         self.model_sync_run_repo = ModelSyncRunRepository(self.session_factory)
         self.site_credential_rate_repo = SiteCredentialRateRepository(
@@ -108,7 +109,6 @@ class AppState:
         )
 
         self.cronjob_store = CronjobStore(self.session_factory)
-        self.channel_store = ChannelStore(self.session_factory)
         self.backup_store = BackupStore(self.session_factory)
         self.router = GatewayRouter()
         plugin_stats = PluginStats()

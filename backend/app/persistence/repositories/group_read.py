@@ -382,7 +382,10 @@ async def load_group_items(
         .all()
     )
 
-    channels_by_id = build_model_group_channel_lookups(channels)
+    channel_ids = {row.channel_id for row in rows}
+    channels_by_id = build_model_group_channel_lookups(
+        channel for channel in channels if channel.id in channel_ids
+    )
     for row in rows:
         item = ModelGroupItemInput(
             channel_id=row.channel_id,

@@ -7,7 +7,7 @@ from conftest import valid_site_payload
 
 @pytest.mark.parametrize("source", ["sub2api", "newapi"])
 def test_credential_rate_sync_persists_observed_multiplier(
-    client, admin_headers, create_site, monkeypatch, source
+    client, peer_client, admin_headers, create_site, monkeypatch, source
 ) -> None:
     payload = valid_site_payload()
     payload["credentials"][0].update(
@@ -16,6 +16,9 @@ def test_credential_rate_sync_persists_observed_multiplier(
         rate_group="standard" if source == "newapi" else "",
     )
     site = create_site(payload)
+    groups = peer_client.get("/api/admin/model-groups", headers=admin_headers)
+    assert groups.status_code == 200, groups.text
+    assert groups.json()[0]["items"][0]["rate_multiplier"] is None
 
     async def send(_client, request, **_kwargs):
         if source == "sub2api":
@@ -52,3 +55,6 @@ def test_credential_rate_sync_persists_observed_multiplier(
     assert persisted.status_code == 200
     saved = next(item for item in persisted.json() if item["id"] == site["id"])
     assert saved["credentials"][0]["rate_multiplier"] == 1.5
+    groups = peer_client.get("/api/admin/model-groups", headers=admin_headers)
+    assert groups.status_code == 200, groups.text
+    assert groups.json()[0]["items"][0]["rate_multiplier"] == 1.5

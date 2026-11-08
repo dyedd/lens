@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.time_zone import load_time_zone
@@ -16,6 +16,7 @@ from app.models.overview import (
     OverviewSummary,
     OverviewSummaryMetric,
 )
+from app.models.protocols import RequestLogLifecycleStatus
 from app.persistence.entities import RequestLogEntity
 from app.persistence.stats_entities import (
     ImportedStatsDailyEntity,
@@ -607,6 +608,28 @@ class RequestLogOverview:
             stmt, days=days, offset_days=offset_days, time_zone=time_zone
         )
         stmt = apply_gateway_key_filter(stmt, gateway_key_id=gateway_key_id)
+        if not coverage:
+            totals_stmt = stmt.with_only_columns(
+                func.count().label("request_count"),
+                func.sum(RequestLogEntity.latency_ms).label("wait_time_ms"),
+                *(
+                    func.sum(getattr(RequestLogEntity, key)).label(key)
+                    for key in self.zero_totals()
+                    if key not in {"request_count", "wait_time_ms"}
+                ),
+                func.sum(
+                    case(
+                        (
+                            RequestLogEntity.lifecycle_status
+                            == RequestLogLifecycleStatus.SUCCEEDED.value,
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("successful_requests"),
+            )
+            row = (await session.execute(totals_stmt)).mappings().one()
+            return {key: float(value or 0) for key, value in row.items()}
         rows = [
             row
             for row in (await session.execute(stmt)).all()

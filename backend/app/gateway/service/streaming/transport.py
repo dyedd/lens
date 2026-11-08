@@ -115,9 +115,10 @@ async def stream_upstream_iterator(
             if terminal_prefix_length is not None:
                 await response.aclose()
             if forwarded_chunk:
-                capture_stream_content(
-                    capture, capture.content_decoder.decode(forwarded_chunk)
-                )
+                if capture.capture_body and not capture.is_response_content_truncated:
+                    capture_stream_content(
+                        capture, capture.content_decoder.decode(forwarded_chunk)
+                    )
                 yield forwarded_chunk
             if terminal_prefix_length is not None:
                 break
@@ -159,8 +160,12 @@ async def capture_converted_stream_iterator(
 ) -> AsyncIterator[bytes]:
     try:
         async for chunk in raw_iterator:
-            text = capture.client_content_decoder.decode(chunk)
-            capture_stream_content(capture, text, client_response=True)
+            if (
+                capture.capture_body
+                and not capture.is_client_response_content_truncated
+            ):
+                text = capture.client_content_decoder.decode(chunk)
+                capture_stream_content(capture, text, client_response=True)
             yield chunk
     except ValueError as exc:
         if not capture.errors:

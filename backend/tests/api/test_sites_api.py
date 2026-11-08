@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from conftest import valid_site_payload
+import json
+
+import httpx
+from conftest import gateway_headers, valid_site_payload
 
 
 def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
@@ -45,3 +48,62 @@ def test_site_accepts_long_credential_model_pattern(
 
     assert response.status_code == 201, response.text
     assert response.json()["credentials"][0]["model_pattern"] == pattern
+
+
+def test_site_changes_reach_other_gateway_instance(
+    client, peer_client, admin_headers, create_site_group_and_key, monkeypatch
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    site, _, key = create_site_group_and_key()
+    headers = gateway_headers(key)
+    body = {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}
+    sent = []
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        sent.append((upstream.url, httpx.Headers(upstream.headers)["authorization"]))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    initial = peer_client.post("/v1/chat/completions", headers=headers, json=body)
+    assert initial.status_code == 200, initial.text
+    backup = client.get("/api/admin/backups/export", headers=admin_headers).json()
+
+    payload = valid_site_payload(name="Updated Site")
+    payload["base_urls"][0]["url"] = "https://updated.example/v1"
+    payload["credentials"][0]["api_key"] = "rotated-test-key"
+    saved = client.put(
+        f"/api/admin/sites/{site['id']}", headers=admin_headers, json=payload
+    )
+    assert saved.status_code == 200, saved.text
+    updated = peer_client.post("/v1/chat/completions", headers=headers, json=body)
+    assert updated.status_code == 200, updated.text
+    assert sent[-1] == (
+        "https://updated.example/v1/chat/completions",
+        "Bearer rotated-test-key",
+    )
+
+    disabled = client.put(
+        f"/api/admin/sites/{site['id']}/enabled",
+        headers=admin_headers,
+        json={"enabled": False},
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert peer_client.get("/v1/models", headers=headers).json()["data"] == []
+
+    restored = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("backup.json", json.dumps(backup), "application/json")},
+    )
+    assert restored.status_code == 200, restored.text
+    resumed = peer_client.post("/v1/chat/completions", headers=headers, json=body)
+    assert resumed.status_code == 200, resumed.text
+    assert sent[-1] == sent[0]
+    deleted = client.delete(f"/api/admin/sites/{site['id']}", headers=admin_headers)
+    assert deleted.status_code == 204, deleted.text
+    assert peer_client.get("/v1/models", headers=headers).json()["data"] == []

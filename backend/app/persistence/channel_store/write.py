@@ -10,6 +10,8 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.model_endpoints import credential_ids_for_url
@@ -22,6 +24,7 @@ from app.models.sites import (
 )
 from app.models.upstream_rules import HeaderRule, ParamOverrideRule
 from app.persistence.entities import (
+    SettingEntity,
     SiteBaseUrlEntity,
     SiteCredentialEntity,
     SiteCredentialRateEntity,
@@ -29,10 +32,28 @@ from app.persistence.entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
+from app.persistence.settings_keys import SETTING_CHANNEL_CONFIG_REVISION
 
 from ..site_loader import credential_pairs
 from .cleanup import cleanup_deleted_protocol_configs, cleanup_invalid_group_items
 from .mapping import build_base_urls, build_credentials, site_protocol_config_ids
+
+
+async def bump_channel_config_revision(session: AsyncSession) -> None:
+    """与配置写入一起提交版本号，使各进程的渠道缓存同时失效。"""
+    insert = (
+        sqlite_insert
+        if session.get_bind().dialect.name == "sqlite"
+        else postgresql_insert
+    )
+    revision = uuid.uuid4().hex
+    await session.execute(
+        insert(SettingEntity)
+        .values(key=SETTING_CHANNEL_CONFIG_REVISION, value=revision)
+        .on_conflict_do_update(
+            index_elements=[SettingEntity.key], set_={"value": revision}
+        )
+    )
 
 
 def _naive_utc_now() -> datetime:
@@ -298,6 +319,7 @@ async def upsert_site_payload(
     await cleanup_invalid_group_items(
         session, current_protocol_config_ids | next_protocol_config_ids
     )
+    await bump_channel_config_revision(session)
 
 
 async def _upsert_base_urls(
@@ -444,6 +466,8 @@ async def update_rate(
             )
             .values(**values)
         )
+        if result.rowcount == 1:
+            await bump_channel_config_revision(session)
         await session.commit()
         return result.rowcount == 1
 

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from pydantic import TypeAdapter
 from sqlalchemy import Select, String, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import defer
 
 from app.core.errors import ResourceNotFoundError
 from app.core.model_endpoints import credential_ids_for_url
@@ -750,7 +751,9 @@ class RequestLogQueries:
             (await self.settings_repo.get_runtime_settings())["time_zone"]
         )
         async with self.session_factory() as session:
-            items_stmt = select(RequestLogEntity)
+            items_stmt = select(RequestLogEntity).options(
+                defer(RequestLogEntity.response_content, raiseload=True)
+            )
             items_stmt = apply_request_log_filters(
                 items_stmt,
                 days=days,

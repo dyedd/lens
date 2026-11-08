@@ -20,6 +20,9 @@ class ChatToolCall:
     target_index: int | None = None
     announced: bool = False
     arguments_complete: bool = False
+    argument_depth: int = 0
+    argument_in_string: bool = False
+    argument_escaped: bool = False
 
     @property
     def arguments(self) -> str:
@@ -191,6 +194,27 @@ class ChatToolCalls:
                 {"function": {"arguments": incoming_arguments}},
                 force_header=True,
             )
+
+        has_object_end = False
+        for char in incoming_arguments:
+            if state.argument_escaped:
+                state.argument_escaped = False
+            elif state.argument_in_string:
+                if char == "\\":
+                    state.argument_escaped = True
+                elif char == '"':
+                    state.argument_in_string = False
+            elif char == '"':
+                state.argument_in_string = True
+            elif char == "{":
+                state.argument_depth += 1
+            elif char == "}":
+                state.argument_depth -= 1
+                has_object_end |= state.argument_depth == 0
+        # 只在对象可能闭合时验证完整 JSON，避免每段重读此前全部参数。
+        if not state.arguments_complete and not has_object_end:
+            state.argument_parts.append(incoming_arguments)
+            return [_ToolCallUpdate(state, source_index, value, force_header)]
 
         old_length = len(state.arguments)
         combined = state.arguments + incoming_arguments
