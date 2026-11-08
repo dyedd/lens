@@ -15,7 +15,6 @@ from .model_list_payloads import (
     build_openai_models_payload,
 )
 from .proxy.proxy_flow import proxy_protocol
-from .upstream_support import forward_anthropic_headers
 
 
 async def _read_json_object(request: Request, body_name: str) -> dict[str, Any]:
@@ -45,6 +44,7 @@ async def _proxy_json_request(
         body,
         gateway_key,
         request.headers.get("user-agent"),
+        request.headers,
         path_suffix=path_suffix,
         request_path=request.url.path,
     )
@@ -120,7 +120,7 @@ async def proxy_anthropic_messages(
         body,
         gateway_key,
         request.headers.get("user-agent"),
-        forward_anthropic_headers(request.headers),
+        request.headers,
         request_path=request.url.path,
     )
 
@@ -206,6 +206,7 @@ async def proxy_openai_image_edits(
         fields,
         gateway_key,
         request.headers.get("user-agent"),
+        request.headers,
         path_suffix="images/edits",
         multipart_files=files,
         request_path=request.url.path,
@@ -241,5 +242,6 @@ async def proxy_gemini_generate_content(
         body,
         gateway_key,
         request.headers.get("user-agent"),
+        request.headers,
         request_path=request.url.path,
     )

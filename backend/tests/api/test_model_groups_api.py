@@ -117,19 +117,61 @@ def test_model_group_model_test_uses_persisted_image_credential(
     assert "upstream-secret" not in response.text
 
 
-def test_model_group_test_uses_member_and_rules_with_codex_identity(
-    client, admin_headers, create_site, create_model_group, monkeypatch
+@pytest.mark.parametrize(
+    ("protocol", "test_mode", "identity_header"),
+    [
+        (ProtocolKind.OPENAI_CHAT, "codex", "originator"),
+        (ProtocolKind.ANTHROPIC, "claude", "x-app"),
+    ],
+)
+def test_model_group_test_uses_member_and_rules_with_client_identity(
+    client,
+    admin_headers,
+    create_site,
+    create_model_group,
+    monkeypatch,
+    protocol,
+    test_mode,
+    identity_header,
 ) -> None:
-    create_site(valid_site_payload())
-    group = create_model_group(items=[_member()])
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={
+            "items": [
+                {
+                    "key": "upstream_headers_config",
+                    "value": json.dumps(
+                        {
+                            "rules": [
+                                {
+                                    "name": identity_header,
+                                    "action": "override",
+                                    "value": "global-client",
+                                }
+                            ]
+                        }
+                    ),
+                }
+            ]
+        },
+    )
+    assert settings.status_code == 200, settings.text
+    site = valid_site_payload(protocols=[protocol.value])
+    site["headers"] = [
+        {"name": identity_header, "action": "override", "value": "site-client"}
+    ]
+    create_site(site)
+    member = _member(channel_id=compose_runtime_channel_id("pc-1", protocol))
+    group = create_model_group(items=[member])
     updated = client.put(
         f"/api/admin/model-groups/{group['id']}",
         headers=admin_headers,
         json={
             "name": group["name"],
-            "items": [_member()],
+            "items": [member],
             "headers": [
-                {"name": "Originator", "action": "override", "value": "group-client"}
+                {"name": identity_header, "action": "override", "value": "group-client"}
             ],
             "param_override": [{"path": "temperature", "action": "set", "value": 0.2}],
         },
@@ -137,20 +179,35 @@ def test_model_group_test_uses_member_and_rules_with_codex_identity(
     assert updated.status_code == 200, updated.text
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1/chat/completions"
-        assert request.headers["authorization"] == "Bearer upstream-secret"
-        assert request.headers["user-agent"].startswith("codex_cli_rs/")
-        assert request.headers["originator"] == "group-client"
-        assert json.loads(request.content) == {
-            "model": "gpt-4o",
-            "messages": [{"role": "user", "content": "hi"}],
-            "stream": True,
-            "temperature": 0.2,
-        }
+        assert request.headers[identity_header] == "group-client"
+        body = json.loads(request.content)
+        assert body["model"] == "gpt-4o"
+        assert body["messages"] == [{"role": "user", "content": "hi"}]
+        assert body["stream"] is True
+        assert body["temperature"] == 0.2
+        if test_mode == "codex":
+            assert request.url.path == "/v1/chat/completions"
+            assert request.headers["authorization"] == "Bearer upstream-secret"
+            assert request.headers["user-agent"].startswith("codex_cli_rs/")
+            assert request.headers["x-codex-window-id"]
+            assert request.headers["openai-beta"] == "responses=experimental"
+            event = {"choices": [{"delta": {"content": "hi"}}]}
+        else:
+            assert request.url.path == "/v1/messages"
+            assert request.headers["x-api-key"] == "upstream-secret"
+            assert request.headers["user-agent"].startswith("claude-cli/")
+            assert "claude-code-20250219" in request.headers["anthropic-beta"]
+            assert body["system"][0]["text"].startswith("You are Claude Code,")
+            assert json.loads(body["metadata"]["user_id"])["session_id"]
+            event = {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "hi"},
+            }
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
-            content='data: {"choices": [{"delta": {"content": "hi"}}]}\n\ndata: [DONE]\n\n',
+            content=f"data: {json.dumps(event)}\n\ndata: [DONE]\n\n",
         )
 
     import app.gateway.service.tasks.site_model_probe as probe
@@ -162,10 +219,10 @@ def test_model_group_test_uses_member_and_rules_with_codex_identity(
             f"/api/admin/model-groups/{group['id']}/model-tests",
             headers=admin_headers,
             json={
-                "channel_id": openai_chat_channel_id(),
+                "channel_id": member["channel_id"],
                 "credential_id": "cred-1",
                 "model_name": "gpt-4o",
-                "test_mode": "codex",
+                "test_mode": test_mode,
             },
         )
     finally:
