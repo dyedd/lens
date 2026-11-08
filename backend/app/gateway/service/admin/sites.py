@@ -41,6 +41,7 @@ from ..tasks.litellm_sync_tasks import (
     find_context_window,
 )
 from ..tasks.model_discovery import (
+    fetch_model_rule_list,
     fetch_upstream_model_list,
     model_list_protocols,
 )
@@ -237,7 +238,13 @@ async def fetch_site_models(
             param_override=[],
         )
         try:
-            model_list = await fetch_upstream_model_list(channel, listing_protocols)
+            model_list = (
+                await fetch_upstream_model_list(channel, listing_protocols)
+                if payload.model_pattern is None
+                else await fetch_model_rule_list(
+                    channel, payload.model_pattern, listing_protocols
+                )
+            )
         except ModelDiscoveryError as exc:
             errors.append(format_channel_error(exc.public_message))
             continue

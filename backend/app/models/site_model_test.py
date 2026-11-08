@@ -1,6 +1,6 @@
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, HttpUrl, field_validator, model_validator
+from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
 from ..core.urls import canonicalize_base_url
 from .credential_scopes import parse_legacy_credential_scopes
@@ -12,7 +12,7 @@ from .sites import (
     require_non_empty_text,
 )
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import ContextWindow, StrictBaseModel
+from .validation import ContextWindow, StrictBaseModel, validate_model_pattern
 
 ModelTestMode = Literal["direct", "codex", "claude"]
 
@@ -23,6 +23,7 @@ class SiteModelFetchRequest(StrictBaseModel):
     endpoint_kind: SiteBaseUrlKind = "default"
     # Omitted: try each listing protocol until the upstream answers.
     protocol: ProtocolKind | None = None
+    model_pattern: Annotated[str, AfterValidator(validate_model_pattern)] | None = None
     headers: list[HeaderRule] = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""

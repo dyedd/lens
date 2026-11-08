@@ -29,6 +29,9 @@ def validate_model_pattern(pattern: str) -> str:
     trimmed = pattern.strip()
     if not trimmed:
         return ""
-    if classify_model_pattern(trimmed) is ModelPatternKind.INVALID:
+    if any(
+        classify_model_pattern(line) is ModelPatternKind.INVALID
+        for line in trimmed.splitlines()
+    ):
         raise ValueError(f"Invalid model pattern: {trimmed}")
     return trimmed

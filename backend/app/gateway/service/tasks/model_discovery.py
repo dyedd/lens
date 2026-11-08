@@ -7,6 +7,11 @@ import httpx
 
 from ....core.context_windows import parse_upstream_model_context_window
 from ....core.errors import ModelDiscoveryError
+from ....core.model_names import (
+    ModelPatternKind,
+    classify_model_pattern,
+    filter_model_names,
+)
 from ....core.model_protocols import (
     ENDPOINT_KIND_PROTOCOLS,
     parse_declared_protocols,
@@ -112,6 +117,36 @@ async def fetch_upstream_model_list(
             for protocol, exc in zip(protocols, errors, strict=True)
         ),
     ) from errors[-1]
+
+
+async def fetch_model_rule_list(
+    channel: ChannelConfig,
+    pattern: str,
+    protocols: tuple[ProtocolKind, ...] | None = None,
+) -> UpstreamModelList:
+    rules = [line.strip() for line in pattern.splitlines() if line.strip()]
+    literal_names = {
+        rule
+        for rule in rules
+        if classify_model_pattern(rule) is ModelPatternKind.LITERAL
+    }
+    filters = [rule for rule in rules if rule not in literal_names]
+    catalog = (
+        await fetch_upstream_model_list(channel, protocols)
+        if filters
+        else UpstreamModelList(protocol=channel.protocol, models=[])
+    )
+    upstream_names = {model.name for model in catalog.models}
+    kept_names = set().union(
+        *(filter_model_names(upstream_names, rule) for rule in rules)
+    )
+    models = {model.name: model for model in catalog.models if model.name in kept_names}
+    folded_names = {name.casefold() for name in models}
+    for name in sorted(literal_names):
+        if name.casefold() not in folded_names:
+            models[name] = UpstreamModel(name=name)
+            folded_names.add(name.casefold())
+    return UpstreamModelList(protocol=catalog.protocol, models=list(models.values()))
 
 
 async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:

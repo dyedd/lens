@@ -303,18 +303,6 @@ export function useChannelForm(locale: Locale) {
     }));
   }
 
-  /** Replaces one key's model filter; the next sync reconciles its models. */
-  function setCredentialPattern(credentialId: string, pattern: string) {
-    setForm((current) => ({
-      ...current,
-      credentials: current.credentials.map((item) =>
-        item.id === credentialId
-          ? { ...item, model_pattern: pattern.trim() }
-          : item,
-      ),
-    }));
-  }
-
   return {
     isDialogOpen,
     setIsDialogOpen,
@@ -332,7 +320,6 @@ export function useChannelForm(locale: Locale) {
     updateModelContextWindow,
     removeAggregateModel,
     toggleAggregateEnabled,
-    setCredentialPattern,
     addBaseUrl,
     updateBaseUrl,
     removeBaseUrl,

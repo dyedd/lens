@@ -87,18 +87,8 @@ export function mergeModelPatterns(
   current: string,
   additions: string[],
 ): string {
-  // 后端始终忽略大小写；把标记包进分支会让 Python 拒绝合并后的表达式。
-  const existing = current
-    .trim()
-    .replace(/^\(\?[aiLmsux]+\)/, "")
-    .trim();
-  if (existing === "*") return existing;
-  const fresh = additions
-    .map((addition) => addition.trim())
-    .filter((addition) => addition && !existing.includes(addition));
-  if (!fresh.length) return existing;
-  // 当前规则包成一个分支，避免已有的 `|` 吞掉追加的模型名。
-  return [existing ? `(?:${existing})` : "", ...fresh]
-    .filter(Boolean)
-    .join("|");
+  const existing = current.trim();
+  const rules = existing.split(/\r?\n/).map((line) => line.trim());
+  if (rules.includes("*")) return existing;
+  return [...new Set([...rules, ...additions])].filter(Boolean).join("\n");
 }

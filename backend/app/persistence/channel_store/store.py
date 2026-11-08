@@ -17,11 +17,6 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.errors import ResourceNotFoundError
 from app.core.model_endpoints import credential_ids_for_url
-from app.core.model_names import (
-    ModelPatternKind,
-    classify_model_pattern,
-    filter_model_names,
-)
 from app.models.channels import ChannelConfig
 from app.models.protocols import ProtocolKind
 from app.models.site_import import (
@@ -153,26 +148,13 @@ class ChannelStore:
         credential_id: str,
         *,
         upstream_names: set[str],
-        upstream_pattern: str = "",
         upstream_context_windows: Mapping[str, int] | None = None,
         upstream_protocols: Mapping[str, tuple[ProtocolKind, ...]] | None = None,
         context_windows: Mapping[str, int] | None = None,
     ) -> UpstreamModelChanges:
-        """Make one credential's rows equal the models its filter keeps.
-
-        The credential's pattern selects whole names from the upstream catalog,
-        so a sync adds what is newly matched and deletes what the filter or the
-        catalog no longer offers. Rows keep any admin settings they already
-        carry; only the upstream-reported context window is refreshed. New rows
-        take their protocol from `upstream_protocols`, else OpenAI Chat.
-        """
-        if not upstream_pattern.strip() or (
-            classify_model_pattern(upstream_pattern) is ModelPatternKind.INVALID
-        ):
-            return UpstreamModelChanges(added=[], missing=[], restored=[])
+        """保存规则解析后的模型集合，保留已有模型的手动设置。"""
         reported_context_windows = upstream_context_windows or {}
         onboard_protocols = upstream_protocols or {}
-        kept_names = filter_model_names(upstream_names, upstream_pattern)
         async with self._session_factory() as session:
             entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
             if entity is None:
@@ -226,7 +208,7 @@ class ChannelStore:
                 max((row.sort_order for row in config_rows), default=-1) + 1
             )
             for row in credential_models:
-                if row.model_name not in kept_names:
+                if row.model_name not in upstream_names:
                     await session.delete(row)
                     removed.add(row.model_name)
                     continue
@@ -235,7 +217,7 @@ class ChannelStore:
                     row.upstream_context_window = reported
                     has_context_changes = True
 
-            for name in sorted(kept_names - existing_names):
+            for name in sorted(upstream_names - existing_names):
                 for protocol in onboard_protocols.get(
                     name, (ProtocolKind.OPENAI_CHAT,)
                 ):

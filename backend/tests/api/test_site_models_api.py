@@ -1672,8 +1672,120 @@ def test_channel_model_sync_can_limit_the_credential_scope(
     }
 
 
-def test_site_rejects_an_invalid_model_pattern(client, admin_headers) -> None:
-    payload = _sync_site_payload(patterns={"cred-a": "("})
+def test_model_rules_preview_save_and_sync_explicit_names(
+    client, admin_headers, monkeypatch
+) -> None:
+    import app.gateway.service.tasks.model_discovery as discovery
+
+    payload = _sync_site_payload(models=[_model("other-key", credential_id="cred-b")])
+    site_id = _create_sync_site(client, admin_headers, payload)
+    pattern = "private.v1\nclaude-private\nprivate.v1"
+    upstream_names = ["gpt-kept", "gpt-retired", "unmatched"]
+    requests: list[httpx.Request] = []
+    upstream_available = True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if not upstream_available:
+            return httpx.Response(503, json={"error": {"message": "unavailable"}})
+        return httpx.Response(
+            200, json={"data": [{"id": name} for name in upstream_names]}
+        )
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(discovery, "resolve_http_client", lambda _proxy: upstream)
+
+    def preview():
+        return client.post(
+            "/api/admin/site-model-discoveries",
+            headers=admin_headers,
+            json={
+                "base_url": payload["base_urls"][0]["url"],
+                "credentials": payload["credentials"],
+                "credential_ids": ["cred-a"],
+                "model_pattern": pattern,
+            },
+        )
+
+    def save_models(items):
+        payload["credentials"][0]["model_pattern"] = pattern
+        payload["protocols"][0]["models"] = [
+            _model("other-key", credential_id="cred-b"),
+            *[
+                _model(
+                    item["model_name"],
+                    protocol=item["protocol"],
+                    enabled=item["model_name"] != "gpt-kept",
+                    context_window=64000 if item["model_name"] == "gpt-kept" else None,
+                )
+                for item in items
+            ],
+        ]
+        saved = client.put(
+            f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+        )
+        assert saved.status_code == 200, saved.text
+
+    try:
+        response = preview()
+        assert response.status_code == 200, response.text
+        assert {(item["model_name"], item["protocol"]) for item in response.json()} == {
+            ("private.v1", "openai_chat"),
+            ("claude-private", "anthropic"),
+        }
+        assert _stored_models(client, admin_headers) == {("cred-b", "other-key")}
+        save_models(response.json())
+        _run_model_sync(
+            client, admin_headers, site_ids=[site_id], credential_ids=["cred-a"]
+        )
+        assert requests == []
+        explicit_models = {
+            ("cred-a", "private.v1"),
+            ("cred-a", "claude-private"),
+            ("cred-b", "other-key"),
+        }
+        assert _stored_models(client, admin_headers) == explicit_models
+
+        pattern += "\n(?i)^gpt-.*"
+        response = preview()
+        assert response.status_code == 200, response.text
+        assert {item["model_name"] for item in response.json()} == {
+            "private.v1",
+            "claude-private",
+            "gpt-kept",
+            "gpt-retired",
+        }
+        save_models(response.json())
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        expected = explicit_models | {("cred-a", "gpt-kept"), ("cred-a", "gpt-retired")}
+        assert _stored_models(client, admin_headers) == expected
+        site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+        kept = next(
+            model
+            for model in site["protocols"][0]["models"]
+            if model["model_name"] == "gpt-kept"
+        )
+        assert (kept["enabled"], kept["context_window"]) == (False, 64000)
+
+        upstream_available = False
+        assert preview().status_code == 502
+        result = _run_model_sync(
+            client, admin_headers, site_ids=[site_id], credential_ids=["cred-a"]
+        )
+        assert {item["status"] for item in result["items"]} == {"failed"}
+        assert _stored_models(client, admin_headers) == expected
+
+        upstream_available = True
+        upstream_names.clear()
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert _stored_models(client, admin_headers) == explicit_models
+    finally:
+        run_async(upstream.aclose())
+
+
+@pytest.mark.parametrize("pattern", ["(", "private.v1\n("])
+def test_site_rejects_an_invalid_model_pattern(client, admin_headers, pattern) -> None:
+    payload = _sync_site_payload(patterns={"cred-a": pattern})
 
     response = client.post("/api/admin/sites", headers=admin_headers, json=payload)
 
@@ -1801,7 +1913,7 @@ def test_model_rule_survives_a_backup_round_trip(client, admin_headers) -> None:
     _create_sync_site(
         client,
         admin_headers,
-        _sync_site_payload(patterns={"cred-a": "^gpt-4.*"}),
+        _sync_site_payload(patterns={"cred-a": "private.v1\n^gpt-4.*"}),
     )
 
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
@@ -1821,7 +1933,7 @@ def test_model_rule_survives_a_backup_round_trip(client, admin_headers) -> None:
         credential["id"]: credential["model_pattern"]
         for credential in site["credentials"]
     }
-    assert patterns == {"cred-a": "^gpt-4.*", "cred-b": ""}
+    assert patterns == {"cred-a": "private.v1\n^gpt-4.*", "cred-b": ""}
 
 
 def test_sync_removes_group_members_when_a_rule_stops_matching(

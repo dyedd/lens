@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
-import { Field, FieldLabel } from "@/components/ui/Field";
-import { Label } from "@/components/ui/Label";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/Field";
 import {
   Select,
   SelectContent,
@@ -13,7 +17,6 @@ import {
 import { Textarea } from "@/components/ui/Textarea";
 import type { Locale } from "./channelTypes";
 
-/** Edits the model filter one API key uses for its upstream sync. */
 export function ChannelModelPatternDialog({
   open,
   locale,
@@ -24,7 +27,11 @@ export function ChannelModelPatternDialog({
   open: boolean;
   locale: Locale;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (credentialId: string, pattern: string) => void;
+  onSubmit: (
+    credentialId: string,
+    pattern: string,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
   credentialOptions: Array<{ id: string; label: string; pattern: string }>;
 }) {
   const [credentialId, setCredentialId] = useState(
@@ -32,8 +39,10 @@ export function ChannelModelPatternDialog({
   );
   const [pattern, setPattern] = useState(credentialOptions[0]?.pattern ?? "");
   const wasOpen = useRef(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const controller = useRef<AbortController | null>(null);
 
-  // Seed only on the open transition so typing is never overwritten.
+  // 仅在打开时填充，避免覆盖输入中的内容。
   useEffect(() => {
     if (open && !wasOpen.current) {
       const active = credentialOptions[0];
@@ -45,7 +54,34 @@ export function ChannelModelPatternDialog({
     wasOpen.current = open;
   }, [open, credentialOptions]);
 
-  const patternError = pattern.trim() !== "" && !isValidPattern(pattern);
+  useEffect(() => {
+    if (!open) return;
+    return () => {
+      controller.current?.abort();
+      controller.current = null;
+      setIsApplying(false);
+    };
+  }, [open]);
+
+  const patternError = pattern
+    .split(/\r?\n/)
+    .some((line) => !isValidPattern(line));
+
+  async function applyPattern() {
+    if (controller.current) return;
+    const request = new AbortController();
+    controller.current = request;
+    setIsApplying(true);
+    try {
+      const applied = await onSubmit(credentialId, pattern, request.signal);
+      if (applied && !request.signal.aborted) onOpenChange(false);
+    } finally {
+      if (controller.current === request) {
+        controller.current = null;
+        setIsApplying(false);
+      }
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -54,8 +90,8 @@ export function ChannelModelPatternDialog({
         title={locale === "zh-CN" ? "模型规则" : "Model rule"}
         description={
           locale === "zh-CN"
-            ? "同步时按整名匹配筛选上游模型；留空不自动同步，填 * 才同步该 Key 能看到的全部模型。"
-            : "Sync keeps whole-name matches. Leave empty to keep manual models; use * to keep the full catalog."
+            ? "每行一个模型名或正则。模型名直接加入；正则和 * 从上游匹配。"
+            : "One model name or regex per line. Names are added directly; regex and * match upstream models."
         }
         footer={
           <>
@@ -70,23 +106,27 @@ export function ChannelModelPatternDialog({
             <Button
               type="button"
               size="sm"
-              disabled={patternError || !credentialId}
-              onClick={() => {
-                onSubmit(credentialId, pattern);
-                onOpenChange(false);
-              }}
+              disabled={patternError || !credentialId || isApplying}
+              onClick={() => void applyPattern()}
             >
-              {locale === "zh-CN" ? "保存" : "Save"}
+              {isApplying
+                ? locale === "zh-CN"
+                  ? "应用中..."
+                  : "Applying..."
+                : locale === "zh-CN"
+                  ? "应用到列表"
+                  : "Apply to list"}
             </Button>
           </>
         }
       >
-        <div className="grid gap-3">
+        <FieldGroup className="gap-3">
           {credentialOptions.length > 1 ? (
             <Field>
               <FieldLabel>API Key</FieldLabel>
               <Select
                 value={credentialId}
+                disabled={isApplying}
                 onValueChange={(value) => {
                   setCredentialId(value);
                   setPattern(
@@ -108,39 +148,36 @@ export function ChannelModelPatternDialog({
               </Select>
             </Field>
           ) : null}
-          <div className="flex min-w-0 flex-col gap-1">
-            <Label
-              className="text-xs font-normal text-muted-foreground"
-              htmlFor="channel-model-pattern"
-            >
-              {locale === "zh-CN" ? "过滤规则" : "Filter"}
-            </Label>
+          <Field data-invalid={patternError || undefined}>
+            <FieldLabel htmlFor="channel-model-pattern">
+              {locale === "zh-CN" ? "模型名 / 正则" : "Model names / regex"}
+            </FieldLabel>
             <Textarea
               id="channel-model-pattern"
               value={pattern}
               onChange={(event) => setPattern(event.target.value)}
-              placeholder={"(?i)^gpt-4.*|.*claude-3.*"}
+              placeholder={"gpt-4o\nclaude-3.5-sonnet\n^gemini-.*"}
+              disabled={isApplying}
               aria-invalid={patternError || undefined}
               className="max-h-48 font-mono placeholder:font-sans"
             />
-            <p className="text-xs leading-5 text-muted-foreground">
+            <FieldDescription>
               {locale === "zh-CN"
-                ? "整名匹配：填 gpt-4 只匹配 gpt-4，要用 gpt-4.* 才能匹配整个系列。"
-                : "Whole-name match: gpt-4 keeps only gpt-4; use gpt-4.* for the family."}
-            </p>
+                ? "应用后更新当前列表，保存后生效。留空停止自动同步，保留当前模型。"
+                : "Apply updates this list; save to persist. Leave empty to stop syncing and keep current models."}
+            </FieldDescription>
             {patternError ? (
               <p className="text-xs text-destructive">
                 {locale === "zh-CN" ? "正则表达式无效" : "Invalid regex"}
               </p>
             ) : null}
-          </div>
-        </div>
+          </Field>
+        </FieldGroup>
       </AppDialogContent>
     </Dialog>
   );
 }
 
-/** Mirrors the backend check so an unusable rule is caught before saving. */
 function isValidPattern(pattern: string) {
   const trimmed = pattern.trim();
   if (!trimmed || trimmed === "*") return true;
