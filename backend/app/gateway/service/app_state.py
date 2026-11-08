@@ -66,7 +66,7 @@ CRONJOB_SPECS = (
     CronjobSpec(
         id=TASK_VERSION_CHECK,
         name="版本检测",
-        description="检测 GitHub releases 是否有新版本",
+        description="从文档站检测已发布的新版本",
         default_interval_hours=24,
     ),
     CronjobSpec(

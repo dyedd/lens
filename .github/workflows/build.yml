@@ -13,7 +13,40 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      app: ${{ steps.paths.outputs.app }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check application changes
+        id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            BASE="$(git merge-base "$BASE" "$HEAD")"
+          fi
+          if [ "$EVENT" = release ] || [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE" "$HEAD" -- . \
+            ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)screenshots/**' \
+            ':(exclude).github/workflows/docs.yml'; then
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          fi
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -53,6 +86,8 @@ jobs:
           uv run --no-sync python -m app.cli db current
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read

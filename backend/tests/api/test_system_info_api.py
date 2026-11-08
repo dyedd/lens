@@ -30,15 +30,14 @@ def test_branding_metadata_and_version_check_round_trip(
     assert info.json()["time_zone"] == "Asia/Shanghai"
     assert info.json()["system_version"]
 
+    published_version = "9999.0.0\n"
+
     async def latest_release(_client, request, **_kwargs):
-        assert request.url.path == "/repos/dyedd/lens/releases/latest"
+        assert str(request.url) == "https://dyedd.github.io/lens/version.txt"
         return httpx.Response(
             200,
             request=request,
-            json={
-                "tag_name": "v9999.0.0",
-                "html_url": "https://example.com/releases/9999.0.0",
-            },
+            text=published_version,
         )
 
     monkeypatch.setattr(httpx.AsyncClient, "send", latest_release)
@@ -68,5 +67,17 @@ def test_branding_metadata_and_version_check_round_trip(
     assert result.status_code == 200
     assert result.json()["has_update"] is True
     assert result.json()["latest_version"] == "9999.0.0"
-    assert result.json()["release_url"] == "https://example.com/releases/9999.0.0"
+    assert (
+        result.json()["release_url"]
+        == "https://github.com/dyedd/lens/releases/tag/v9999.0.0"
+    )
     assert result.json()["checked_at"]
+
+    published_version = info.json()["system_version"]
+    run = client.post("/api/admin/cronjobs/version_check/runs", headers=admin_headers)
+    assert run.status_code == 200, run.text
+    result = client.get("/api/admin/version-check", headers=admin_headers)
+    assert result.status_code == 200
+    assert result.json()["has_update"] is False
+    assert result.json()["latest_version"] == ""
+    assert result.json()["release_url"] == ""
