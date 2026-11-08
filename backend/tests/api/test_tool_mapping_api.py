@@ -18,7 +18,11 @@ _RAW_INPUT = ' \n{"input":"literal tool text"}\n '
 _CALLS = [
     ("call-search", "docs__search", {"query": "Lens"}),
     ("call-patch", "docs__apply_patch", {"input": _RAW_INPUT}),
-    ("call-literal", "literal__tool", {"value": 1}),
+    (
+        "call-literal",
+        "literal__tool",
+        {"value": 1, "nested": [{"text": '转义 "引号"、\\路径、{括号}' * 100}]},
+    ),
 ]
 
 
@@ -126,7 +130,8 @@ def _upstream_stream(protocol: str) -> bytes:
         frames = []
         for index, (call_id, name, arguments) in enumerate(_CALLS):
             encoded = json.dumps(arguments)
-            for position, piece in enumerate((encoded[:8], encoded[8:])):
+            for position, offset in enumerate(range(0, len(encoded), 7)):
+                piece = encoded[offset : offset + 7]
                 call = {"index": index, "function": {"arguments": piece}}
                 if position == 0:
                     call.update(id=call_id, type="function")
@@ -134,7 +139,7 @@ def _upstream_stream(protocol: str) -> bytes:
                 frames.append(
                     {
                         "id": "chat-tools",
-                        "model": "upstream-model",
+                        "model": "upstream-模型",
                         "choices": [{"index": 0, "delta": {"tool_calls": [call]}}],
                     }
                 )
@@ -189,7 +194,9 @@ def _upstream_stream(protocol: str) -> bytes:
                 {"type": "message_stop"},
             ]
         )
-    content = "".join(f"data: {json.dumps(frame)}\n\n" for frame in frames)
+    content = "".join(
+        f"data: {json.dumps(frame, ensure_ascii=False)}\n\n" for frame in frames
+    )
     if protocol == "openai_chat":
         content += "data: [DONE]\n\n"
     return content.encode()
@@ -200,8 +207,8 @@ class _Chunks(httpx.AsyncByteStream):
         self.content = content
 
     async def __aiter__(self):
-        for offset in range(0, len(self.content), 11):
-            yield self.content[offset : offset + 11]
+        for offset in range(len(self.content)):
+            yield self.content[offset : offset + 1]
 
 
 def _route(create_site, create_model_group, target: str) -> None:
@@ -223,6 +230,7 @@ def _route(create_site, create_model_group, target: str) -> None:
 @pytest.mark.parametrize("stream", [False, True])
 def test_responses_custom_and_namespaced_tools_round_trip(
     client,
+    admin_headers,
     monkeypatch,
     create_site,
     create_model_group,
@@ -326,7 +334,12 @@ def test_responses_custom_and_namespaced_tools_round_trip(
     assert calls["apply_patch"]["type"] == "custom_tool_call"
     assert calls["apply_patch"]["input"] == _RAW_INPUT
     assert "namespace" not in calls["literal__tool"]
-    assert json.loads(calls["literal__tool"]["arguments"]) == {"value": 1}
+    assert json.loads(calls["literal__tool"]["arguments"]) == _CALLS[2][2]
+    if stream and target == "openai_chat":
+        logs = client.get("/api/admin/request-logs/page", headers=admin_headers)
+        assert logs.status_code == 200, logs.text
+        assert logs.json()["items"][0]["upstream_model_name"] == "upstream-模型"
+        assert logs.json()["items"][0]["lifecycle_status"] == "succeeded"
     body = sent[0]
     if target == "openai_chat":
         history = next(

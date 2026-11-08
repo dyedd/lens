@@ -15,13 +15,17 @@ async def parse_sse_json_stream(
     *,
     require_done: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
-    buffer = b""
+    buffer = bytearray()
+    search_start = 0
     data: list[str] = []
     try:
         async for chunk in raw_iterator:
-            buffer += chunk
-            while b"\n" in buffer:
-                raw_line, buffer = buffer.split(b"\n", 1)
+            buffer.extend(chunk)
+            consumed = 0
+            while (boundary := buffer.find(b"\n", search_start)) >= 0:
+                raw_line = buffer[consumed:boundary]
+                consumed = boundary + 1
+                search_start = consumed
                 line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
                 if line.startswith("data:"):
                     data.append(line[5:].removeprefix(" "))
@@ -31,6 +35,8 @@ async def parse_sse_json_stream(
                     if value.strip() == "[DONE]":
                         return
                     yield _parse_sse_data(value)
+            del buffer[:consumed]
+            search_start = len(buffer)
         if buffer.startswith(b"data:"):
             data.append(buffer[5:].decode("utf-8", errors="replace").strip())
         if data:

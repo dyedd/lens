@@ -218,6 +218,20 @@ def client(app_state: Any) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def peer_client(app_state: Any) -> Iterator[TestClient]:
+    from app.gateway.service.app_state import AppState
+
+    state = AppState()
+    try:
+        with TestClient(
+            create_app(state=state), raise_server_exceptions=False
+        ) as test_client:
+            yield test_client
+    finally:
+        run_async(_close_state(state))
+
+
+@pytest.fixture
 def admin_headers(client: TestClient) -> dict[str, str]:
     response = client.post(
         "/api/admin/session",

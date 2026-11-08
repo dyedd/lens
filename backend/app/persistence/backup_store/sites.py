@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.model_endpoints import credential_ids_for_url
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.sites import SiteConfig, SiteCredentialInput
+from app.persistence.channel_store import bump_channel_config_revision
 from app.persistence.entities import (
     SiteBaseUrlEntity,
     SiteCredentialEntity,
@@ -250,4 +251,5 @@ async def replace_sites(
                 )
             )
 
+    await bump_channel_config_revision(session)
     return protocol_config_ids, model_keys

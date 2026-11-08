@@ -176,7 +176,11 @@ def _drain_sse_event_buffer(
             capture.event_buffer = ""
             return processed_length + block_length
         parse_errors: list[str] = []
-        payloads = parse_sse_payloads(f"{block}\n\n", errors=parse_errors)
+        # 网络分片保留原始字节，完整事件在此还原跨片的 UTF-8 字符。
+        event_text = block.encode("utf-8", errors="surrogateescape").decode(
+            "utf-8", errors="replace"
+        )
+        payloads = parse_sse_payloads(f"{event_text}\n\n", errors=parse_errors)
         for error in parse_errors:
             record_stream_parse_error(capture, error)
         for payload in payloads:
@@ -209,6 +213,9 @@ def _drain_ndjson_event_buffer(
         if not line:
             processed_length += line_length
             continue
+        line = line.encode("utf-8", errors="surrogateescape").decode(
+            "utf-8", errors="replace"
+        )
         try:
             payload = json.loads(line)
         except json.JSONDecodeError as exc:

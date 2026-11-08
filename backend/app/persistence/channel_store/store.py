@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ from app.models.sites import (
     SiteUpdate,
 )
 from app.persistence.entities import (
+    SettingEntity,
     SiteBaseUrlEntity,
     SiteCredentialEntity,
     SiteCredentialRateEntity,
@@ -44,6 +46,7 @@ from app.persistence.entities import (
     SiteEntity,
     SiteProtocolConfigEntity,
 )
+from app.persistence.settings_keys import SETTING_CHANNEL_CONFIG_REVISION
 
 from ..json_columns import load_base_url_ids
 from .cleanup import cleanup_deleted_protocol_configs, cleanup_invalid_group_items
@@ -56,7 +59,7 @@ from .mapping import (
     site_name_keys,
     site_protocol_config_ids,
 )
-from .write import upsert_site_payload
+from .write import bump_channel_config_revision, upsert_site_payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +72,9 @@ class UpstreamModelChanges:
 class ChannelStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+        self._channels: list[ChannelConfig] | None = None
+        self._channels_revision: str | None = None
+        self._channels_lock = asyncio.Lock()
 
     async def delete_site(self, site_id: str) -> None:
         """Delete a site and its dependent channel data."""
@@ -96,6 +102,7 @@ class ChannelStore:
             )
             await session.delete(site)
             await cleanup_invalid_group_items(session, set(protocol_config_ids))
+            await bump_channel_config_revision(session)
             await session.commit()
 
     def fetch_models_preview(
@@ -249,18 +256,38 @@ class ChannelStore:
                 added.add(name)
 
             if added or removed or has_context_changes:
+                await bump_channel_config_revision(session)
                 await session.commit()
             return UpstreamModelChanges(
                 added=sorted(added), missing=sorted(removed), restored=[]
             )
 
     async def list_channels(self) -> list[ChannelConfig]:
-        """Return all runtime channels flattened from configured sites."""
-        sites = await self.list_sites()
-        items: list[ChannelConfig] = []
-        for site in sites:
-            items.extend(flatten_site(site))
-        return sorted(items, key=lambda item: (item.name.lower(), item.id))
+        """返回当前配置的只读渠道快照；修改渠道时使用 model_copy。"""
+        revision_query = select(SettingEntity.value).where(
+            SettingEntity.key == SETTING_CHANNEL_CONFIG_REVISION
+        )
+        async with self._session_factory() as session:
+            revision = await session.scalar(revision_query)
+        if self._channels is not None and revision == self._channels_revision:
+            return list(self._channels)
+        async with self._channels_lock:
+            async with self._session_factory() as session:
+                revision = await session.scalar(revision_query)
+                while self._channels is None or revision != self._channels_revision:
+                    sites = await load_sites(session)
+                    latest_revision = await session.scalar(revision_query)
+                    if revision != latest_revision:
+                        # 重读期间发生提交时，丢弃可能混合了两个版本的配置。
+                        session.expunge_all()
+                        revision = latest_revision
+                        continue
+                    self._channels = sorted(
+                        (channel for site in sites for channel in flatten_site(site)),
+                        key=lambda item: (item.name.lower(), item.id),
+                    )
+                    self._channels_revision = revision
+        return list(self._channels)
 
     async def list_sites(self, tag: str | None = None) -> list[SiteConfig]:
         """Return all configured sites."""
@@ -375,5 +402,6 @@ class ChannelStore:
                 raise ResourceNotFoundError(site_id)
             site.enabled = int(payload.enabled)
             site.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            await bump_channel_config_revision(session)
             await session.commit()
         return await self.get_site(site_id)

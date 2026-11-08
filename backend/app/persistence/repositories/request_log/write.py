@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.runtime_channel_ids import protocol_config_id_from_runtime_channel_id
@@ -70,7 +70,6 @@ class RequestLogCommands:
                 ),
             )
             await session.commit()
-            await session.refresh(entity)
             return to_request_log(entity)
 
     async def update_request_log(
@@ -102,7 +101,6 @@ class RequestLogCommands:
                     session, payload.gateway_key_id, next_spend
                 )
             await session.commit()
-            await session.refresh(entity)
             return to_request_log(entity)
 
     async def discard_running_request_log(self, log_id: int) -> None:
@@ -124,15 +122,19 @@ class RequestLogCommands:
         latency_ms: int | None = None,
     ) -> None:
         """Update runtime latency fields for an existing request log."""
-        async with self.session_factory() as session:
-            entity = await session.get(RequestLogEntity, log_id)
-            if entity is None:
-                return
-            if first_token_latency_ms is not None:
-                entity.first_token_latency_ms = max(first_token_latency_ms, 0)
-            if latency_ms is not None:
-                entity.latency_ms = max(latency_ms, 0)
-            await session.commit()
+        values: dict[str, int] = {}
+        if first_token_latency_ms is not None:
+            values["first_token_latency_ms"] = max(first_token_latency_ms, 0)
+        if latency_ms is not None:
+            values["latency_ms"] = max(latency_ms, 0)
+        if not values:
+            return
+        async with self.session_factory.begin() as session:
+            await session.execute(
+                update(RequestLogEntity)
+                .where(RequestLogEntity.id == log_id)
+                .values(**values)
+            )
 
 
 class RequestLogMaintenance:

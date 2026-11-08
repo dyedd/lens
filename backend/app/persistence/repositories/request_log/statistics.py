@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from itertools import batched
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, tuple_, update
+from sqlalchemy import Select, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -24,6 +24,26 @@ from app.persistence.stats_entities import (
 from .agents import classify_user_agent
 from .query import REQUEST_LOG_STATS_COLUMNS
 from .types import REQUEST_LOG_TERMINAL_STATUSES, SettingsPort
+
+
+async def _log_batches(
+    session: AsyncSession, statement: Select
+) -> AsyncIterator[Sequence[Mapping[str, Any]]]:
+    """按时间和主键翻页，归档标记变化不会让后续批次跳过记录。"""
+    last: tuple[datetime, int] | None = None
+    while True:
+        batch = statement.order_by(
+            RequestLogEntity.created_at, RequestLogEntity.id
+        ).limit(2000)
+        if last is not None:
+            batch = batch.where(
+                tuple_(RequestLogEntity.created_at, RequestLogEntity.id) > last
+            )
+        rows = (await session.execute(batch)).mappings().all()
+        if not rows:
+            return
+        last = (rows[-1]["created_at"], rows[-1]["id"])
+        yield rows
 
 
 class RequestLogStatistics:
@@ -57,42 +77,39 @@ class RequestLogStatistics:
         time_zone: ZoneInfo,
         before: datetime | None = None,
     ) -> None:
-        """Archive one locked snapshot inside the caller's transaction."""
+        """在调用方事务内锁定归档设置，分批归档日志。"""
         stored_time_zone = await self._lock_archive_time_zone(session, time_zone)
+        last_log_id = await session.scalar(select(func.max(RequestLogEntity.id)))
+        if last_log_id is None:
+            stored_time_zone.value = time_zone.key
+            return
         model = func.coalesce(
             RequestLogEntity.resolved_group_name, RequestLogEntity.requested_group_name
         ).label("model")
         rows_stmt = (
             select(RequestLogEntity.id, *REQUEST_LOG_STATS_COLUMNS, model)
             .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
-            .order_by(RequestLogEntity.created_at.asc())
+            .where(RequestLogEntity.id <= last_log_id)
             .with_for_update()
         )
         if stored_time_zone.value != time_zone.key:
-            retained_rows = (
-                (
-                    await session.execute(
-                        rows_stmt.where(RequestLogEntity.stats_archived == 1)
-                    )
+            async for rows in _log_batches(
+                session, rows_stmt.where(RequestLogEntity.stats_archived == 1)
+            ):
+                await self._merge_archive_rows(
+                    session, rows, ZoneInfo(stored_time_zone.value), direction=-1
                 )
-                .mappings()
-                .all()
-            )
-            # Remove only contributions we can rebuild. Deleted detail cannot be rebucketed.
-            await self._merge_archive_rows(
-                session, retained_rows, ZoneInfo(stored_time_zone.value), direction=-1
-            )
-            await self._set_archive_flag(session, retained_rows, is_archived=False)
+                await self._set_archive_flag(session, rows, is_archived=False)
             stored_time_zone.value = time_zone.key
             before = None
         stmt = rows_stmt.where(RequestLogEntity.stats_archived == 0)
         if before is not None:
             stmt = stmt.where(RequestLogEntity.created_at < before)
-        rows = (await session.execute(stmt)).mappings().all()
-        await self._merge_archive_rows(session, rows, time_zone)
-        await self._set_archive_flag(session, rows, is_archived=True)
+        async for rows in _log_batches(session, stmt):
+            await self._merge_archive_rows(session, rows, time_zone)
+            await self._set_archive_flag(session, rows, is_archived=True)
         await self._archive_attribution_rows(
-            session, time_zone=time_zone, before=before
+            session, time_zone=time_zone, before=before, last_log_id=last_log_id
         )
 
     @staticmethod
@@ -137,6 +154,7 @@ class RequestLogStatistics:
         *,
         time_zone: ZoneInfo,
         before: datetime | None,
+        last_log_id: int,
     ) -> None:
         stmt = (
             select(
@@ -159,22 +177,20 @@ class RequestLogStatistics:
             )
             .where(RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_TERMINAL_STATUSES))
             .where(RequestLogEntity.attribution_archived == 0)
-            .order_by(RequestLogEntity.created_at.asc())
+            .where(RequestLogEntity.id <= last_log_id)
             .with_for_update()
         )
         if before is not None:
             stmt = stmt.where(RequestLogEntity.created_at < before)
-        rows = (await session.execute(stmt)).mappings().all()
-        if not rows:
-            return
-        buckets = self.attribution_stats_by_hour(rows, time_zone)
-        await self._merge_attribution_buckets(session, buckets)
-        for ids in batched((row["id"] for row in rows), 400, strict=False):
-            await session.execute(
-                update(RequestLogEntity)
-                .where(RequestLogEntity.id.in_(ids))
-                .values(attribution_archived=1)
-            )
+        async for rows in _log_batches(session, stmt):
+            buckets = self.attribution_stats_by_hour(rows, time_zone)
+            await self._merge_attribution_buckets(session, buckets)
+            for ids in batched((row["id"] for row in rows), 400, strict=False):
+                await session.execute(
+                    update(RequestLogEntity)
+                    .where(RequestLogEntity.id.in_(ids))
+                    .values(attribution_archived=1)
+                )
 
     async def _merge_attribution_buckets(
         self,
