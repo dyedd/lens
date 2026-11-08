@@ -50,6 +50,8 @@ export type RemoteModelCatalog = {
 
 const DETECTION_CHUNK_SIZE = 1000;
 
+type CredentialModelRule = { credentialId: string; pattern: string };
+
 /** Owns upstream catalog discovery and import into the channel form. */
 export function useChannelModelPicker({
   form,
@@ -79,6 +81,7 @@ export function useChannelModelPicker({
   /** Fetches every base URL with each of its keys; failures only warn. */
   async function discoverRemoteCatalog(
     signal: AbortSignal,
+    rule?: CredentialModelRule,
   ): Promise<RemoteModelCatalog | null> {
     if (signal.aborted) return null;
     const drafted = acceptApiKeyDrafts(form);
@@ -102,6 +105,7 @@ export function useChannelModelPicker({
         (url) => url.id === config.base_url_id,
       )!;
       for (const credentialId of config.credential_ids) {
+        if (rule && credentialId !== rule.credentialId) continue;
         const index = editor.credentials.findIndex(
           (item) => item.id === credentialId,
         );
@@ -126,6 +130,7 @@ export function useChannelModelPicker({
             base_url_id: source.id,
             base_url: source.url.trim(),
             endpoint_kind: source.kind,
+            ...(rule ? { model_pattern: rule.pattern } : {}),
             headers,
             proxy_mode: editor.proxy_mode,
             channel_proxy: editor.channel_proxy.trim(),
@@ -216,7 +221,7 @@ export function useChannelModelPicker({
           failure.reason,
           locale === "zh-CN" ? "获取模型失败" : "Failed to fetch models",
         );
-        if (!items.length) {
+        if (rule || !items.length) {
           toast.error(message);
           return null;
         }
@@ -258,11 +263,19 @@ export function useChannelModelPicker({
     }
   }
 
-  function importRemoteModels(items: PickerModelItem[]) {
-    if (detectionController.current || !items.length) return;
+  function importRemoteModels(
+    items: PickerModelItem[],
+    rule?: CredentialModelRule,
+  ) {
+    if (detectionController.current || (!items.length && !rule)) return;
     items = [
       ...new Map(items.map((item) => [modelSourceKey(item), item])).values(),
     ];
+    const sources = new Set(
+      items.map((item) =>
+        protocolConfigModelKey({ id: item.protocol_config_id }, item),
+      ),
+    );
     const additionsByCredential = new Map<string, string[]>();
     for (const item of items) {
       const names = additionsByCredential.get(item.credential_id) ?? [];
@@ -290,6 +303,8 @@ export function useChannelModelPicker({
       return {
         ...current,
         credentials: current.credentials.map((credential) => {
+          if (credential.id === rule?.credentialId)
+            return { ...credential, model_pattern: rule.pattern };
           const additions = additionsByCredential.get(credential.id);
           return additions
             ? {
@@ -301,7 +316,11 @@ export function useChannelModelPicker({
             : credential;
         }),
         protocolConfigs: configs.map((config) => {
-          const models = [...config.models];
+          const models = config.models.filter(
+            (model) =>
+              model.credential_id !== rule?.credentialId ||
+              sources.has(protocolConfigModelKey(config, model)),
+          );
           for (const item of items) {
             if (
               item.protocol_config_id !== config.id ||
@@ -315,6 +334,11 @@ export function useChannelModelPicker({
             );
             if (index >= 0) {
               const existing = models[index];
+              if (
+                rule &&
+                existingSources.has(protocolConfigModelKey(config, existing))
+              )
+                continue;
               if (!existing.protocols.includes(item.protocol))
                 models[index] = {
                   ...existing,
@@ -418,6 +442,31 @@ export function useChannelModelPicker({
           setDetecting(false);
         }
       });
+  }
+
+  async function applyModelPattern(
+    credentialId: string,
+    pattern: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (signal.aborted || detectionController.current) return false;
+    const trimmed = pattern.trim();
+    if (!trimmed) {
+      setForm((current) => ({
+        ...current,
+        credentials: current.credentials.map((credential) =>
+          credential.id === credentialId
+            ? { ...credential, model_pattern: "" }
+            : credential,
+        ),
+      }));
+      return true;
+    }
+    const rule = { credentialId, pattern: trimmed };
+    const catalog = await discoverRemoteCatalog(signal, rule);
+    if (!catalog || signal.aborted) return false;
+    importRemoteModels(catalog.items, rule);
+    return true;
   }
 
   /** 用默认预选值更新所选模型，保留请求期间的手动修改。 */
@@ -546,6 +595,7 @@ export function useChannelModelPicker({
     fetching,
     detecting,
     discoverRemoteCatalog,
+    applyModelPattern,
     importRemoteModels,
     detectModelProtocols,
   };

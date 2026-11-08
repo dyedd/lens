@@ -250,6 +250,7 @@ export type SiteModelFetchPayload = {
   endpoint_kind?: SiteBaseUrlKind;
   /** Picks the list endpoint and auth headers; omitted, each one is tried. */
   protocol?: ProtocolKind;
+  model_pattern?: string;
   headers: HeaderRule[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;

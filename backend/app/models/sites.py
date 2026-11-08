@@ -95,8 +95,7 @@ class SiteCredential(StrictBaseModel):
     api_key: str = Field(min_length=1)
     sort_order: int = Field(default=0, ge=0)
     base_url_ids: list[str] | None
-    # Whole-name filter deciding which upstream models this key keeps. Stored
-    # values are validated on input only, so a bad row never breaks a read.
+    # 每行一个固定模型名或上游匹配规则；仅在写入时校验，避免旧数据阻断读取。
     model_pattern: str = ""
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""

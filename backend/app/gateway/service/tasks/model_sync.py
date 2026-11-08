@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
-from ....core.model_names import ModelPatternKind, classify_model_pattern
 from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS
 from ....core.runtime_channel_ids import compose_runtime_channel_id
 from ....models.channels import (
@@ -16,6 +15,7 @@ from ....models.channels import (
 from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus, ProtocolKind
 from ....models.sites import SiteBaseUrl, SiteConfig, SiteCredential, SiteProtocolConfig
+from ....models.validation import validate_model_pattern
 from ..app_state import logger
 from .litellm_sync_tasks import (
     ModelPriceSyncError,
@@ -24,7 +24,7 @@ from .litellm_sync_tasks import (
 )
 from .model_discovery import (
     UpstreamModelList,
-    fetch_upstream_model_list,
+    fetch_model_rule_list,
     model_list_protocols,
 )
 
@@ -181,11 +181,9 @@ async def _sync_credential_models(
     catalogs: dict[tuple[str, str], UpstreamModelList | ModelDiscoveryError],
     context_windows: dict[str, int],
 ) -> None:
-    pattern = credential.model_pattern.strip()
+    pattern = validate_model_pattern(credential.model_pattern)
     if not pattern:
         return
-    if classify_model_pattern(pattern) is ModelPatternKind.INVALID:
-        raise ValueError("invalid model pattern")
     source = next(
         (
             url
@@ -223,7 +221,7 @@ async def _sync_credential_models(
             channel_proxy=site.channel_proxy,
         )
         try:
-            catalog = await fetch_upstream_model_list(channel)
+            catalog = await fetch_model_rule_list(channel, pattern)
         except ModelDiscoveryError as exc:
             # 同一次同步内，共用目录失败也要复用，避免后续出口改用另一份目录。
             catalogs[catalog_key] = exc
@@ -252,7 +250,6 @@ async def _sync_credential_models(
         config.id,
         credential.id,
         upstream_names=upstream_names,
-        upstream_pattern=pattern,
         upstream_context_windows={
             model.name: model.context_window
             for model in catalog.models

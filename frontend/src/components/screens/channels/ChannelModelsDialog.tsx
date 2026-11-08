@@ -76,7 +76,11 @@ type Props = {
   onOpenRemote: () => void;
   /** Keys whose model rule can be edited, with their current filters. */
   credentialOptions: Array<{ id: string; label: string; pattern: string }>;
-  onUpdateCredentialPattern: (credentialId: string, pattern: string) => void;
+  onUpdateCredentialPattern: (
+    credentialId: string,
+    pattern: string,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
   initialStatusFilter?: ModelStatusFilter;
 };
 
@@ -200,8 +204,8 @@ function ChannelModelsBody({
           </DialogTitle>
           <DialogDescription>
             {locale === "zh-CN"
-              ? "按上游协议路由；同步时保留匹配模型规则的模型，不匹配或上游已下线的会自动移除。"
-              : "Route by upstream protocol. Each sync keeps models matching the key's rule and drops the rest."}
+              ? "直接填写的模型名会保留；正则匹配的模型随上游同步，未匹配或已下线的会移除。"
+              : "Explicit model names are kept. Regex matches follow the upstream catalog; unmatched or retired models are removed."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -352,7 +356,7 @@ function ChannelModelsBody({
               size="sm"
               variant="outline"
               className="h-8"
-              disabled={fetching}
+              disabled={fetching || detecting}
               onClick={onOpenRemote}
             >
               <CloudDownload className="size-3.5" />
@@ -363,6 +367,7 @@ function ChannelModelsBody({
               size="sm"
               variant="outline"
               className="h-8"
+              disabled={fetching || detecting}
               onClick={() => setNewOpen(true)}
             >
               <Plus className="size-3.5" />
