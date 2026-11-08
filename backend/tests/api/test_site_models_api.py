@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -562,11 +563,32 @@ def test_model_test_uses_client_identity_and_reads_stream(
         if test_mode == "codex":
             assert request.headers["user-agent"].startswith("codex_cli_rs/")
             assert request.headers["originator"] == "codex_cli_rs"
+            assert (
+                request.headers["user-agent"]
+                == f"codex_cli_rs/{request.headers['version']}"
+            )
+            assert request.headers["openai-beta"] == "responses=experimental"
+            assert UUID(request.headers["x-codex-window-id"])
+            assert UUID(request.headers["session_id"])
             assert request.headers["authorization"] == "Bearer upstream-secret"
         else:
             assert request.headers["user-agent"].startswith("claude-cli/")
             assert request.headers["x-app"] == "cli"
             assert request.headers["x-stainless-lang"] == "js"
+            assert "claude-code-20250219" in request.headers["anthropic-beta"].split(
+                ","
+            )
+            assert request.headers["anthropic-version"] == "2023-06-01"
+            assert body["system"] == [
+                {
+                    "type": "text",
+                    "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+                }
+            ]
+            user_id = json.loads(body["metadata"]["user_id"])
+            assert len(bytes.fromhex(user_id["device_id"])) == 32
+            assert user_id["account_uuid"] == ""
+            assert UUID(user_id["session_id"])
             assert request.headers["x-api-key"] == "upstream-secret"
         if protocol == ProtocolKind.OPENAI_RESPONSES:
             assert request.url.path == "/v1/responses"
@@ -610,6 +632,12 @@ def test_model_test_uses_client_identity_and_reads_stream(
     assert result["success"] is True
     assert result["output_text"] == "hello"
     assert result["latency_ms"] >= 15
+    headers = result["debug"]["request"]["headers"]
+    if test_mode == "codex":
+        assert UUID(headers["x-codex-window-id"])
+        assert headers["openai-beta"] == "responses=experimental"
+    else:
+        assert "claude-code-20250219" in headers["anthropic-beta"].split(",")
     assert "upstream-secret" not in response.text
 
 

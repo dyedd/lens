@@ -14,6 +14,175 @@ from conftest import gateway_headers, json_response, valid_site_payload
 from app.models.protocols import ProtocolKind
 
 
+@pytest.mark.parametrize("protocol", ["openai_chat", "openai_responses", "anthropic"])
+def test_proxy_preserves_client_identity_and_uses_upstream_credentials(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    protocol,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    identity_headers = {
+        "accept": "application/json, text/event-stream",
+        "x-client-request-id": "client-request",
+    }
+    if protocol == "anthropic":
+        identity_headers.update(
+            {
+                "user-agent": "claude-cli/2.1.90 (external, cli)",
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "claude-code-20250219",
+                "x-app": "cli",
+                "x-stainless-lang": "js",
+                "x-stainless-helper-method": "stream",
+                "x-claude-code-session-id": "claude-session",
+            }
+        )
+        path = "/v1/messages"
+        body = {
+            "messages": [{"role": "user", "content": "hello"}],
+            "system": [
+                {
+                    "type": "text",
+                    "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+                }
+            ],
+            "metadata": {
+                "user_id": '{"device_id":"device","account_uuid":"","session_id":"session"}'
+            },
+            "max_tokens": 64,
+        }
+        payload = {
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "hello"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+    else:
+        identity_headers.update(
+            {
+                "user-agent": "codex_cli_rs/0.159.0",
+                "originator": "codex_cli_rs",
+                "version": "0.159.0",
+                "openai-beta": "responses=experimental",
+                "session_id": "codex-session",
+                "conversation_id": "codex-conversation",
+                "x-codex-window-id": "codex-window",
+                "x-codex-turn-state": "codex-turn",
+                "x-openai-responses-lite": "true",
+            }
+        )
+        if protocol == "openai_responses":
+            path = "/v1/responses"
+            body = {
+                "input": "hello",
+                "store": False,
+                "client_metadata": {"x-codex-window-id": "codex-window"},
+            }
+            payload = {
+                "id": "resp_test",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "hello"}],
+                    }
+                ],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        else:
+            path = "/v1/chat/completions"
+            body = {"messages": [{"role": "user", "content": "hello"}]}
+            payload = {
+                "choices": [{"message": {"role": "assistant", "content": "hello"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            }
+
+    site = valid_site_payload(protocols=[protocol], model_name="native-model")
+    site["headers"] = [
+        {"name": "Accept-Language", "action": "override", "value": "zh-CN"}
+    ]
+    create_site(site)
+    create_model_group(
+        name="public-model",
+        items=[
+            {
+                "channel_id": f"pc-1_{protocol}",
+                "credential_id": "cred-1",
+                "model_name": "native-model",
+                "enabled": True,
+            }
+        ],
+    )
+    sent = []
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        headers = httpx.Headers(upstream.headers)
+        assert all(
+            headers.get(name) == value for name, value in identity_headers.items()
+        )
+        assert headers["accept-language"] == "zh-CN"
+        assert headers["content-type"] == "application/json"
+        assert (
+            not {
+                "cookie",
+                "host",
+                "connection",
+                "x-unrelated",
+                "x-goog-api-key",
+                "x-codex-hop",
+                "x-claude-code-hop",
+            }
+            & headers.keys()
+        )
+        if protocol == "anthropic":
+            assert headers["x-api-key"] == "upstream-secret"
+            assert "authorization" not in headers
+        else:
+            assert headers["authorization"] == "Bearer upstream-secret"
+            assert "x-api-key" not in headers
+        sent.append(json.loads(body_bytes))
+        return httpx.Response(
+            200,
+            json=payload,
+            headers={
+                "request-id": "upstream-request",
+                "x-codex-turn-state": "next-turn",
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        path,
+        headers={
+            **gateway_headers(create_gateway_key()),
+            **identity_headers,
+            "accept-language": "en-US",
+            "x-api-key": "client-secret",
+            "x-goog-api-key": "client-secret",
+            "cookie": "session=private",
+            "x-unrelated": "private",
+            "connection": "x-codex-hop, x-claude-code-hop",
+            "x-codex-hop": "private",
+            "x-claude-code-hop": "private",
+        },
+        json={"model": "public-model", **body},
+    )
+
+    assert response.status_code == 200, response.text
+    assert sent == [{"model": "native-model", **body}]
+    assert response.headers["request-id"] == "upstream-request"
+    assert response.headers["x-codex-turn-state"] == "next-turn"
+
+
 @pytest.mark.parametrize(
     ("failure", "status"), [("interrupted", 502), ("timeout", 504)]
 )

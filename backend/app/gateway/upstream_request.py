@@ -48,6 +48,38 @@ _OPENAI_COMPATIBLE_PROTOCOLS = frozenset(
 _GLM_HOSTS = frozenset({"open.bigmodel.cn", "api.z.ai"})
 _GLM_OPENAI_VERSIONED_PATHS = frozenset({"/api/paas/v4", "/api/coding/paas/v4"})
 ANTHROPIC_VERSION = "2023-06-01"
+_CLIENT_FORWARD_HEADERS = frozenset(
+    {"accept", "accept-language", "x-request-id", "x-client-request-id"}
+)
+_ANTHROPIC_FORWARD_HEADERS = frozenset(
+    {
+        "x-app",
+        "x-app-name",
+        "x-app-ver",
+        "x-client-app",
+        "x-environment-runner-version",
+    }
+)
+_ANTHROPIC_FORWARD_HEADER_PREFIXES = (
+    "anthropic-",
+    "x-anthropic-",
+    "x-claude-code-",
+    "x-claude-remote-",
+    "x-stainless-",
+)
+_OPENAI_FORWARD_HEADERS = frozenset(
+    {
+        "originator",
+        "version",
+        "openai-beta",
+        "session_id",
+        "session-id",
+        "conversation_id",
+        "conversation-id",
+        "thread_id",
+        "thread-id",
+    }
+)
 
 
 def build_upstream_request(
@@ -98,11 +130,13 @@ def build_upstream_request(
             "content-type": "application/json",
             "accept": "application/json",
         }
-        if channel.protocol == ProtocolKind.ANTHROPIC and forwarded_headers:
-            default_headers.update(forwarded_headers)
         url = append_url_path(_protocol_base_url(channel), suffix)
         payload = dict(body)
 
+    if forwarded_headers:
+        default_headers.update(
+            _forward_client_headers(forwarded_headers, channel.protocol)
+        )
     context = request_rule_context(
         url, model_name=context_model_name, protocol=channel.protocol
     )
@@ -115,6 +149,37 @@ def build_upstream_request(
         context=context,
     )
     return UpstreamRequest(method="POST", url=url, headers=headers, json_body=payload)
+
+
+def _forward_client_headers(
+    headers: Mapping[str, str], protocol: ProtocolKind
+) -> dict[str, str]:
+    if protocol == ProtocolKind.ANTHROPIC:
+        allowed = _ANTHROPIC_FORWARD_HEADERS
+        prefixes = _ANTHROPIC_FORWARD_HEADER_PREFIXES
+    elif protocol in {ProtocolKind.OPENAI_CHAT, ProtocolKind.OPENAI_RESPONSES}:
+        allowed = _OPENAI_FORWARD_HEADERS
+        prefixes = ("x-codex-", "x-openai-")
+    else:
+        return {}
+    connection_headers = {
+        token.strip().lower()
+        for name, value in headers.items()
+        if name.lower() == "connection"
+        for token in value.split(",")
+    }
+    forwarded: dict[str, str] = {}
+    for name, value in headers.items():
+        name = name.lower()
+        if name in connection_headers or not (
+            name in _CLIENT_FORWARD_HEADERS
+            or name in allowed
+            or name.startswith(prefixes)
+        ):
+            continue
+        if value.strip():
+            forwarded[name] = value.strip()
+    return forwarded
 
 
 def build_upstream_auth_headers(channel: ChannelConfig, api_key: str) -> dict[str, str]:

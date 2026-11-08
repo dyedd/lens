@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Sequence
+from secrets import token_hex
 from time import perf_counter
 from typing import Any
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 from fastapi import HTTPException, Request
@@ -66,9 +69,13 @@ def _probe_debug(
             "content-type",
             "accept",
             "anthropic-version",
+            "anthropic-beta",
             "user-agent",
             "originator",
             "version",
+            "openai-beta",
+            "session_id",
+            "x-codex-window-id",
             "x-app",
             "x-stainless-lang",
         }
@@ -245,6 +252,9 @@ async def _call_site_model_probe_channel(
             "user-agent": "codex_cli_rs/0.159.0",
             "originator": "codex_cli_rs",
             "version": "0.159.0",
+            "openai-beta": "responses=experimental",
+            "x-codex-window-id": str(uuid4()),
+            "session_id": str(uuid4()),
             "accept": "application/json, text/event-stream",
         }
     elif test_mode == "claude":
@@ -252,23 +262,16 @@ async def _call_site_model_probe_channel(
             "user-agent": "claude-cli/2.1.90 (external, cli)",
             "x-app": "cli",
             "x-stainless-lang": "js",
+            "anthropic-beta": "claude-code-20250219",
             "accept": "application/json, text/event-stream",
         }
-    headers_config = runtime["upstream_headers_config"].model_copy(
-        update={
-            "rules": [
-                HeaderRule(name=name, action="override", value=value)
-                for name, value in client_headers.items()
-            ]
-            + runtime["upstream_headers_config"].rules
-        }
-    )
     upstream = build_upstream_request(
         channel,
         body,
         credential_id=credential_id,
-        user_agent=default_lens_user_agent(),
-        upstream_headers_config=headers_config,
+        user_agent=client_headers.get("user-agent", default_lens_user_agent()),
+        forwarded_headers=client_headers,
+        upstream_headers_config=runtime["upstream_headers_config"],
         model_group_headers=list(model_group_headers),
     )
     # 探测与真实请求一样经过凭据插件，测通的才是实际会发出的鉴权。
@@ -436,12 +439,29 @@ def _site_model_probe_body(payload: SiteModelTestRequest) -> dict[str, Any]:
             "top_n": 1,
         }
     if payload.protocol == ProtocolKind.ANTHROPIC:
-        return {
+        body = {
             "model": payload.model_name,
             "messages": [{"role": "user", "content": text}],
             "max_tokens": 64,
             "stream": False,
         }
+        if payload.test_mode == "claude":
+            body["system"] = [
+                {
+                    "type": "text",
+                    "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+                }
+            ]
+            body["metadata"] = {
+                "user_id": json.dumps(
+                    {
+                        "device_id": token_hex(32),
+                        "account_uuid": "",
+                        "session_id": str(uuid4()),
+                    }
+                )
+            }
+        return body
     if payload.protocol == ProtocolKind.GEMINI:
         return {
             "model": payload.model_name,

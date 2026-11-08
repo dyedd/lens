@@ -77,7 +77,10 @@ def _stub_upstream(
         return httpx.Response(
             200,
             content=content,
-            headers={"content-type": "text/event-stream"},
+            headers={
+                "content-type": "text/event-stream",
+                "x-codex-turn-state": "next-turn",
+            },
             request=request,
         )
 
@@ -184,6 +187,7 @@ def test_responses_channel_preserves_responses_stream_and_logs_usage(
     )
 
     assert response.status_code == 200, response.text
+    assert response.headers["x-codex-turn-state"] == "next-turn"
     assert captured == {
         "url": "https://upstream.example/v1/responses",
         "body": {"model": "responses-model", "input": "hello", "stream": True},
