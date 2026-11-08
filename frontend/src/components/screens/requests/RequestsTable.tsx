@@ -48,15 +48,6 @@ function isRunning(item: RequestLogItem) {
   );
 }
 
-function UsageChip({ label, value }: { label: string; value: string }) {
-  return (
-    <Badge variant="secondary" className="gap-1 leading-none">
-      <span>{label}</span>
-      <span className="tabular-nums">{value}</span>
-    </Badge>
-  );
-}
-
 function ModelCell({ item, locale }: { item: RequestLogItem; locale: Locale }) {
   const name = getResolvedGroupName(item);
   const upstream = getSecondaryModelName(item);
@@ -142,46 +133,46 @@ function UsageCell({
 }) {
   if (item.billing_mode === "non_tokens") {
     return (
-      <UsageChip
-        label={titleForLocale(locale, "图片", "Images")}
-        value={formatMaybeCount(item.billing_units, pending)}
-      />
+      <Badge variant="secondary" className="gap-1 leading-none">
+        <span>{titleForLocale(locale, "图片", "Images")}</span>
+        <span className="tabular-nums">
+          {formatMaybeCount(item.billing_units, pending)}
+        </span>
+      </Badge>
     );
   }
-  const chips = [
-    {
-      label: titleForLocale(locale, "入", "in"),
-      value: formatMaybeCount(item.input_tokens, pending),
-    },
-    {
-      label: titleForLocale(locale, "出", "out"),
-      value: formatMaybeCount(item.output_tokens, pending),
-    },
-    {
-      label: titleForLocale(locale, "读", "cr"),
-      value: formatMaybeCount(item.cache_read_input_tokens, pending),
-    },
-    {
-      label: titleForLocale(locale, "写", "cw"),
-      value: formatMaybeCount(item.cache_write_input_tokens, pending),
-    },
-  ];
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="grid w-max max-w-[9.5rem] cursor-default grid-cols-2 gap-1">
-          {chips.map((chip) => (
-            <UsageChip key={chip.label} label={chip.label} value={chip.value} />
-          ))}
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="min-w-40">
-        <div className="flex items-center justify-between gap-5 text-xs">
-          <span>{titleForLocale(locale, "缓存命中率", "Cache hit rate")}</span>
-          <span className="tabular-nums">{formatCacheHitRate(item)}</span>
-        </div>
-      </TooltipContent>
-    </Tooltip>
+    <dl className="grid w-max grid-cols-[auto_auto_auto_auto] gap-x-3 gap-y-0.5 whitespace-nowrap text-xs leading-4">
+      <dt className="text-muted-foreground">
+        {titleForLocale(locale, "输入", "Input")}
+      </dt>
+      <dd className="text-right tabular-nums">
+        {formatMaybeCount(item.input_tokens, pending)}
+      </dd>
+      <dt className="text-muted-foreground">
+        {titleForLocale(locale, "输出", "Output")}
+      </dt>
+      <dd className="text-right tabular-nums">
+        {formatMaybeCount(item.output_tokens, pending)}
+      </dd>
+      <dt className="text-muted-foreground">
+        {titleForLocale(locale, "缓存读", "Cache read")}
+      </dt>
+      <dd className="text-right tabular-nums">
+        {formatMaybeCount(item.cache_read_input_tokens, pending)}
+      </dd>
+      <dt className="text-muted-foreground">
+        {titleForLocale(locale, "缓存写", "Cache write")}
+      </dt>
+      <dd className="text-right tabular-nums">
+        {formatMaybeCount(item.cache_write_input_tokens, pending)}
+      </dd>
+      <dt className="col-span-3 text-muted-foreground">
+        {titleForLocale(locale, "缓存命中率", "Cache hit rate")}
+      </dt>
+      <dd className="text-right tabular-nums">{formatCacheHitRate(item)}</dd>
+    </dl>
   );
 }
 
@@ -235,30 +226,39 @@ function LatencyCell({
   locale: Locale;
   elapsedMs: number;
 }) {
+  const hasTokenMetrics = item.billing_mode !== "non_tokens";
+  // shortcut: 总耗时含重试等待，精确测速时需单独记录生成耗时。
+  const outputMs = item.is_stream
+    ? elapsedMs - item.first_token_latency_ms
+    : elapsedMs;
+  const outputTps =
+    hasTokenMetrics &&
+    !isRunning(item) &&
+    (!item.is_stream || item.first_token_latency_ms > 0) &&
+    item.output_tokens > 0 &&
+    outputMs > 0
+      ? `${((item.output_tokens * 1000) / outputMs).toFixed(1)} tok/s`
+      : "-";
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex cursor-default whitespace-nowrap tabular-nums text-muted-foreground">
-          {formatMs(elapsedMs)}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="min-w-40">
-        <div className="grid gap-1.5 text-xs">
-          {item.billing_mode !== "non_tokens" ? (
-            <div className="flex items-center justify-between gap-5">
-              <span>{titleForLocale(locale, "首字", "First token")}</span>
-              <span className="tabular-nums">
-                {formatMs(item.first_token_latency_ms)}
-              </span>
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between gap-5 font-medium">
-            <span>{titleForLocale(locale, "总耗时", "Total")}</span>
-            <span className="tabular-nums">{formatMs(elapsedMs)}</span>
-          </div>
-        </div>
-      </TooltipContent>
-    </Tooltip>
+    <dl className="grid w-max grid-cols-[auto_auto] gap-x-3 gap-y-0.5 whitespace-nowrap text-xs leading-4">
+      <dt className="text-muted-foreground">
+        {titleForLocale(locale, "首字", "First token")}
+      </dt>
+      <dd className="text-right tabular-nums">
+        {hasTokenMetrics && item.first_token_latency_ms > 0
+          ? formatMs(item.first_token_latency_ms)
+          : "-"}
+      </dd>
+      <dt className="text-muted-foreground">
+        {titleForLocale(locale, "总耗时", "Total")}
+      </dt>
+      <dd className="text-right tabular-nums">{formatMs(elapsedMs)}</dd>
+      <dt className="text-muted-foreground">
+        {titleForLocale(locale, "输出 TPS", "Output TPS")}
+      </dt>
+      <dd className="text-right tabular-nums">{outputTps}</dd>
+    </dl>
   );
 }
 
