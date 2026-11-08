@@ -1,0 +1,12 @@
+flowchart TB
+    ui["管理界面"] -->|"管理 API · 登录令牌"| admin["管理服务<br/>渠道 · 模型组 · 设置"]
+    client["推理客户端"] -->|"推理 API · 网关 Key"| proxy["请求编排<br/>认证 · 计划 · 尝试 · 结果"]
+    subgraph lens["同一 Lens 进程"]
+        admin -->|"保存与查询"| repo["仓储 · 配置与日志"]
+        proxy -->|"读取配置 · 写入结果"| repo
+        proxy -->|"候选与失败结果"| router["路由器<br/>选择 · 冷却 · 健康"]
+        router -->|"选中的目标"| proxy
+        proxy -->|"具体目标与请求"| transport["协议转换与上游传输"]
+    end
+    repo -->|"读写"| db[("SQLite / PostgreSQL")]
+    transport -->|"供应商协议 · 上游 Key"| upstream["上游供应商"]

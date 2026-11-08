@@ -22,3 +22,7 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 frontend/*.tsbuildinfo
+docs/
+screenshots/
+README.md
+README_EN.md

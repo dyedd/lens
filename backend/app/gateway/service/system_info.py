@@ -77,38 +77,25 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
 async def sync_version(state: AppState) -> None:
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
-            "https://api.github.com/repos/dyedd/lens/releases/latest",
-            headers={"Accept": "application/vnd.github.v3+json"},
+            "https://dyedd.github.io/lens/version.txt",
+            headers={"Accept": "text/plain", "Cache-Control": "no-cache"},
         )
         response.raise_for_status()
-        data = response.json()
 
-        latest_version = data.get("tag_name", "").lstrip("v")
-        release_url = data.get("html_url", "")
-
-        current_version = read_system_version()
-
-        if latest_version and version.parse(latest_version) > version.parse(
-            current_version
-        ):
-            await state.settings_repo.upsert_settings(
-                [
-                    SettingItem(key=SETTING_LATEST_VERSION, value=latest_version),
-                    SettingItem(key=SETTING_LATEST_VERSION_URL, value=release_url),
-                    SettingItem(
-                        key=SETTING_VERSION_CHECK_AT,
-                        value=datetime.now(UTC).isoformat(),
-                    ),
-                ]
-            )
-        else:
-            await state.settings_repo.upsert_settings(
-                [
-                    SettingItem(
-                        key=SETTING_VERSION_CHECK_AT,
-                        value=datetime.now(UTC).isoformat(),
-                    ),
-                    SettingItem(key=SETTING_LATEST_VERSION, value=""),
-                    SettingItem(key=SETTING_LATEST_VERSION_URL, value=""),
-                ]
-            )
+    published_version = version.Version(response.text.strip())
+    has_update = published_version > version.Version(read_system_version())
+    latest_version = str(published_version) if has_update else ""
+    release_url = (
+        f"https://github.com/dyedd/lens/releases/tag/v{published_version}"
+        if has_update
+        else ""
+    )
+    await state.settings_repo.upsert_settings(
+        [
+            SettingItem(key=SETTING_LATEST_VERSION, value=latest_version),
+            SettingItem(key=SETTING_LATEST_VERSION_URL, value=release_url),
+            SettingItem(
+                key=SETTING_VERSION_CHECK_AT, value=datetime.now(UTC).isoformat()
+            ),
+        ]
+    )

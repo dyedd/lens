@@ -1,13 +1,14 @@
 # Lens 项目协作指南
 
-Lens 是统一处理认证、模型组路由、协议转换、上游调用、故障转移和请求/用量日志的多供应商 LLM 网关。本指南适用于仓库内所有日常开发与协作；部署配置、端口分配与环境变量以 [README.md](README.md) 为准。
+Lens 是统一处理认证、模型组路由、协议转换、上游调用、故障转移和请求/用量日志的多供应商 LLM 网关。本指南适用于仓库内所有日常开发与协作；部署步骤见 [快速开始](docs/guide/quick-start.md)，端口分配与环境变量见 [配置参考](docs/reference/configuration.md)。
 
 ## 环境与边界
 
 - **运行环境**：Python `>=3.14` 由 `uv` 管理，前端由 `pnpm` 管理。根目录 `pyproject.toml` 为 uv workspace；后端位于 `backend/`（源码在 `backend/app/`，API 测试在 `backend/tests/api/`，迁移脚本在 `backend/app/alembic/`）。
 - **工具调用**：后端工具必须从仓库根目录使用 `uv run --no-sync` 执行。缺少依赖时优先执行 `uv sync --locked`；若因本地镜像索引导致锁文件误报漂移，改用 `uv sync --frozen`。
 - **依赖锁定**：更新依赖执行 `uv lock` 时，显式指定 `UV_DEFAULT_INDEX=https://pypi.org/simple`，防止本机镜像配置重写索引 URL，并确保锁文件中的 wheel/tar 下载来源为 `pypi.org` 与 `files.pythonhosted.org`。
-- **前端开发**：前端命令均在 `frontend/` 目录下执行。启动与构建步骤详见 [README.md](README.md)。
+- **前端开发**：前端命令均在 `frontend/` 目录下执行。启动与构建步骤详见 [开发环境](docs/development/setup.md)。
+- **文档开发**：VitePress 文档位于 `docs/`，在该目录执行 `pnpm dev`、`pnpm build`。文档依赖、截图和产物不进入应用 Docker 镜像。
 - **安全与历史约束**：严禁修改已有 Alembic 迁移脚本；严禁在日志、响应或代码中输出 `.env` 及任何真实密钥信息。除非用户明确指示，否则不得提交（commit）、推送（push）或改写 Git 历史。
 
 ## 代码风格
@@ -31,12 +32,12 @@ Lens 是统一处理认证、模型组路由、协议转换、上游调用、故
 
 发版由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动完成，无需手动打 tag：
 
-- **触发**：每天 UTC 03:00（北京时间 11:00）检查一次，`main` 自上一个 `v*` tag 起的提交数达到 5 即发版；达标后直接开始发版。
-- **流程**：升 patch 版本号（来源为 `backend/app/__init__.py`）→ 提交并推送 `main` → 构建 amd64/arm64 镜像并推送到 `ghcr.io/dyedd/lens` → 创建正式 release。镜像构建失败时不发版，避免出现有 tag 无镜像。
-- **手动**：Actions → Release → Run workflow，默认只预览；取消勾选 `dry_run` 后执行正式发版，至少需要 1 个提交。
+- **触发**：每天 UTC 03:00（北京时间 11:00）检查一次，`main` 自上一个 `v*` tag 起的应用提交数达到 5 即发版；纯文档提交不计入。
+- **流程**：通过 `scripts/bump_version.py` 同步更新 `backend/app/__init__.py` 与 `docs/public/version.txt` → 提交并推送 `main` → 构建 amd64/arm64 镜像并推送到 `ghcr.io/dyedd/lens` → 创建正式 release → 发布文档与版本检测文件。镜像构建失败时不发版；在线版本文件以成功发布的 release 为准。
+- **手动**：Actions → Release → Run workflow，默认只预览；取消勾选 `dry_run` 后执行正式发版，至少需要 1 个应用提交。
 - **镜像标签**：正式版产出 `latest`、`dev`、`vX.Y.Z`、`X.Y.Z`、`X.Y` 与 `sha-<7 位提交>`；`main` 的普通推送产出 `dev`。
 
-镜像构建逻辑在 [container-image.yml](.github/workflows/container-image.yml) 中复用，CI 与发版共用同一套多架构构建。
+镜像构建逻辑在 [container-image.yml](.github/workflows/container-image.yml) 中复用，CI 与发版共用同一套多架构构建。纯文档改动跳过应用检查与镜像构建，由 [docs.yml](.github/workflows/docs.yml) 构建文档，合并到 `main` 后发布到 GitHub Pages。
 
 ## 常用检查
 

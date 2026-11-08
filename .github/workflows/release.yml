@@ -3,7 +3,7 @@ name: Release
 # 提交攒够后自动发版：升 patch 版本号 → 构建并推送多架构镜像 → 发布正式 release。
 on:
   schedule:
-    # 每天 UTC 03:00（北京时间 11:00）检查一次 main 上的提交数
+    # 每天 UTC 03:00（北京时间 11:00）检查一次 main 上的应用提交数。
     - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
@@ -46,25 +46,27 @@ jobs:
         id: gate
         shell: bash
         env:
-          # 自动发版要攒够 5 个提交；手动触发只要 1 个（至少得有点实际改动）。
+          # 自动发版累计 5 个应用提交；手动触发至少 1 个，纯文档提交不计入。
           MIN_COMMITS: ${{ github.event_name == 'schedule' && '5' || '1' }}
         run: |
           set -euo pipefail
 
           git fetch origin main --tags --force
 
-          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          last_tag="$(git for-each-ref --sort=-version:refname --count=1 --format='%(refname:short)' 'refs/tags/v[0-9]*')"
           if [ -n "$last_tag" ]; then
             range="${last_tag}..origin/main"
           else
             range="origin/main"
           fi
 
-          count="$(git rev-list --count "$range")"
-          echo "自 ${last_tag:-仓库起点} 以来共 ${count} 个提交，发版门槛 ${MIN_COMMITS} 个"
+          count="$(git rev-list --count "$range" -- . \
+            ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)screenshots/**' \
+            ':(exclude).github/workflows/docs.yml')"
+          echo "自 ${last_tag:-仓库起点} 以来共 ${count} 个应用提交，发版门槛 ${MIN_COMMITS} 个"
 
           if [ "$count" -eq 0 ]; then
-            echo "没有新提交，跳过发版"
+            echo "没有新的应用提交，跳过发版"
             echo "released=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -88,53 +90,16 @@ jobs:
           git fetch origin main --tags --force
           git reset --hard origin/main
 
-          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          last_tag="$(git for-each-ref --sort=-version:refname --count=1 --format='%(refname:short)' 'refs/tags/v[0-9]*')"
           if [ -n "$last_tag" ]; then
             base_version="${last_tag#v}"
           else
             base_version="0.0.0"
           fi
 
-          # 与 Bump version 使用同一套推导，但不写文件、不提交。
-          python3 - "$base_version" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          base_version = sys.argv[1]
-          source = Path("backend/app/__init__.py").read_text(encoding="utf-8")
-          match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', source)
-          if match is None:
-              raise SystemExit("Could not find __version__")
-
-          current_version = match.group(1)
-          semver = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
-          base_match = semver.fullmatch(base_version)
-          current_match = semver.fullmatch(current_version)
-          if base_match is None or current_match is None:
-              raise SystemExit(
-                  f"Unsupported version: base={base_version}, current={current_version}"
-              )
-
-          base_parts = tuple(map(int, base_match.groups()))
-          current_parts = tuple(map(int, current_match.groups()))
-          if current_parts < base_parts:
-              print(
-                  f"预览：跳过发版，当前 {current_version} 落后于 {base_version}，"
-                  "先把 backend/app/__init__.py 的版本号提到最新 tag"
-              )
-              raise SystemExit(0)
-
-          if current_parts > base_parts:
-              next_version = current_version
-          else:
-              major, minor, patch = base_parts
-              next_version = f"{major}.{minor}.{patch + 1}"
-
-          print(f"预览：将于 v{next_version} 发版")
-          print(f"预览：镜像标签 latest、dev、v{next_version}、{next_version}、{'.'.join(next_version.split('.')[:2])}")
-          print(f"预览：标题与 tag 为 v{next_version}")
-          PY
+          version="$(python3 scripts/bump_version.py --base-version "$base_version" --dry-run)"
+          echo "预览：将于 v${version} 发版，并同步源码与文档版本文件"
+          echo "预览：镜像标签 latest、dev、v${version}、${version}、${version%.*}"
 
           echo "预览模式，未改版本号、未建镜像、未发 release"
 
@@ -148,59 +113,19 @@ jobs:
           git fetch origin main --tags --force
           git reset --hard origin/main
 
-          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          last_tag="$(git for-each-ref --sort=-version:refname --count=1 --format='%(refname:short)' 'refs/tags/v[0-9]*')"
           if [ -n "$last_tag" ]; then
             base_version="${last_tag#v}"
           else
             base_version="0.0.0"
           fi
 
-          version="$(python3 - "$base_version" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
+          version="$(python3 scripts/bump_version.py --base-version "$base_version")"
 
-          base_version = sys.argv[1]
-          version_path = Path("backend/app/__init__.py")
-          source = version_path.read_text(encoding="utf-8")
-          match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', source)
-          if match is None:
-              raise SystemExit("Could not find __version__")
-
-          current_version = match.group(1)
-          semver = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
-          base_match = semver.fullmatch(base_version)
-          current_match = semver.fullmatch(current_version)
-          if base_match is None or current_match is None:
-              raise SystemExit(
-                  f"Unsupported version: base={base_version}, current={current_version}"
-              )
-
-          base_parts = tuple(map(int, base_match.groups()))
-          current_parts = tuple(map(int, current_match.groups()))
-          if current_parts < base_parts:
-              raise SystemExit(
-                  f"Current version {current_version} is behind latest tag {base_version}"
-              )
-
-          if current_parts > base_parts:
-              next_version = current_version
-          else:
-              major, minor, patch = base_parts
-              patch += 1
-              next_version = f"{major}.{minor}.{patch}"
-
-              updated = source[: match.start(1)] + next_version + source[match.end(1) :]
-              version_path.write_text(updated, encoding="utf-8")
-
-          print(next_version)
-          PY
-          )"
-
-          if ! git diff --quiet -- backend/app/__init__.py; then
+          if ! git diff --quiet -- backend/app/__init__.py docs/public/version.txt; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add backend/app/__init__.py
+            git add backend/app/__init__.py docs/public/version.txt
             git commit -m "chore: 更新版本号至 ${version}"
             git push origin HEAD:refs/heads/main
           fi
@@ -276,7 +201,7 @@ jobs:
             esac
           }
 
-          last_tag="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          last_tag="$(git for-each-ref --sort=-version:refname --count=1 --format='%(refname:short)' 'refs/tags/v[0-9]*')"
           if [ -n "$last_tag" ]; then
             range="${last_tag}..${SHA}"
           else
@@ -390,3 +315,12 @@ jobs:
             --notes-file "$BODY_PATH" \
             --target "$SHA" \
             --latest
+
+  documentation:
+    name: Publish documentation and version feed
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml

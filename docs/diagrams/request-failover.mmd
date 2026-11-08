@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant C as 客户端
+    participant L as Lens
+    participant A as 供应商 A
+    participant B as 供应商 B
+    C->>L: Responses · daily-chat
+    Note over L: 认证与改写<br/>解析执行组<br/>gpt-6.1-sol
+    L->>A: Chat · A-Key · gpt-6.1-sol
+    A-->>L: 429 限流
+    Note over L: 记录 A 失败<br/>再尝试 B
+    L->>B: Chat · B-Key · gpt-6.1-sol
+    B-->>L: 200 · 回复与用量
+    Note over L: 转回 Responses<br/>记录两次尝试
+    L-->>C: 200 · Responses 回复

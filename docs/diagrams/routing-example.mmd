@@ -1,0 +1,4 @@
+flowchart TB
+    alias["daily-chat<br/>别名组 · 客户端模型名"] -->|"引用执行组"| group["gpt-6.1-sol<br/>直接调度 · 故障切换"]
+    group -->|"第 1 个成员"| primary["供应商 A · Chat 出口<br/>A-Key · gpt-6.1-sol"]
+    group -->|"第 2 个成员"| backup["供应商 B · Chat 出口<br/>B-Key · gpt-6.1-sol"]
