@@ -107,6 +107,13 @@ const BRAND_ICONS: BrandIconDefinition[] = [
     imageClassName: "scale-[0.92]",
     shouldInvertInDark: true,
   },
+  {
+    key: "ernie",
+    label: "ERNIE",
+    prefixes: ["ernie", "wenxin", "baidu"],
+    src: "/brand-icons/ernie.svg",
+    imageClassName: "scale-[0.94]",
+  },
 ];
 
 const FALLBACK_ICON: BrandIconDefinition = {
