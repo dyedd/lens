@@ -41,7 +41,7 @@ export function ChannelsScreen() {
 
   function handleCreated(site: Site) {
     openEditor(site, "models");
-    setRemoteModelsOpen(true);
+    setRemoteModelsOpen(site.supports_model_listing);
   }
 
   const save = useChannelSave({

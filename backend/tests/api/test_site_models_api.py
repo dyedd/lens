@@ -235,6 +235,104 @@ def test_fetch_site_models_falls_back_to_a_native_model_list(
     assert [item["model_name"] for item in response.json()] == ["claude-sonnet-4-5"]
 
 
+@pytest.mark.parametrize("protocol", ["openai_chat", "anthropic", "gemini"])
+@pytest.mark.parametrize(
+    "outcome", ["complete", "page-failure", "repeated-cursor", "missing-cursor"]
+)
+def test_model_sync_reads_all_catalog_pages_before_replacing_models(
+    client, admin_headers, monkeypatch, protocol, outcome
+) -> None:
+    import app.gateway.service.tasks.model_discovery as discovery
+
+    payload = _sync_site_payload(
+        patterns={"cred-a": "*"},
+        models=[_model(name, protocol=protocol) for name in ("model-last", "retired")],
+    )
+    payload["credentials"] = payload["credentials"][:1]
+    payload["base_urls"][0].update(
+        url="https://catalog.example",
+        kind="default" if protocol == "openai_chat" else protocol,
+    )
+    payload["protocols"][0]["protocols"] = [protocol]
+    _create_sync_site(client, admin_headers, payload)
+    requests: list[httpx.Request] = []
+    cursor_param = {
+        "openai_chat": "after",
+        "anthropic": "after_id",
+        "gemini": "pageToken",
+    }[protocol]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        is_next = cursor_param in request.url.params
+        if is_next and outcome == "page-failure":
+            return httpx.Response(503, json={"error": {"message": "unavailable"}})
+        if is_next:
+            assert request.url.params[cursor_param] == "next-page"
+        names = ["model-first", "model-last"] if is_next else ["model-first"]
+        more = not is_next or outcome == "repeated-cursor"
+        if protocol == "gemini":
+            body = {"models": [{"name": f"models/{name}"} for name in names]}
+            if more:
+                body["nextPageToken"] = (
+                    123 if outcome == "missing-cursor" else "next-page"
+                )
+        else:
+            body = {"data": [{"id": name} for name in names], "has_more": more}
+            if more and outcome != "missing-cursor":
+                body["last_id"] = "next-page"
+        return httpx.Response(200, json=body)
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        result = _run_model_sync(client, admin_headers)
+        assert len(requests) == (1 if outcome == "missing-cursor" else 2)
+        if protocol == "anthropic":
+            assert all(request.url.params["limit"] == "1000" for request in requests)
+            assert all(
+                request.headers["x-api-key"] == "secret-a" for request in requests
+            )
+        elif protocol == "gemini":
+            assert all(request.url.params["pageSize"] == "1000" for request in requests)
+            assert all(request.url.params["key"] == "secret-a" for request in requests)
+        else:
+            assert all(
+                request.headers["authorization"] == "Bearer secret-a"
+                for request in requests
+            )
+        if outcome == "complete":
+            assert result["items"][0]["missing"] == ["retired"]
+            assert _stored_models(client, admin_headers) == {
+                ("cred-a", "model-first"),
+                ("cred-a", "model-last"),
+            }
+            preview = client.post(
+                "/api/admin/site-model-discoveries",
+                headers=admin_headers,
+                json={
+                    "base_url": "https://catalog.example",
+                    "protocol": protocol,
+                    "credentials": payload["credentials"],
+                    "credential_ids": ["cred-a"],
+                },
+            )
+            assert preview.status_code == 200, preview.text
+            assert sorted(item["model_name"] for item in preview.json()) == [
+                "model-first",
+                "model-last",
+            ]
+        else:
+            assert result["items"][0]["status"] == "failed"
+            assert _stored_models(client, admin_headers) == {
+                ("cred-a", "model-last"),
+                ("cred-a", "retired"),
+            }
+            assert result["groups"]["removed"] == []
+    finally:
+        run_async(upstream.aclose())
+
+
 def test_model_protocol_defaults_do_not_call_upstream(
     client, admin_headers, monkeypatch
 ) -> None:
@@ -1098,7 +1196,7 @@ def _added_names(result: dict[str, Any]) -> dict[str, tuple[str, ...]]:
     return {item["credential_id"]: tuple(item["added"]) for item in result["items"]}
 
 
-def test_channel_model_sync_keeps_manual_models_when_the_filter_is_empty(
+def test_channel_model_sync_tracks_existing_models_when_the_filter_is_empty(
     client,
     admin_headers,
     monkeypatch,
@@ -1109,10 +1207,12 @@ def test_channel_model_sync_keeps_manual_models_when_the_filter_is_empty(
         _sync_site_payload(models=[_model("manual-only")]),
     )
 
-    async def fail_fetch(_channel: Any) -> list[str]:
-        raise AssertionError("empty filters must not fetch or sync the catalog")
+    upstream_names = ["manual-only", "unselected"]
 
-    _patch_upstream_models(monkeypatch, fail_fetch)
+    async def fetch(_channel: Any) -> list[str]:
+        return list(upstream_names)
+
+    _patch_upstream_models(monkeypatch, fetch)
 
     result = _run_model_sync(client, admin_headers)
     groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
@@ -1122,6 +1222,87 @@ def test_channel_model_sync_keeps_manual_models_when_the_filter_is_empty(
         ("cred-a", "manual-only"),
     }
     assert [group["name"] for group in groups] == ["manual-only"]
+
+    upstream_names.remove("manual-only")
+    _run_model_sync(client, admin_headers)
+    assert _stored_models(client, admin_headers) == set()
+
+    upstream_names.append("manual-only")
+    _run_model_sync(client, admin_headers)
+    assert _stored_models(client, admin_headers) == {("cred-a", "manual-only")}
+
+
+def test_site_without_model_listing_keeps_manual_models_and_skips_sync(
+    client, admin_headers, monkeypatch
+) -> None:
+    import app.gateway.service.tasks.model_discovery as discovery
+
+    payload = _sync_site_payload(
+        supports_model_listing=False,
+        patterns={"cred-a": "*"},
+        models=[_model("manual-model")],
+    )
+    site_id = _create_sync_site(client, admin_headers, payload)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"data": []})
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        result = _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert result["items"] == []
+        assert _stored_models(client, admin_headers) == {("cred-a", "manual-model")}
+        site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+        assert site["supports_model_listing"] is False
+        preview_payload = {
+            "base_url": payload["base_urls"][0]["url"],
+            "supports_model_listing": False,
+            "credentials": payload["credentials"],
+            "credential_ids": ["cred-a"],
+        }
+        for fields in ({}, {"model_pattern": "^model-.*"}):
+            response = client.post(
+                "/api/admin/site-model-discoveries",
+                headers=admin_headers,
+                json={**preview_payload, **fields},
+            )
+            assert response.status_code == 422, response.text
+        preview = client.post(
+            "/api/admin/site-model-discoveries",
+            headers=admin_headers,
+            json={**preview_payload, "model_pattern": "manual-model\nnew-model"},
+        )
+        assert preview.status_code == 200, preview.text
+        assert {item["model_name"] for item in preview.json()} == {
+            "manual-model",
+            "new-model",
+        }
+        payload["protocols"][0]["models"].append(_model("new-model"))
+        saved = client.put(
+            f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+        )
+        assert saved.status_code == 200, saved.text
+        _run_model_sync(client, admin_headers)
+        assert _stored_models(client, admin_headers) == {
+            ("cred-a", "manual-model"),
+            ("cred-a", "new-model"),
+        }
+        assert requests == []
+
+        payload["supports_model_listing"] = True
+        saved = client.put(
+            f"/api/admin/sites/{site_id}", headers=admin_headers, json=payload
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["supports_model_listing"] is True
+        _run_model_sync(client, admin_headers, site_ids=[site_id])
+        assert requests
+        assert _stored_models(client, admin_headers) == set()
+    finally:
+        run_async(upstream.aclose())
 
 
 def test_channel_model_sync_keeps_only_models_matching_the_key_filter(
@@ -1549,34 +1730,120 @@ def test_channel_model_sync_keeps_same_name_targets_for_distinct_protocols(
     }
 
 
+@pytest.mark.parametrize("pattern", ["*", "^gpt-.*$", "gpt-4o\ngpt-4o-mini", ""])
 def test_channel_model_sync_deletes_models_that_leave_the_catalog(
     client,
     admin_headers,
     monkeypatch,
+    pattern,
 ) -> None:
+    import app.gateway.service.tasks.model_discovery as discovery
+
     _create_sync_site(
         client,
         admin_headers,
-        _sync_site_payload(patterns={"cred-a": "*", "cred-b": "*"}),
+        _sync_site_payload(
+            patterns={"cred-a": pattern, "cred-b": pattern},
+            models=[
+                _model(name, credential_id=credential_id)
+                for credential_id in ("cred-a", "cred-b")
+                for name in ("gpt-4o", "gpt-4o-mini")
+            ],
+        ),
     )
-    upstream_models = ["gpt-4o", "gpt-4o-mini"]
-
-    async def fake_fetch(_channel: Any) -> list[str]:
-        return list(upstream_models)
-
-    _patch_upstream_models(monkeypatch, fake_fetch)
-    _run_model_sync(client, admin_headers)
-
-    upstream_models.remove("gpt-4o-mini")
-    result = _run_model_sync(client, admin_headers)
-
-    assert {
-        (item["credential_id"], tuple(item["missing"])) for item in result["items"]
-    } == {("cred-a", ("gpt-4o-mini",)), ("cred-b", ("gpt-4o-mini",))}
-    assert _stored_models(client, admin_headers) == {
-        ("cred-a", "gpt-4o"),
-        ("cred-b", "gpt-4o"),
+    upstream_models = {
+        "secret-a": ["gpt-4o", "gpt-4o-mini"],
+        "secret-b": ["gpt-4o", "gpt-4o-mini"],
     }
+    unavailable_keys: set[str] = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        key = (
+            request.headers.get("authorization", "").removeprefix("Bearer ")
+            or request.headers.get("x-api-key")
+            or request.headers.get("x-goog-api-key")
+        )
+        if key in unavailable_keys:
+            return httpx.Response(503, json={"error": {"message": "unavailable"}})
+        return httpx.Response(
+            200, json={"data": [{"id": name} for name in upstream_models[key]]}
+        )
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(discovery, "resolve_http_client", lambda _proxy: upstream)
+    try:
+        _run_model_sync(client, admin_headers)
+        groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+        manual_group = next(group for group in groups if group["name"] == "gpt-4o-mini")
+        saved = client.put(
+            f"/api/admin/model-groups/{manual_group['id']}",
+            headers=admin_headers,
+            json={
+                "items": [
+                    {
+                        field: item[field]
+                        for field in ("channel_id", "credential_id", "model_name")
+                    }
+                    for item in manual_group["items"]
+                ]
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        assert {item["source"] for item in saved.json()["items"]} == {"manual"}
+
+        unavailable_keys.add("secret-a")
+        failed = _run_model_sync(client, admin_headers)
+        assert {
+            (item["credential_id"], item["status"]) for item in failed["items"]
+        } == {
+            ("cred-a", "failed"),
+            ("cred-b", "unchanged"),
+        }
+        assert failed["groups"]["removed"] == []
+        kept = client.get(
+            f"/api/admin/model-groups/{manual_group['id']}", headers=admin_headers
+        ).json()
+        assert {item["credential_id"] for item in kept["items"]} == {"cred-a", "cred-b"}
+
+        unavailable_keys.clear()
+        upstream_models["secret-a"].clear()
+        result = _run_model_sync(client, admin_headers)
+
+        assert {
+            (item["credential_id"], tuple(item["missing"])) for item in result["items"]
+        } == {("cred-a", ("gpt-4o", "gpt-4o-mini")), ("cred-b", ())}
+        assert _stored_models(client, admin_headers) == {
+            ("cred-b", "gpt-4o"),
+            ("cred-b", "gpt-4o-mini"),
+        }
+        groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+        assert {
+            (group["name"], item["credential_id"], item["model_name"], item["state"])
+            for group in groups
+            for item in group["items"]
+        } == {
+            ("gpt-4o", "cred-b", "gpt-4o", "ready"),
+            ("gpt-4o", "cred-b", "gpt-4o-mini", "ready"),
+            ("gpt-4o-mini", "cred-b", "gpt-4o-mini", "ready"),
+        }
+        assert {
+            (
+                item["group_name"],
+                item["credential_id"],
+                item["model_name"],
+                item["source"],
+            )
+            for item in result["groups"]["removed"]
+        } == {
+            ("gpt-4o", "cred-a", "gpt-4o", "placement"),
+            ("gpt-4o", "cred-a", "gpt-4o-mini", "placement"),
+            ("gpt-4o-mini", "cred-a", "gpt-4o-mini", "manual"),
+        }
+        repeated = _run_model_sync(client, admin_headers)
+        assert {item["status"] for item in repeated["items"]} == {"unchanged"}
+        assert repeated["groups"]["removed"] == []
+    finally:
+        run_async(upstream.aclose())
 
 
 def test_channel_model_sync_keeps_admin_settings_on_existing_rows(
@@ -1686,6 +1953,8 @@ def test_model_rules_preview_save_and_sync_explicit_names(
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.headers.get("authorization") == "Bearer secret-b":
+            return httpx.Response(200, json={"data": [{"id": "other-key"}]})
         if not upstream_available:
             return httpx.Response(503, json={"error": {"message": "unavailable"}})
         return httpx.Response(
@@ -1735,10 +2004,16 @@ def test_model_rules_preview_save_and_sync_explicit_names(
         }
         assert _stored_models(client, admin_headers) == {("cred-b", "other-key")}
         save_models(response.json())
+        assert requests == []
         _run_model_sync(
             client, admin_headers, site_ids=[site_id], credential_ids=["cred-a"]
         )
-        assert requests == []
+        assert requests
+        assert _stored_models(client, admin_headers) == {("cred-b", "other-key")}
+        upstream_names.extend(["private.v1", "claude-private"])
+        _run_model_sync(
+            client, admin_headers, site_ids=[site_id], credential_ids=["cred-a"]
+        )
         explicit_models = {
             ("cred-a", "private.v1"),
             ("cred-a", "claude-private"),
@@ -1778,7 +2053,7 @@ def test_model_rules_preview_save_and_sync_explicit_names(
         upstream_available = True
         upstream_names.clear()
         _run_model_sync(client, admin_headers, site_ids=[site_id])
-        assert _stored_models(client, admin_headers) == explicit_models
+        assert _stored_models(client, admin_headers) == {("cred-b", "other-key")}
     finally:
         run_async(upstream.aclose())
 
@@ -1913,7 +2188,9 @@ def test_model_rule_survives_a_backup_round_trip(client, admin_headers) -> None:
     _create_sync_site(
         client,
         admin_headers,
-        _sync_site_payload(patterns={"cred-a": "private.v1\n^gpt-4.*"}),
+        _sync_site_payload(
+            patterns={"cred-a": "private.v1\n^gpt-4.*"}, supports_model_listing=False
+        ),
     )
 
     exported = client.get("/api/admin/backups/export", headers=admin_headers)
@@ -1929,11 +2206,26 @@ def test_model_rule_survives_a_backup_round_trip(client, admin_headers) -> None:
     assert imported.status_code == 200, imported.text
 
     site = client.get("/api/admin/sites", headers=admin_headers).json()[0]
+    assert site["supports_model_listing"] is False
     patterns = {
         credential["id"]: credential["model_pattern"]
         for credential in site["credentials"]
     }
     assert patterns == {"cred-a": "private.v1\n^gpt-4.*", "cred-b": ""}
+
+    del bundle["sites"][0]["supports_model_listing"]
+    imported = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("legacy.json", json.dumps(bundle), "application/json")},
+    )
+    assert imported.status_code == 200, imported.text
+    assert (
+        client.get("/api/admin/sites", headers=admin_headers).json()[0][
+            "supports_model_listing"
+        ]
+        is True
+    )
 
 
 def test_sync_removes_group_members_when_a_rule_stops_matching(

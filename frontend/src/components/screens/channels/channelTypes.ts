@@ -32,6 +32,7 @@ export type FormProtocolConfig = {
 
 export type FormState = {
   name: string;
+  supports_model_listing: boolean;
   tags: string[];
   newApiKeysLines: string;
   base_urls: FormBaseUrl[];

@@ -79,36 +79,7 @@ export function useChannelSave({
     return site;
   }
 
-  function credentialIdsForModelSync() {
-    const nextCredentials = toPayload(editor.form).credentials;
-    if (!editor.editingSiteId) {
-      return nextCredentials
-        .filter((credential) => (credential.model_pattern ?? "").trim())
-        .map((credential) => credential.id)
-        .filter((id): id is string => Boolean(id));
-    }
-    const previousSite = queryClient
-      .getQueryData<Site[]>(["sites"])
-      ?.find((item) => item.id === editor.editingSiteId);
-    if (!previousSite) return [];
-    const previousPatterns = new Map(
-      previousSite.credentials.map((credential) => [
-        credential.id,
-        (credential.model_pattern ?? "").trim(),
-      ]),
-    );
-    return nextCredentials
-      .filter(
-        (credential) =>
-          credential.id != null &&
-          (credential.model_pattern ?? "").trim() !==
-            previousPatterns.get(credential.id),
-      )
-      .map((credential) => credential.id)
-      .filter((id): id is string => Boolean(id));
-  }
-
-  async function syncSiteModels(siteId: string, credentialIds?: string[]) {
+  async function syncSiteModels(siteId: string) {
     try {
       const result = await apiRequest<ChannelModelSyncResponse>(
         "/admin/channel-model-sync",
@@ -116,7 +87,6 @@ export function useChannelSave({
           method: "POST",
           body: JSON.stringify({
             site_ids: [siteId],
-            ...(credentialIds ? { credential_ids: credentialIds } : {}),
           }),
         },
       );
@@ -159,7 +129,6 @@ export function useChannelSave({
     event.preventDefault();
     if (!editor.validateSiteForm()) return;
     const editing = Boolean(editor.editingSiteId);
-    const credentialIdsToSync = credentialIdsForModelSync();
     setIsSaving(true);
     try {
       const site = await persistSite();
@@ -178,8 +147,8 @@ export function useChannelSave({
             ? "渠道已创建"
             : "Channel created",
       );
-      if (site.enabled && credentialIdsToSync.length > 0) {
-        void syncSiteModels(site.id, credentialIdsToSync);
+      if (site.enabled && site.supports_model_listing) {
+        void syncSiteModels(site.id);
       } else {
         void invalidateChannelData();
       }

@@ -23,7 +23,7 @@ _INLINE_MODIFIER = re.compile(r"\(\?([aiLmsux]+)\)")
 class ModelPatternKind(str, Enum):
     """How a filter should be applied."""
 
-    # Empty: leave the current concrete model rows unchanged.
+    # 空规则不选入新模型；同步入口会将已有模型转为精确跟踪规则。
     EMPTY = "empty"
     # "*": every upstream model passes.
     ALL = "all"

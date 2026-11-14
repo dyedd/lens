@@ -74,6 +74,7 @@ def prepare_site_import(
                 name=item.name.strip(),
                 tags=item.tags,
                 proxy_mode=item.proxy_mode,
+                supports_model_listing=item.supports_model_listing,
                 channel_proxy=item.channel_proxy.strip(),
                 headers=item.headers,
                 param_override=item.param_override,

@@ -23,6 +23,7 @@ export function ChannelModelPatternDialog({
   onOpenChange,
   onSubmit,
   credentialOptions,
+  supportsModelListing,
 }: {
   open: boolean;
   locale: Locale;
@@ -33,6 +34,7 @@ export function ChannelModelPatternDialog({
     signal: AbortSignal,
   ) => Promise<boolean>;
   credentialOptions: Array<{ id: string; label: string; pattern: string }>;
+  supportsModelListing: boolean;
 }) {
   const [credentialId, setCredentialId] = useState(
     credentialOptions[0]?.id ?? "",
@@ -89,9 +91,13 @@ export function ChannelModelPatternDialog({
         className="max-w-md"
         title={locale === "zh-CN" ? "模型规则" : "Model rule"}
         description={
-          locale === "zh-CN"
-            ? "每行一个模型名或正则。模型名直接加入；正则和 * 从上游匹配。"
-            : "One model name or regex per line. Names are added directly; regex and * match upstream models."
+          supportsModelListing
+            ? locale === "zh-CN"
+              ? "每行一个模型名或正则，正则从上游目录匹配。"
+              : "One model name or regex per line. Regex matches the upstream catalog."
+            : locale === "zh-CN"
+              ? "每行一个模型名。"
+              : "One model name per line."
         }
         footer={
           <>
@@ -150,21 +156,35 @@ export function ChannelModelPatternDialog({
           ) : null}
           <Field data-invalid={patternError || undefined}>
             <FieldLabel htmlFor="channel-model-pattern">
-              {locale === "zh-CN" ? "模型名 / 正则" : "Model names / regex"}
+              {supportsModelListing
+                ? locale === "zh-CN"
+                  ? "模型名 / 正则"
+                  : "Model names / regex"
+                : locale === "zh-CN"
+                  ? "模型名"
+                  : "Model names"}
             </FieldLabel>
             <Textarea
               id="channel-model-pattern"
               value={pattern}
               onChange={(event) => setPattern(event.target.value)}
-              placeholder={"gpt-4o\nclaude-3.5-sonnet\n^gemini-.*"}
+              placeholder={
+                supportsModelListing
+                  ? "gpt-4o\nclaude-3.5-sonnet\n^gemini-.*"
+                  : "gpt-4o\nclaude-3.5-sonnet"
+              }
               disabled={isApplying}
               aria-invalid={patternError || undefined}
               className="max-h-48 font-mono placeholder:font-sans"
             />
             <FieldDescription>
-              {locale === "zh-CN"
-                ? "应用后更新当前列表，保存后生效。留空停止自动同步，保留当前模型。"
-                : "Apply updates this list; save to persist. Leave empty to stop syncing and keep current models."}
+              {supportsModelListing
+                ? locale === "zh-CN"
+                  ? "保存后自动同步。留空则跟踪当前模型。"
+                  : "Models sync after saving. Leave empty to track current models."
+                : locale === "zh-CN"
+                  ? "保存后生效，不自动同步。"
+                  : "Save to apply. Automatic sync is off."}
             </FieldDescription>
             {patternError ? (
               <p className="text-xs text-destructive">

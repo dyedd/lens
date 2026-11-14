@@ -148,6 +148,7 @@ class ChannelStore:
         credential_id: str,
         *,
         upstream_names: set[str],
+        fallback_pattern: str = "",
         upstream_context_windows: Mapping[str, int] | None = None,
         upstream_protocols: Mapping[str, tuple[ProtocolKind, ...]] | None = None,
         context_windows: Mapping[str, int] | None = None,
@@ -184,6 +185,14 @@ class ChannelStore:
                     "Credential is not bound to protocol config "
                     f"{protocol_config_id}: {credential_id}"
                 )
+
+            credential = next(row for row in credential_rows if row.id == credential_id)
+            has_pattern_changes = bool(
+                fallback_pattern and not credential.model_pattern
+            )
+            if has_pattern_changes:
+                # 记录空规则的既有目标，使模型下线后再次上架时仍能同步恢复。
+                credential.model_pattern = fallback_pattern
 
             config_rows = (
                 (
@@ -237,7 +246,7 @@ class ChannelStore:
                     next_sort_order += 1
                 added.add(name)
 
-            if added or removed or has_context_changes:
+            if added or removed or has_context_changes or has_pattern_changes:
                 await bump_channel_config_revision(session)
                 await session.commit()
             return UpstreamModelChanges(
