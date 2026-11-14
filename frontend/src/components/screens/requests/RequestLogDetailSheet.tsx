@@ -6,6 +6,7 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/Sheet";
@@ -290,6 +291,8 @@ export function RequestLogDetailSheet({
   timeZone,
   relayLogBodyEnabled,
   onClose,
+  onCancel,
+  isCancelling,
 }: {
   item: RequestLogItem | null;
   detail: RequestLogDetail | undefined;
@@ -299,6 +302,8 @@ export function RequestLogDetailSheet({
   timeZone: string;
   relayLogBodyEnabled: boolean;
   onClose: () => void;
+  onCancel: (id: number) => void;
+  isCancelling: boolean;
 }) {
   const record = detail ?? item;
   const modelName = record ? getResolvedGroupName(record) : "";
@@ -538,6 +543,19 @@ export function RequestLogDetailSheet({
             </>
           ) : null}
         </div>
+        {record?.can_cancel ? (
+          <SheetFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isCancelling}
+              onClick={() => onCancel(record.id)}
+            >
+              {titleForLocale(locale, "取消请求", "Cancel request")}
+            </Button>
+          </SheetFooter>
+        ) : null}
       </SheetContent>
     </Sheet>
   );

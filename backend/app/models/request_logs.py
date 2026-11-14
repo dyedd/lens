@@ -61,6 +61,7 @@ class RequestLogItem(StrictBaseModel):
     status_code: int | None = None
     success: bool
     lifecycle_status: RequestLogLifecycleStatus
+    can_cancel: bool = False
     is_stream: bool = False
     first_token_latency_ms: int = 0
     latency_ms: int

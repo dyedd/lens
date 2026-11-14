@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import nullcontext
 
+import anyio
 import httpx
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
-from starlette.types import Receive, Scope, Send
+from starlette.types import Message, Receive, Scope, Send
 
+from ....core.errors import RequestCancelledError
 from ....models.protocols import ProtocolKind
 from ...router.cooldown import ErrorCategory
-from ..app_state import logger
+from ..app_state import app_state, logger
+from ..error_responses import stream_error_frame
 from ..proxy.routing_plan import gateway_timeout_scope
 from ..runtime_types import (
     GatewayTimeoutError,
@@ -38,6 +42,7 @@ class FinalizingStreamingResponse(StreamingResponse):
         status_code: int,
         media_type: str | None,
         headers: dict[str, str],
+        client_protocol: ProtocolKind,
     ) -> None:
         super().__init__(
             content,
@@ -47,36 +52,79 @@ class FinalizingStreamingResponse(StreamingResponse):
         )
         self._stream_capture = stream_capture
         self._upstream_response = upstream_response
+        self._client_protocol = client_protocol
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         background = self.background
         self.background = None
+        log_id = self._stream_capture.request_log_id
+        cancellation = (
+            app_state.active_requests.get(log_id) if log_id is not None else None
+        )
+        response_started = False
+        cancellation_error: RequestCancelledError | None = None
+
+        async def track_send(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
         try:
-            await super().__call__(scope, receive, send)
+            with cancellation.watch() if cancellation else nullcontext():
+                await super().__call__(scope, receive, track_send)
+        except RequestCancelledError as exc:
+            self._stream_capture.is_admin_cancelled = True
+            cancellation_error = exc
         except BaseException:
             try:
                 await self._finalize(background)
             except BaseException:
                 logger.exception("Failed to finalize streaming response")
             raise
+        finally:
+            if log_id is not None:
+                app_state.active_requests.pop(log_id, None)
         await self._finalize(background)
+        if cancellation_error is not None:
+            if not response_started:
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": cancellation_error.status_code,
+                        "headers": self.raw_headers,
+                    }
+                )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": stream_error_frame(
+                        protocol=self._client_protocol,
+                        message=str(cancellation_error),
+                        error_type=cancellation_error.error_type,
+                        status_code=cancellation_error.status_code,
+                    ),
+                    "more_body": False,
+                }
+            )
 
     async def _finalize(self, background: BackgroundTask | None) -> None:
-        if (
-            not self._stream_capture.is_client_stream_completed
-            and not self._stream_capture.errors
-        ):
-            self._stream_capture.is_client_disconnected = True
-        try:
-            close_iterator = getattr(self.body_iterator, "aclose", None)
-            if close_iterator is not None:
-                await close_iterator()
-        finally:
+        with anyio.CancelScope(shield=True):
+            if (
+                not self._stream_capture.is_client_stream_completed
+                and not self._stream_capture.errors
+            ):
+                self._stream_capture.is_client_disconnected = True
             try:
-                await self._upstream_response.aclose()
+                close_iterator = getattr(self.body_iterator, "aclose", None)
+                if close_iterator is not None:
+                    await close_iterator()
             finally:
-                if background is not None:
-                    await background()
+                try:
+                    await self._upstream_response.aclose()
+                finally:
+                    if background is not None:
+                        await background()
 
 
 async def stream_upstream_iterator(

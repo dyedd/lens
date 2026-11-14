@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -119,7 +120,15 @@ export function useRequestsScreen() {
     ],
     queryFn: () => apiRequest<RequestLogPage>(requestLogsQuery),
     placeholderData: keepPreviousData,
-    refetchInterval: page === 0 ? 5000 : false,
+    refetchInterval: (query) =>
+      page === 0 ||
+      query.state.data?.items.some(
+        (item) =>
+          item.lifecycle_status === "connecting" ||
+          item.lifecycle_status === "streaming",
+      )
+        ? 5000
+        : false,
   });
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -134,6 +143,33 @@ export function useRequestsScreen() {
     enabled: detailId !== null,
     staleTime: 60_000,
     gcTime: REQUEST_LOG_DETAIL_GC_TIME,
+    refetchInterval: (query) =>
+      query.state.data?.lifecycle_status === "connecting" ||
+      query.state.data?.lifecycle_status === "streaming"
+        ? 2000
+        : false,
+  });
+  const cancelRequest = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/admin/request-logs/${id}/cancel`, { method: "POST" }),
+    onSuccess: () => {
+      toast.success(
+        titleForLocale(locale, "已发送取消请求", "Cancellation requested"),
+      );
+    },
+    onError: (error) => {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          titleForLocale(locale, "取消请求失败", "Failed to cancel request"),
+        ),
+      );
+    },
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["request-logs"] }),
+        queryClient.invalidateQueries({ queryKey: ["request-log-detail"] }),
+      ]),
   });
   const modelPrefixOptions = useMemo(
     () => buildModelPrefixOptions(logsQuery.data?.model_names ?? [], locale),
@@ -269,6 +305,7 @@ export function useRequestsScreen() {
   }
   return {
     activeFilterCount,
+    cancelRequest,
     agent,
     period,
     model,

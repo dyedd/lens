@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.models.request_logs import RequestLogInput
 
-from ....core.errors import RoutingError
+from ....core.errors import RequestCancelledError, RoutingError
 from ....core.model_name_parser import ParsedModelName, parse_model_name
 from ....models.channels import ChannelConfig
 from ....models.gateway_keys import GatewayApiKey
@@ -32,6 +32,7 @@ from ..runtime_types import (
     RouteResolution,
     RoutingPlan,
 )
+from ..streaming.transport import FinalizingStreamingResponse
 from ..upstream_support import (
     default_lens_user_agent,
     is_generic_user_agent,
@@ -622,6 +623,8 @@ async def proxy_protocol(
         request_content=request_content,
     )
     plan: RoutingPlan | None = None
+    is_streaming = False
+    app_state.active_requests[log_ctx.request_log_id] = log_ctx.cancellation
     try:
         access_error = await _check_gateway_model_access(
             protocol=protocol,
@@ -695,7 +698,8 @@ async def proxy_protocol(
             )
         )
         if wait_seconds is not None:
-            await asyncio.sleep(wait_seconds)
+            with log_ctx.cancellation.watch():
+                await asyncio.sleep(wait_seconds)
             retry_resolution = await _resolve_proxy_route(
                 channels=channels,
                 protocol=protocol,
@@ -719,6 +723,7 @@ async def proxy_protocol(
                 plan = retry_resolution.plan
                 response = await attempt(plan, retry_resolution.selection)
         if response is not None:
+            is_streaming = isinstance(response, FinalizingStreamingResponse)
             return response
 
         return await _finalize_proxy_failure(
@@ -729,6 +734,14 @@ async def proxy_protocol(
             failures=failures,
             is_stream_body=is_stream_body,
         )
+    except RequestCancelledError as exc:
+        await log_ctx.record_cancelled(str(exc), is_stream=is_stream_body)
+        return protocol_error_response(
+            protocol=protocol,
+            status_code=exc.status_code,
+            error_type=exc.error_type,
+            message=str(exc),
+        )
     except Exception as exc:
         await _log_unexpected_proxy_error(
             log_ctx=log_ctx,
@@ -738,3 +751,6 @@ async def proxy_protocol(
             exc=exc,
         )
         raise
+    finally:
+        if not is_streaming:
+            app_state.active_requests.pop(log_ctx.request_log_id, None)

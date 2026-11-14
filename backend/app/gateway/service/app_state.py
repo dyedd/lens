@@ -27,6 +27,7 @@ from ...persistence.repositories import (
 from ..cronjob_runner import CronjobRunner
 from ..router import GatewayRouter
 from ..router.cooldown import CooldownPolicy
+from .request_cancellation import RequestCancellation
 
 TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
@@ -81,6 +82,7 @@ class AppState:
     def __init__(self) -> None:
         self.http = self._create_http_client()
         self._proxy_http_clients: dict[str, httpx.AsyncClient] = {}
+        self.active_requests: dict[int, RequestCancellation] = {}
         self.engine = create_engine(settings.database_url)
         self.session_factory = create_session_factory(self.engine)
         self.admin_repo = AdminRepository(self.session_factory)

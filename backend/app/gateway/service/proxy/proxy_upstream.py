@@ -8,6 +8,7 @@ from email.utils import parsedate_to_datetime
 from time import perf_counter
 from typing import Any
 
+import anyio
 import httpx
 from fastapi import Response
 
@@ -396,6 +397,7 @@ def _build_stream_result(
             status_code=response.status_code,
             media_type=stream_media,
             headers=passthrough_headers(response.headers),
+            client_protocol=client_protocol or channel.protocol,
         ),
         is_stream=True,
         status_code=response.status_code,
@@ -629,7 +631,8 @@ async def _build_channel_result(
         return result, response
     except BaseException:
         if response is not original_response:
-            await response.aclose()
+            with anyio.CancelScope(shield=True):
+                await response.aclose()
         raise
 
 
@@ -714,7 +717,8 @@ async def execute_upstream_request(
         ) from exc
     finally:
         if response is not None:
-            await response.aclose()
+            with anyio.CancelScope(shield=True):
+                await response.aclose()
 
 
 async def _send_upstream(

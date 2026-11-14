@@ -1,6 +1,7 @@
 import { CornerDownRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import {
   Table,
   TableBody,
@@ -39,6 +40,8 @@ type Props = {
   emptyLabel: string;
   timeZone: string;
   onOpenDetail: (id: number) => void;
+  onCancel: (id: number) => void;
+  cancellingId?: number;
 };
 
 function isRunning(item: RequestLogItem) {
@@ -270,6 +273,8 @@ export function RequestsTable({
   emptyLabel,
   timeZone,
   onOpenDetail,
+  onCancel,
+  cancellingId,
 }: Props) {
   const hasRunning = items.some(isRunning);
   const [now, setNow] = useState(() => Date.now());
@@ -350,6 +355,20 @@ export function RequestsTable({
                   locale={locale}
                   errorMessage={item.error_message}
                 />
+                {item.can_cancel ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    disabled={cancellingId === item.id}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onCancel(item.id);
+                    }}
+                  >
+                    {titleForLocale(locale, "取消请求", "Cancel request")}
+                  </Button>
+                ) : null}
               </TableCell>
               <TableCell>
                 <UsageCell item={item} locale={locale} pending={running} />

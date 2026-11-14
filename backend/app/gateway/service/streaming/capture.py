@@ -51,6 +51,7 @@ class StreamCapture:
     is_client_stream_completed: bool = False
     protocol_completed: bool = False
     is_client_disconnected: bool = False
+    is_admin_cancelled: bool = False
     first_token_update_task: asyncio.Task[None] | None = None
     parse_errors: list[str] = field(default_factory=list)
     input_tokens: int = 0

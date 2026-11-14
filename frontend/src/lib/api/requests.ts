@@ -39,6 +39,7 @@ export type RequestLogItem = {
   status_code?: number | null;
   success: boolean;
   lifecycle_status: RequestLogLifecycleStatus;
+  can_cancel: boolean;
   is_stream: boolean;
   first_token_latency_ms: number;
   latency_ms: number;
