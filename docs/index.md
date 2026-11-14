@@ -26,9 +26,6 @@ features:
   - title: 查看请求
     details: 从概览查看用量，在请求日志中检查耗时、费用和每次上游尝试。
     link: /guide/monitoring
-  - title: 扩展网关
-    details: 用 Python 插件改写请求和响应、管理上游凭据，或观察完成的请求。
-    link: /development/plugins
 ---
 
 ## 从这里开始
@@ -39,8 +36,8 @@ features:
 | 接入服务商并设置主备模型 | [站点与模型](./guide/sites) · [模型组](./guide/model-groups) |
 | 给客户端配置 URL、Key 和模型名 | [客户端接入](./guide/clients) |
 | 排查失败、冷却和费用 | [用量与请求日志](./guide/monitoring) |
-| 备份、升级、安装插件 | [设置与维护](./guide/maintenance) |
-| 修改代码或开发插件 | [开发环境](./development/setup) · [系统架构](./development/architecture) · [插件开发](./development/plugins) |
+| 备份与升级 | [设置与维护](./guide/maintenance) |
+| 修改代码 | [开发环境](./development/setup) · [系统架构](./development/architecture) |
 
 ## 管理界面
 

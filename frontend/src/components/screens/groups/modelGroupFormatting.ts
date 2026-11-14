@@ -16,13 +16,6 @@ export const STRATEGY_OPTIONS: Array<{
   { value: "round_robin", zh: "平滑轮询", en: "Round Robin" },
 ];
 
-/** 按原顺序返回去重后的插件策略标识。 */
-export function buildPluginStrategyIds(strategies: RoutingStrategy[]) {
-  return Array.from(new Set(strategies)).filter(
-    (strategy) => !STRATEGY_OPTIONS.some((option) => option.value === strategy),
-  );
-}
-
 /** Return the localized label for a routing strategy. */
 export function strategyLabel(
   strategy: RoutingStrategy,

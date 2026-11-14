@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   lang: "zh-CN",
   title: "Lens",
-  description: "Lens 多协议 LLM 网关：部署、使用、架构与插件开发文档。",
+  description: "Lens 多协议 LLM 网关：部署、使用与架构文档。",
   base: "/lens/",
   cleanUrls: true,
   lastUpdated: true,
@@ -36,7 +36,6 @@ export default defineConfig({
         items: [
           { text: "搭建开发环境", link: "/development/setup" },
           { text: "系统架构", link: "/development/architecture" },
-          { text: "插件开发", link: "/development/plugins" },
           { text: "维护与发布文档", link: "/development/documentation" },
         ],
       },

@@ -12,13 +12,13 @@ Lens 把“客户端要哪个模型”和“实际调用哪个供应商”分开
 
 [![管理界面通过管理服务保存配置，推理客户端通过请求编排访问路由器与上游，二者使用同一个数据库](/images/architecture.svg)](/images/architecture.svg)
 
-*模块关系示意。框中的请求编排、路由器和持久化层是同一 Lens 进程内的模块。图中省略插件与计划任务，后文分别说明。本页机制图均可点击查看原图。*
+*模块关系示意。框中的请求编排、路由器和持久化层是同一 Lens 进程内的模块。本页机制图均可点击查看原图。*
 
 | 组成部分 | 输入与输出 | 负责的决定 |
 | --- | --- | --- |
 | 管理界面与管理 API | 表单 / 查询条件 → 配置、日志与统计 | 用户要保存或查看什么；管理 API 校验并调用仓储 |
 | 推理入口 | HTTP 路径、网关 Key、请求体 → 已识别协议的请求 | 认证、读取 JSON 或上传表单，识别客户端协议 |
-| 请求编排 | 请求、运行设置、组成员 → 最终响应 | 在什么阶段调用路由、转换、上游、插件和日志 |
+| 请求编排 | 请求、运行设置、组成员 → 最终响应 | 在什么阶段调用路由、转换、上游和日志 |
 | 路由器 | 候选、分发策略、健康与冷却状态 → 本次调用目标 | 选谁先调用；失败后选谁；是否允许恢复探测 |
 | 协议转换与上游传输 | 一次调用目标与请求 → 上游结果 | 构造 URL、鉴权、协议字段；发送并读取响应 |
 | 持久化层 | 领域对象与查询条件 → 数据库记录 | 配置和日志如何写入、查询与恢复 |
@@ -98,7 +98,7 @@ Content-Type: application/json
 
 `/v1/responses` 进入 `proxy_openai_responses`，依赖 `get_current_gateway_key` 检查 Key 是否存在、启用、到期或达到费用上限。管理端 JWT 和供应商 Key 不用于这一步。
 
-入口把请求交给 `proxy_protocol`。编排层读取渠道与运行设置，创建本次请求的共享超时预算，以及一份插件扩展点快照。读取出有效模型名后创建“连接中”日志，再运行请求改写插件。如果插件改了 `model`，模型权限检查和后续路由使用改写后的模型名；请求正文日志保留客户端原始内容。
+入口把请求交给 `proxy_protocol`。编排层读取渠道与运行设置，创建本次请求的共享超时预算。读取出有效模型名后创建“连接中”日志，再检查模型权限并生成路由计划；请求正文日志保留客户端原始内容。
 
 认证失败发生在推理编排之前，通常不会产生这里的请求日志行。因此，排查“客户端收到 401、日志里却没有请求”时，应先检查网关 Key，而不是直接检查上游。实现见 [proxy_routes.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/proxy_routes.py)、[auth.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/auth.py) 和 [proxy_flow.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/proxy/proxy_flow.py)。
 
@@ -112,7 +112,7 @@ Responses input: "hello" → 文本消息、工具等公共字段 → Chat messa
 model: daily-chat                                      model: gpt-6.1-sol
 ```
 
-转换后依次应用全局、渠道、请求模型组的参数规则，后面的规则可以覆盖前面的字段；模型名由选中的成员决定。再生成上游 URL 和鉴权头，执行凭据钩子、出站请求钩子，最后通过共享 HTTP 客户端发送。
+转换后依次应用全局、渠道、请求模型组的参数规则，后面的规则可以覆盖前面的字段；模型名由选中的成员决定。再生成上游 URL 和鉴权头，最后通过共享 HTTP 客户端发送。
 
 换到 B 时，会从本次请求的输入重新生成 B 的请求，不会把 A 已经转换或改写过的请求体再改一遍。这样 A、B 使用不同协议或参数规则时，也能各自构造请求。实现见 [proxy_attempt.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/proxy/proxy_attempt.py)、[upstream_request.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/upstream_request.py) 和 [参数规则顺序](https://github.com/dyedd/lens/blob/main/backend/app/core/upstream_rules.py)。
 
@@ -135,9 +135,9 @@ A 的 429 被记录为一次失败尝试。默认策略将它归为 Key 限流�
 
 ### B 成功后怎样返回与记账
 
-B 返回 Chat 回复。Lens 先提取上游用量，再把回复转换为客户端使用的 Responses 格式，执行非流式响应钩子，记录成功结果并返回。
+B 返回 Chat 回复。Lens 先提取上游用量，再把回复转换为客户端使用的 Responses 格式，记录成功结果并返回。
 
-本次请求保留同一个日志 ID：请求组为 `daily-chat`，执行组为 `gpt-6.1-sol`，最终渠道为 B；`attempts` 中保留 A 的失败和 B 的成功。客户端不需要理解 A 的鉴权或 Chat 格式。请求观察插件在终态日志写入后，异步收到一次摘要。
+本次请求保留同一个日志 ID：请求组为 `daily-chat`，执行组为 `gpt-6.1-sol`，最终渠道为 B；`attempts` 中保留 A 的失败和 B 的成功。客户端不需要理解 A 的鉴权或 Chat 格式。
 
 转换只负责已支持的协议字段与事件，不能为上游补出不存在的模型能力。Chat、Responses、Anthropic 和 Gemini 对话协议通过统一结构连接；Embeddings、Images、Rerank 使用各自路径。工具、图像和流式行为需要按实际所用模型验证。转换入口见 [converters](https://github.com/dyedd/lens/tree/main/backend/app/gateway/converters)，日志写入见 [RequestLogger](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/request_logger.py)。
 
@@ -149,7 +149,7 @@ B 返回 Chat 回复。Lens 先提取上游用量，再把回复转换为客户�
 | --- | --- | --- |
 | 尚未向客户端交付响应 | 在共享预算内检测上游错误并继续选择候选 | 可以尝试下一成员 |
 | 已经开始交付流式响应 | 持续转发或转换事件，按空闲超时等待下一块数据 | 不能撤回已发送内容，再用另一模型重放整个请求 |
-| 流结束、报错或客户端断开 | 关闭上游响应，写入最终状态、用量和尝试记录，释放本次插件引用 | 日志可能为成功、失败或已取消；HTTP 200 本身不代表流成功结束 |
+| 流结束、报错或客户端断开 | 关闭上游响应，写入最终状态、用量和尝试记录 | 日志可能为成功、失败或已取消；HTTP 200 本身不代表流成功结束 |
 
 `stream_idle_timeout_seconds` 控制首个有效输出之后的相邻数据块等待时间。它与首响应预算分别处理“还没有结果”和“生成过程中停住”这两类情况。
 
@@ -159,7 +159,7 @@ B 返回 Chat 回复。Lens 先提取上游用量，再把回复转换为客户�
 
 ## 状态由谁保存
 
-`AppState` 是一个 FastAPI 应用实例拥有的共享对象。它持有仓储、路由器、HTTP 连接池、插件注册表和计划任务运行器。请求不会各自新建整套这些资源，但会创建自己的日志上下文、失败账本和插件请求状态。
+`AppState` 是一个 FastAPI 应用实例拥有的共享对象。它持有仓储、路由器、HTTP 连接池和计划任务运行器。请求不会各自新建整套这些资源，但会创建自己的日志上下文和失败账本。
 
 | 状态 | 所有者与生命周期 | 配置或进程变化时 |
 | --- | --- | --- |
@@ -167,16 +167,9 @@ B 返回 Chat 回复。Lens 先提取上游用量，再把回复转换为客户�
 | 请求日志、用量与统计 | 请求日志仓储 | 持久化；清理与统计归档由计划任务处理 |
 | 冷却、健康窗口、轮询游标、成功成员复用 | 当前进程的 `GatewayRouter` | 重启后重建；相关渠道配置改变时清理受影响状态 |
 | 直连和代理 HTTP 连接池 | `AppState` | 按代理地址复用，应用关闭时释放 |
-| 插件源文件 | `data/plugins/` 或指定目录 | 文件变化触发扫描与重新注册 |
-| 插件启停和设置 | 数据库与插件注册表 | 新注册使用新设置；在途请求保留原扩展点快照 |
 | 一次请求的候选、已尝试目标、截止时间 | 请求编排层 | 请求结束后释放 |
-| 各插件的 `ctx.state` | 本次 `PluginRun` | 同一插件在这次请求的钩子间共享，不跨请求保存 |
 
 例如 worker 1 遇到 A 限流，会更新自己的冷却状态；worker 2 不会因为共享了数据库就自动得到这条内存状态。因此，增加 worker 或部署多个副本，会增加独立的路由状态和连接池，不能把单进程的恢复探测理解为整个集群只探测一次。
-
-插件注册表也属于当前进程。启停或保存设置会写入数据库，并立即刷新接收这次管理请求的进程；当前实现没有向其他进程广播配置变更。其他进程在重新启动、加载持久化插件配置后才取得这些值。目录监听和“重新扫描”只重新读取插件文件，不承担跨进程设置同步。对应入口见 [AppState](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/app_state.py) 和 [PluginRegistry](https://github.com/dyedd/lens/blob/main/backend/app/plugins/registry.py)。
-
-插件回调也可能并发处理多个请求。每次请求的数据放入 `ctx.state`；跨请求资源放在注册时创建的对象中，并由插件自己处理并发和清理。详细生命周期见 [插件开发](./plugins#启停与热加载的生命周期)。
 
 ## 启动、关闭与后台任务
 
@@ -184,15 +177,14 @@ B 返回 Chat 回复。Lens 先提取上游用量，再把回复转换为客户�
 
 1. 校验签名密钥与时区，加载数据库里的运行设置。
 2. 将上次中断遗留的进行中日志标为失败，避免它们一直显示“连接中”。
-3. 扫描并注册插件，加载其持久化启停和设置。
-4. 重新归组，确认当前配置对应的模型组成员。
-5. 启动计划任务与插件目录监听，随后开始服务请求。
+3. 重新归组，确认当前配置对应的模型组成员。
+4. 启动计划任务，随后开始服务请求。
 
-关闭时先停目录监听和计划任务，再交完插件观察队列、卸载插件，最后关闭 HTTP 客户端与数据库引擎。插件卸载发生在连接池和数据库关闭之前，使清理回调仍可使用这些资源。实现见 [lifecycle.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/lifecycle.py)。
+关闭时先停止计划任务，最后关闭 HTTP 客户端与数据库引擎。实现见 [lifecycle.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/service/lifecycle.py)。
 
-渠道模型同步、价格同步、日志清理等任务通过同一个 `AppState` 使用仓储与插件能力，任务配置保存在数据库。日常操作见 [计划任务](../guide/maintenance#计划任务)。
+渠道模型同步、价格同步、日志清理等任务通过同一个 `AppState` 使用仓储，任务配置保存在数据库。日常操作见 [计划任务](../guide/maintenance#计划任务)。
 
-每个进程都有计划任务运行器，但执行前要在数据库中取得该任务的租约：记录持有者和到期时间，只有取得租约的进程运行任务。在租约有效期间，其他进程不能再次领取同一任务；租约到期后可重新领取。这提供执行协调，但不等于外部副作用只会发生一次，插件任务仍应考虑重试或超出租约时长的情况。实现见 [cronjob_runner.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/cronjob_runner.py) 和 [CronjobStore](https://github.com/dyedd/lens/blob/main/backend/app/persistence/cronjob_store/store.py)。
+每个进程都有计划任务运行器，但执行前要在数据库中取得该任务的租约：记录持有者和到期时间，只有取得租约的进程运行任务。在租约有效期间，其他进程不能再次领取同一任务；租约到期后可重新领取。实现见 [cronjob_runner.py](https://github.com/dyedd/lens/blob/main/backend/app/gateway/cronjob_runner.py) 和 [CronjobStore](https://github.com/dyedd/lens/blob/main/backend/app/persistence/cronjob_store/store.py)。
 
 ## 修改功能时从哪里看
 
@@ -203,12 +195,11 @@ B 返回 Chat 回复。Lens 先提取上游用量，再把回复转换为客户�
 | 改成员选择与故障转移 | `proxy/routing_plan.py`、`router/` | Key 与模型身份、冷却范围、上下文、尝试链 |
 | 改协议支持 | `proxy_routes.py`、`converters/` | 原生路径、转换路径、流式事件、用量提取 |
 | 改日志或费用 | `request_logger.py`、`streaming/logging.py` | 终态、取消、数据库写入、统计与备份 |
-| 增加可选请求处理 | `plugins/contract.py`、`plugins/runtime.py` | 注册、启停、在途快照、超时与清理 |
 
 表中的 `service/` 指 `backend/app/gateway/service/`。新功能应沿这些现有边界进入：路由器选择候选，转换器处理协议，请求编排串联阶段，仓储负责落盘。领域异常来自 `core/errors.py`；对外协议错误结构由 `gateway/service/error_responses.py` 生成。
 
 ## 构建与发布边界
 
-管理界面由 `frontend/` 构建到 `backend/app/frontend/`，与后端一起进入应用 Docker 镜像。用户插件从挂载的数据目录加载。
+管理界面由 `frontend/` 构建到 `backend/app/frontend/`，与后端一起进入应用 Docker 镜像。
 
-文档由 `docs/` 独立构建到 `docs/.vitepress/dist/`，发布到 GitHub Pages。文档、截图、文档依赖与插件示例不进入应用镜像。三张机制图的 Mermaid 源文件保存在 `docs/diagrams/`，修改机制时同步更新正文与导出的 SVG。
+文档由 `docs/` 独立构建到 `docs/.vitepress/dist/`，发布到 GitHub Pages。文档和截图不进入应用镜像。三张机制图的 Mermaid 源文件保存在 `docs/diagrams/`，修改机制时同步更新正文与导出的 SVG。

@@ -13,9 +13,7 @@ import {
 import type { ModelGroup } from "@/lib/api/groups";
 import { parseContextWindowInput } from "@/lib/contextWindow";
 import type { FormState } from "./groupTypes";
-import { buildPluginStrategyIds } from "./modelGroupFormatting";
 import { compileRegexRulePattern } from "./modelGroupMatching";
-import { usePluginStrategyIds } from "./usePluginStrategyIds";
 
 interface ModelGroupSettingsProps {
   locale: "zh-CN" | "en-US";
@@ -61,12 +59,6 @@ export function ModelGroupSettings({
   changeRouteTarget,
 }: ModelGroupSettingsProps) {
   const isZh = locale === "zh-CN";
-  const activePluginStrategyIds = usePluginStrategyIds();
-  // 已保存的策略即使没有启用的插件提供，也要列出才能显示原标识。
-  const pluginStrategyIds = buildPluginStrategyIds([
-    ...activePluginStrategyIds,
-    form.strategy,
-  ]);
   const groupMode = form.route_group_id ? "alias" : "direct";
   const isContextWindowInvalid =
     parseContextWindowInput(form.context_window) === undefined;
@@ -158,9 +150,10 @@ export function ModelGroupSettings({
             >
               <Select
                 value={form.strategy}
-                onValueChange={(strategy) =>
-                  setForm((current) => ({ ...current, strategy }))
-                }
+                onValueChange={(value) => {
+                  if (value === "failover" || value === "round_robin")
+                    setForm((current) => ({ ...current, strategy: value }));
+                }}
               >
                 <SelectTrigger id="group-strategy" className="w-full">
                   <SelectValue />
@@ -173,11 +166,6 @@ export function ModelGroupSettings({
                     <SelectItem value="round_robin">
                       {isZh ? "平滑轮询 (Round robin)" : "Round robin"}
                     </SelectItem>
-                    {pluginStrategyIds.map((strategy) => (
-                      <SelectItem key={strategy} value={strategy}>
-                        <span className="font-mono">{strategy}</span>
-                      </SelectItem>
-                    ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>

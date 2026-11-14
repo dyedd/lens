@@ -31,7 +31,7 @@
 | Keep a backup ready | Ordered failover, smooth round robin, health tracking, and cooldown controls |
 | Manage several upstream accounts | Multiple URLs and keys, model discovery, sync rules, and automatic group assignment |
 | Understand usage and failures | Usage and cost trends, cache statistics, request details, and the upstream attempt history |
-| Run it on your own terms | Docker deployment, SQLite or PostgreSQL, backups, scheduled tasks, and Python plugins under the MIT license |
+| Run it on your own terms | Docker deployment, SQLite or PostgreSQL, backups, and scheduled tasks under the MIT license |
 
 ## UI gallery
 
@@ -72,7 +72,7 @@ The detailed guides are currently written in Simplified Chinese.
 | --- | --- |
 | [Providers and models](./docs/guide/sites.md) | [Local environment](./docs/development/setup.md) |
 | [Model groups](./docs/guide/model-groups.md) · [Client setup](./docs/guide/clients.md) | [Architecture](./docs/development/architecture.md) |
-| [Logs and troubleshooting](./docs/guide/monitoring.md) · [Backups and maintenance](./docs/guide/maintenance.md) | [Plugin development](./docs/development/plugins.md) |
+| [Logs and troubleshooting](./docs/guide/monitoring.md) · [Backups and maintenance](./docs/guide/maintenance.md) | — |
 | [Environment variables and settings](./docs/reference/configuration.md) | [Documentation development and publishing](./docs/development/documentation.md) |
 
 Stack: Python 3.14+ / FastAPI / SQLAlchemy / SQLite or PostgreSQL; React 19 / TypeScript / Vite.

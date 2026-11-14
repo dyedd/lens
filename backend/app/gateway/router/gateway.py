@@ -10,7 +10,7 @@ from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouterSnapshot
 from .cooldown import ClaimDecision, CooldownPolicy, ErrorCategory
 from .health import HealthTracker
-from .routing import RoutePlanner, RouteSelection, SeatOrderer
+from .routing import RoutePlanner, RouteSelection
 from .targets import RouteTarget, TargetKey, target_key
 
 # 冷却到期后的探测在该目标上独占多久，避免全部请求同时涌入。
@@ -66,13 +66,12 @@ class GatewayRouter:
         channels: list[ChannelConfig],
         protocol: ProtocolKind,
         requested_model: str | None = None,
-        strategy: str = RoutingStrategy.FAILOVER.value,
+        strategy: RoutingStrategy = RoutingStrategy.FAILOVER,
         allowed_channel_ids: set[str] | None = None,
         use_model_matching: bool = True,
         route_targets: list[RouteTarget] | None = None,
         cursor_key: str | None = None,
         required_context_tokens: int | None = None,
-        seat_orderer: SeatOrderer | None = None,
     ) -> RouteSelection:
         """Select a primary route and its ordered candidates."""
         with self._lock:
@@ -87,7 +86,6 @@ class GatewayRouter:
                 route_targets,
                 cursor_key,
                 required_context_tokens,
-                seat_orderer,
             )
 
     def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:

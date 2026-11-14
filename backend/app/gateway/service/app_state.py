@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from contextvars import ContextVar, Token
-from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -12,7 +10,6 @@ import httpx
 from ...core.config import settings
 from ...core.db import create_engine, create_session_factory
 from ...core.time_zone import load_time_zone
-from ...models.plugins import PluginView
 from ...models.settings import RuntimeSettings
 from ...persistence.backup_store import BackupStore
 from ...persistence.channel_store import ChannelStore
@@ -27,12 +24,7 @@ from ...persistence.repositories import (
     SettingsRepository,
     SiteCredentialRateRepository,
 )
-from ...plugins import PluginRegistry
-from ...plugins.builtin import BUILTIN_PLUGINS
-from ...plugins.discovery import discover_external_plugins
-from ...plugins.observer_queue import ObserverQueue
-from ...plugins.stats import PluginStats
-from ..cronjob_runner import CronjobRunner, TaskHandler
+from ..cronjob_runner import CronjobRunner
 from ..router import GatewayRouter
 from ..router.cooldown import CooldownPolicy
 
@@ -43,7 +35,6 @@ TASK_VERSION_CHECK = "version_check"
 TASK_CHANNEL_MODEL_SYNC = "channel_model_sync"
 TASK_CREDENTIAL_RATE_SYNC = "credential_rate_sync"
 
-# 平台自身的计划任务；插件只能追加自己的任务，不接管这些。
 CRONJOB_SPECS = (
     CronjobSpec(
         id=TASK_REQUEST_LOG_PRUNE,
@@ -111,22 +102,17 @@ class AppState:
         self.cronjob_store = CronjobStore(self.session_factory)
         self.backup_store = BackupStore(self.session_factory)
         self.router = GatewayRouter()
-        plugin_stats = PluginStats()
-        self._plugin_observer_queue = ObserverQueue(plugin_stats)
-        # 插件在 load_plugins 里按持久化的启停状态注册，外部插件也在那时发现。
-        self.plugin_registry = PluginRegistry(
-            BUILTIN_PLUGINS,
-            state=self,
-            stats=plugin_stats,
-            record_sink=self._plugin_observer_queue,
-            logger=logger,
-            reserved_cronjob_ids=frozenset(spec.id for spec in CRONJOB_SPECS),
-        )
-        self._plugin_reload_lock = asyncio.Lock()
         self.cronjob_runner = CronjobRunner(
             store=self.cronjob_store,
-            specs=self._cronjob_specs(),
-            handlers=self._cronjob_handlers(),
+            specs=CRONJOB_SPECS,
+            handlers={
+                TASK_REQUEST_LOG_PRUNE: self.request_log_store.maintenance.prune_request_logs,
+                TASK_MODEL_PRICE_SYNC: self._sync_model_prices,
+                TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.statistics.persist_request_log_stats,
+                TASK_VERSION_CHECK: self._check_version_update,
+                TASK_CHANNEL_MODEL_SYNC: self._sync_channel_models,
+                TASK_CREDENTIAL_RATE_SYNC: self._sync_credential_rates,
+            },
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
         )
@@ -174,21 +160,6 @@ class AppState:
             affinity_seconds=runtime["failover_affinity_seconds"],
         )
 
-    def _cronjob_specs(self) -> tuple[CronjobSpec, ...]:
-        return CRONJOB_SPECS + self.plugin_registry.cronjob_specs()
-
-    def _cronjob_handlers(self) -> dict[str, TaskHandler]:
-        handlers: dict[str, TaskHandler] = {
-            TASK_REQUEST_LOG_PRUNE: self.request_log_store.maintenance.prune_request_logs,
-            TASK_MODEL_PRICE_SYNC: self._sync_model_prices,
-            TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.statistics.persist_request_log_stats,
-            TASK_VERSION_CHECK: self._check_version_update,
-            TASK_CHANNEL_MODEL_SYNC: self._sync_channel_models,
-            TASK_CREDENTIAL_RATE_SYNC: self._sync_credential_rates,
-        }
-        handlers.update(self.plugin_registry.cronjob_handlers())
-        return handlers
-
     @staticmethod
     def _create_http_client(proxy_url: str | None = None) -> httpx.AsyncClient:
         limits = httpx.Limits(
@@ -221,51 +192,6 @@ class AppState:
         for client in clients:
             if not client.is_closed:
                 await client.aclose()
-
-    async def set_plugin_settings(
-        self, plugin_id: str, values: dict[str, Any]
-    ) -> PluginView:
-        """校验并保存插件设置，然后重新组合扩展点。"""
-        view = await self.plugin_registry.set_settings(plugin_id, values)
-        # 设置变化会重新注册插件，它追加的计划任务也可能变。
-        self._apply_plugin_contributions()
-        await self.cronjob_runner.ensure_cronjobs()
-        return view
-
-    async def reload_plugins(self) -> list[PluginView]:
-        """重新扫描插件目录并重建，无需重启进程。"""
-        # 扫描与重建一起串行：并发的两次重载不会让较早的扫描结果后生效。
-        async with self._plugin_reload_lock:
-            external = await asyncio.to_thread(discover_external_plugins)
-            await self.plugin_registry.reload((*BUILTIN_PLUGINS, *external))
-        self._apply_plugin_contributions()
-        await self.cronjob_runner.ensure_cronjobs()
-        return self.plugin_registry.views()
-
-    async def load_plugins(self) -> None:
-        """扫描插件目录，读取插件启停状态与设置，重新组合扩展点。"""
-        async with self._plugin_reload_lock:
-            external = await asyncio.to_thread(discover_external_plugins)
-            await self.plugin_registry.load((*BUILTIN_PLUGINS, *external))
-        self._apply_plugin_contributions()
-
-    async def close_plugins(self) -> None:
-        """先交完排队中的请求摘要，再卸载全部插件。"""
-        await self._plugin_observer_queue.aclose()
-        await self.plugin_registry.aclose()
-
-    async def set_plugin_enabled(self, plugin_id: str, *, enabled: bool) -> PluginView:
-        """启用或停用插件，并立即刷新它贡献的扩展点。"""
-        view = await self.plugin_registry.set_enabled(plugin_id, enabled=enabled)
-        self._apply_plugin_contributions()
-        await self.cronjob_runner.ensure_cronjobs()
-        return view
-
-    def _apply_plugin_contributions(self) -> None:
-        self.cronjob_runner.reconfigure(
-            specs=self._cronjob_specs(),
-            handlers=self._cronjob_handlers(),
-        )
 
     async def _runtime_time_zone(self) -> ZoneInfo:
         runtime = await self.settings_repo.get_runtime_settings()

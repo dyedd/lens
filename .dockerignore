@@ -17,7 +17,6 @@ build
 .env
 data
 .agents
-examples/plugins
 AGENTS.md
 CLAUDE.md
 GEMINI.md

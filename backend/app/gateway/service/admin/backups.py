@@ -68,7 +68,6 @@ async def import_settings_bundle(
         await app_state.settings_repo.get_runtime_settings()
     )
     await run_model_group_reconcile(app_state)
-    await app_state.load_plugins()
     return result
 
 

@@ -255,7 +255,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
         upstream_body.pop("stream", None)
 
     try:
-        upstream, body_bytes, upstream_request_content = await prepare_upstream_request(
+        upstream, body_bytes, upstream_request_content = prepare_upstream_request(
             channel,
             upstream_body,
             credential_id=target.credential_id,
@@ -271,7 +271,6 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
             max_request_body_bytes=int(request.runtime["max_request_body_bytes"]),
             path_suffix=request.path_suffix,
             multipart_files=request.multipart_files,
-            plugin_run=run.log_ctx.plugin_run,
         )
         run.effective_user_agent = effective_user_agent_from_headers(
             upstream.headers, request.upstream_user_agent
@@ -295,14 +294,6 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
             upstream_body=upstream_body,
         )
 
-    if channel.protocol == ProtocolKind.GEMINI:
-        upstream_body = {
-            **upstream.json_body,
-            "model": upstream_body.get("model"),
-            "stream": bool(upstream_body.get("stream")),
-        }
-    else:
-        upstream_body = upstream.json_body
     return _PreparedAttempt(
         channel=channel,
         upstream_body=upstream_body,
@@ -340,7 +331,6 @@ async def _send_attempt(
             request_content=prepared.request_content,
             log_body_enabled=run.log_body_enabled,
             deadline=run.deadline,
-            plugin_run=run.log_ctx.plugin_run,
             tool_mapping=prepared.tool_mapping,
         )
         return await execute_upstream_request(

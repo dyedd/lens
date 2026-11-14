@@ -3,8 +3,7 @@ import type { HeaderRule, ParamOverrideRule } from "@/lib/upstreamRules";
 import type { ProtocolKind } from "./protocols";
 import type { ModelTestMode } from "./sites";
 
-/** 内置的 "round_robin"、"failover"，或插件提供的 `<插件 id>/<策略名>`。 */
-export type RoutingStrategy = string;
+export type RoutingStrategy = "round_robin" | "failover";
 export type MatchRegexOperator = "and" | "or";
 export type ModelGroupItemState =
   | "ready"

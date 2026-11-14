@@ -31,7 +31,7 @@
 | 为故障准备备用渠道 | 配置主备切换、平滑轮询，结合健康状态与冷却管理调度请求 |
 | 管理多个上游账号 | 集中维护多地址、多 Key、模型目录、同步规则与自动归组 |
 | 看清费用和失败原因 | 查看用量与费用趋势、缓存统计、请求详情和每次上游尝试 |
-| 掌握部署与扩展方式 | Docker 部署，支持 SQLite 或 PostgreSQL，提供备份、计划任务和 Python 插件，使用 MIT 许可 |
+| 掌握部署与扩展方式 | Docker 部署，支持 SQLite 或 PostgreSQL，提供备份与计划任务，使用 MIT 许可 |
 
 ## UI 集合
 
@@ -70,7 +70,7 @@ docker compose exec app cat /app/data/admin-password
 | --- | --- |
 | [接入站点与模型](./docs/guide/sites.md) | [环境搭建](./docs/development/setup.md) |
 | [模型组](./docs/guide/model-groups.md) · [客户端接入](./docs/guide/clients.md) | [系统架构](./docs/development/architecture.md) |
-| [日志与排错](./docs/guide/monitoring.md) · [备份与维护](./docs/guide/maintenance.md) | [插件开发](./docs/development/plugins.md) |
+| [日志与排错](./docs/guide/monitoring.md) · [备份与维护](./docs/guide/maintenance.md) | — |
 | [环境变量与网关设置](./docs/reference/configuration.md) | [文档站开发与发布](./docs/development/documentation.md) |
 
 技术栈：Python 3.14+ / FastAPI / SQLAlchemy / SQLite 或 PostgreSQL；React 19 / TypeScript / Vite。

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from math import ceil
 from time import perf_counter
 from typing import Any
 
 from fastapi import Response
-from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.background import BackgroundTask
+from fastapi.responses import JSONResponse
 
 from app.models.request_logs import RequestLogInput
 
@@ -19,13 +18,6 @@ from ....models.channels import ChannelConfig
 from ....models.gateway_keys import GatewayApiKey
 from ....models.protocols import ProtocolKind
 from ....models.settings import RuntimeSettings
-from ....plugins.contract import InboundRequest, PluginRejection
-from ....plugins.runtime import (
-    PluginRun,
-    begin_run,
-    order_route_seats,
-    run_request_rewrite,
-)
 from ...router import RouteSelection, RouteTarget, TargetKey, target_key
 from ...router.failover import RetryAction, next_candidate
 from ..app_state import app_state
@@ -80,7 +72,6 @@ async def _create_pending_proxy_log_context(
     requested_group_name: str | None,
     is_stream: bool,
     request_content: str | None,
-    plugin_run: PluginRun,
 ) -> RequestLogger:
     request_log = await app_state.request_log_store.commands.create_request_log(
         RequestLogInput(
@@ -105,7 +96,6 @@ async def _create_pending_proxy_log_context(
         request_content=request_content,
         attempts=[],
         user_agent=user_agent,
-        plugin_run=plugin_run,
         requested_group_name=requested_group_name,
     )
 
@@ -142,9 +132,6 @@ async def _resolve_proxy_route(
             use_model_matching=plan.use_model_matching,
             cursor_key=plan.cursor_key,
             required_context_tokens=required_context_tokens,
-            seat_orderer=lambda strategy_id, pool, seats: order_route_seats(
-                log_ctx.plugin_run.hooks, strategy_id, pool, seats
-            ),
         )
         log_ctx.plan_route(
             requested_group_name=plan.requested_group_name,
@@ -366,7 +353,6 @@ async def _missing_model_response(
     user_agent: str,
     is_stream_body: bool,
     request_content: str | None,
-    plugin_run: PluginRun,
 ) -> Response:
     log_ctx = await _create_pending_proxy_log_context(
         protocol=protocol,
@@ -377,7 +363,6 @@ async def _missing_model_response(
         requested_group_name=None,
         is_stream=is_stream_body,
         request_content=request_content,
-        plugin_run=plugin_run,
     )
     await log_ctx.record_failure(
         status_code=400,
@@ -390,27 +375,6 @@ async def _missing_model_response(
         status_code=400,
         error_type="missing_model",
         message="Request model is required",
-    )
-
-
-async def _failed_request_response(
-    *,
-    protocol: ProtocolKind,
-    log_ctx: RequestLogger,
-    is_stream_body: bool,
-    status_code: int,
-    error_type: str,
-    message: str,
-) -> Response:
-    """Finalize a request that never reached routing and answer in its protocol."""
-    await log_ctx.record_failure(
-        status_code=status_code, error_message=message, is_stream=is_stream_body
-    )
-    return protocol_error_response(
-        protocol=protocol,
-        status_code=status_code,
-        error_type=error_type,
-        message=message,
     )
 
 
@@ -610,57 +574,6 @@ async def proxy_protocol(
     inbound_headers: Mapping[str, str] | None = None,
     path_suffix: str | None = None,
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
-    request_path: str = "",
-) -> Response:
-    plugin_run = begin_run(
-        app_state.plugin_registry.hook_set(),
-        InboundRequest(
-            protocol=protocol.value,
-            path=request_path,
-            model=str(body.get("model") or "").strip(),
-            is_stream=bool(body.get("stream")),
-            user_agent=sanitize_user_agent(inbound_user_agent),
-        ),
-    )
-    try:
-        response = await _proxy_protocol(
-            protocol,
-            body,
-            gateway_key,
-            inbound_user_agent,
-            inbound_headers,
-            path_suffix,
-            multipart_files,
-            plugin_run,
-        )
-    except BaseException:
-        plugin_run.close()
-        raise
-    if isinstance(response, StreamingResponse):
-        background = response.background
-
-        async def finish() -> None:
-            try:
-                if background is not None:
-                    await background()
-            finally:
-                plugin_run.close()
-
-        response.background = BackgroundTask(finish)
-    else:
-        plugin_run.close()
-    return response
-
-
-async def _proxy_protocol(
-    protocol: ProtocolKind,
-    body: dict[str, Any],
-    gateway_key: GatewayApiKey,
-    inbound_user_agent: str | None,
-    inbound_headers: Mapping[str, str] | None,
-    path_suffix: str | None,
-    multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None,
-    plugin_run: PluginRun,
 ) -> Response:
     (
         channels,
@@ -684,7 +597,6 @@ async def _proxy_protocol(
             user_agent=upstream_user_agent,
             is_stream_body=is_stream_body,
             request_content=request_content,
-            plugin_run=plugin_run,
         )
     requested_model = requested_model.strip()
     original_requested_model = requested_model
@@ -708,59 +620,9 @@ async def _proxy_protocol(
         requested_group_name=original_requested_model,
         is_stream=is_stream_body,
         request_content=request_content,
-        plugin_run=plugin_run,
     )
     plan: RoutingPlan | None = None
     try:
-        try:
-            rewritten_body = await run_request_rewrite(plugin_run, body)
-        except PluginRejection as exc:
-            return await _failed_request_response(
-                protocol=protocol,
-                log_ctx=log_ctx,
-                is_stream_body=is_stream_body,
-                status_code=exc.status_code,
-                error_type=exc.error_type,
-                message=exc.public_message,
-            )
-        if rewritten_body is not body:
-            # 请求日志保留客户端原始请求体；之后的检查、路由与尝试都按改写后的请求。
-            body = rewritten_body
-            rewritten_model = body.get("model")
-            if not isinstance(rewritten_model, str) or not rewritten_model.strip():
-                return await _failed_request_response(
-                    protocol=protocol,
-                    log_ctx=log_ctx,
-                    is_stream_body=is_stream_body,
-                    status_code=400,
-                    error_type="missing_model",
-                    message="Request model is required",
-                )
-            original_requested_model = rewritten_model.strip()
-            try:
-                parsed_model = parse_model_name(original_requested_model)
-            except ValueError as exc:
-                return await _failed_request_response(
-                    protocol=protocol,
-                    log_ctx=log_ctx,
-                    is_stream_body=is_stream_body,
-                    status_code=400,
-                    error_type="invalid_model",
-                    message=str(exc),
-                )
-            requested_model = parsed_model.base_model
-            if protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
-                body.pop("stream", None)
-            is_stream_body = bool(body.get("stream"))
-            plugin_run.request = replace(
-                plugin_run.request,
-                model=original_requested_model,
-                is_stream=is_stream_body,
-            )
-            log_ctx.plan_route(
-                requested_group_name=original_requested_model,
-                resolved_group_name=None,
-            )
         access_error = await _check_gateway_model_access(
             protocol=protocol,
             gateway_key=gateway_key,

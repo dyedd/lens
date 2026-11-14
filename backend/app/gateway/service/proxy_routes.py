@@ -46,7 +46,6 @@ async def _proxy_json_request(
         request.headers.get("user-agent"),
         request.headers,
         path_suffix=path_suffix,
-        request_path=request.url.path,
     )
 
 
@@ -121,7 +120,6 @@ async def proxy_anthropic_messages(
         gateway_key,
         request.headers.get("user-agent"),
         request.headers,
-        request_path=request.url.path,
     )
 
 
@@ -209,7 +207,6 @@ async def proxy_openai_image_edits(
         request.headers,
         path_suffix="images/edits",
         multipart_files=files,
-        request_path=request.url.path,
     )
 
 
@@ -243,5 +240,4 @@ async def proxy_gemini_generate_content(
         gateway_key,
         request.headers.get("user-agent"),
         request.headers,
-        request_path=request.url.path,
     )
