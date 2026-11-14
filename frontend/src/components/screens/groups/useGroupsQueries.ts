@@ -17,10 +17,7 @@ import {
 } from "@/lib/modelPrefix";
 import type { FormState, GroupRow, GroupSort } from "./groupTypes";
 import { buildGroupRows } from "./groupView";
-import {
-  buildPluginStrategyIds,
-  modelGroupItemKey,
-} from "./modelGroupFormatting";
+import { modelGroupItemKey } from "./modelGroupFormatting";
 
 type GroupsQueryOptions = {
   dialogOpen: boolean;
@@ -164,15 +161,6 @@ export function useGroupFilters(
     familyOptions,
     familyFilter,
   );
-  // 当前筛选值保留在选项里，组改用别的策略后选择框仍能显示它。
-  const strategyFilterIds = useMemo(
-    () =>
-      buildPluginStrategyIds([
-        ...groupRows.map((group) => group.strategy),
-        ...(strategyFilter === "all" ? [] : [strategyFilter]),
-      ]),
-    [groupRows, strategyFilter],
-  );
   const visibleGroups = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     const filtered = groupRows.filter((group) => {
@@ -245,7 +233,6 @@ export function useGroupFilters(
     setStrategyFilter,
     sortBy,
     strategyFilter,
-    strategyFilterIds,
     visibleGroups,
   };
 }

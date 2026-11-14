@@ -42,12 +42,6 @@ from ..gateway.service.admin.overview import (
     get_overview_summary,
     list_overview_daily,
 )
-from ..gateway.service.admin.plugins import (
-    list_plugins,
-    reload_plugins,
-    update_plugin,
-    update_plugin_settings,
-)
 from ..gateway.service.admin.request_logs import (
     clear_request_logs,
     get_request_log_detail,
@@ -126,7 +120,6 @@ from ..models.overview import (
     OverviewModelAnalytics,
     OverviewSummary,
 )
-from ..models.plugins import PluginView
 from ..models.request_logs import RequestLogDetail, RequestLogPage
 from ..models.settings import SettingItem
 from ..models.site_import import SiteBatchImportResult
@@ -453,33 +446,6 @@ def register_cronjobs(app: APIRouter) -> None:
     )
 
 
-def register_plugins(app: APIRouter) -> None:
-    app.add_api_route(
-        "/api/admin/plugins",
-        list_plugins,
-        methods=["GET"],
-        response_model=list[PluginView],
-    )
-    app.add_api_route(
-        "/api/admin/plugins/{plugin_id}",
-        update_plugin,
-        methods=["PUT"],
-        response_model=PluginView,
-    )
-    app.add_api_route(
-        "/api/admin/plugins/{plugin_id}/settings",
-        update_plugin_settings,
-        methods=["PUT"],
-        response_model=PluginView,
-    )
-    app.add_api_route(
-        "/api/admin/plugins/reload",
-        reload_plugins,
-        methods=["POST"],
-        response_model=list[PluginView],
-    )
-
-
 def register_gateway_api_keys(app: APIRouter) -> None:
     app.add_api_route(
         "/api/admin/gateway-api-keys",
@@ -572,7 +538,6 @@ def include_routes(app: FastAPI, *, ui_static_dir: str = "") -> None:
         register_model_groups,
         register_model_prices,
         register_cronjobs,
-        register_plugins,
         register_gateway_api_keys,
         register_backups,
         register_settings,

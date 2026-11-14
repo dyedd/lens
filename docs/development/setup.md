@@ -43,11 +43,10 @@ uv run --no-sync lens setup
 
 ### 使用独立的开发数据
 
-如果仓库目录已经用于日常服务，先给开发进程指定新的数据库和插件目录，再运行初始化与启动命令。下面的 PowerShell 环境变量只影响当前终端及其子进程：
+如果仓库目录已经用于日常服务，先给开发进程指定新的数据库，再运行初始化与启动命令。下面的 PowerShell 环境变量只影响当前终端及其子进程：
 
 ```powershell
 $env:LENS_DATABASE_URL = "sqlite+aiosqlite:///./data/dev-docs.db"
-$env:LENS_PLUGINS_DIR = "./data/dev-plugins"
 $env:LENS_PORT = "18081"
 uv run --no-sync lens migrate
 uv run --no-sync lens dev
@@ -101,7 +100,6 @@ pnpm dev
 | 页面能开，但管理 API 连接失败 | 比较 API 监听端口与 `VITE_LENS_DEV_BACKEND`；修改变量后重启 Vite |
 | 启动提示缺少表或数据库版本不匹配 | 在相同环境变量下运行 `lens db current`，确认数据库后执行 `lens migrate` |
 | 修改前端后，后端端口的页面没有变化 | 开发时访问 Vite 地址；检查生产页时重新构建前端 |
-| 插件没有出现在列表 | 检查当前进程的 `LENS_PLUGINS_DIR`、文件位置和加载错误 |
 
 ## 常用 CLI
 

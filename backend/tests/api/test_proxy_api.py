@@ -567,7 +567,6 @@ def test_proxy_routes_accept_supported_request_shapes(
         *,
         path_suffix: str = "",
         multipart_files: list[Any] | None = None,
-        request_path: str = "",
     ):
         calls.append(
             {

@@ -46,21 +46,6 @@ class CronjobRunner:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._loop())
 
-    async def ensure_cronjobs(self) -> None:
-        """同步当前计划任务定义。"""
-        await self._store.ensure_cronjobs(self._specs)
-
-    def reconfigure(
-        self,
-        *,
-        specs: Sequence[CronjobSpec],
-        handlers: dict[str, TaskHandler],
-    ) -> None:
-        """替换当前计划任务定义与处理函数。"""
-        self._specs = list(specs)
-        self._specs_by_id = {spec.id: spec for spec in self._specs}
-        self._handlers = dict(handlers)
-
     async def stop(self) -> None:
         """Stop the polling loop if it is running."""
         if self._task is None:

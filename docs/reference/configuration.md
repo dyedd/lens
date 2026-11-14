@@ -8,7 +8,6 @@
 | -------------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
 | `LENS_DATABASE_URL`              | `sqlite+aiosqlite:///./data/data.db` | 数据库连接；Docker 镜像使用 `/app/data/data.db`                    |
 | `LENS_AUTH_SECRET_KEY`           | 无（必填）                           | JWT 签名密钥，UTF-8 编码后至少 32 字节；Docker 部署脚本写入 `.env` |
-| `LENS_PLUGINS_DIR` | `./data/plugins` | 用户插件目录；Docker 默认从挂载的 `/app/data/plugins` 加载 |
 | `LENS_PORT`                      | 本地 `18080` / Docker `3000`         | 服务监听端口；Docker Compose 同时用作宿主机与容器端口映射          |
 | `LENS_MAX_CONNECTIONS`           | `200`                                | 每个直连或代理连接池的最大连接数，修改后需要重启                   |
 | `LENS_MAX_KEEPALIVE_CONNECTIONS` | `50`                                 | 每个直连或代理连接池的最大空闲连接数，修改后需要重启               |

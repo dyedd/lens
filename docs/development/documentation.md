@@ -29,7 +29,7 @@ pnpm preview
 | --- | --- |
 | `guide/` | 部署和日常操作：前提、步骤、预期结果与排错 |
 | `reference/` | 环境变量、默认值和配置语义 |
-| `development/` | 环境搭建、架构、插件开发和文档维护 |
+| `development/` | 环境搭建、架构和文档维护 |
 | `public/images/` | 操作截图和架构图 |
 | `public/version.txt` | 与源码同步的版本号，构建后位于站点根路径 |
 | `diagrams/` | 架构图的 Mermaid 源文件 |

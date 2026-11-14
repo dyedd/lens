@@ -193,7 +193,6 @@ async def record_stream_request_log(
     await app_state.request_log_store.commands.update_request_log(
         log_ctx.request_log_id, payload
     )
-    await log_ctx.finish_plugin_run(payload)
 
 
 def _stream_log_lifecycle_status(

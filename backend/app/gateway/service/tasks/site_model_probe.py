@@ -32,8 +32,6 @@ from ....models.upstream_rules import (
     ParamOverrideRule,
     UpstreamParamOverrideConfig,
 )
-from ....plugins.contract import UpstreamCall
-from ....plugins.runtime import apply_credential_hooks, system_run
 from ...converters import spoke_for
 from ...upstream_request import (
     UpstreamRequest,
@@ -273,25 +271,6 @@ async def _call_site_model_probe_channel(
         forwarded_headers=client_headers,
         upstream_headers_config=runtime["upstream_headers_config"],
         model_group_headers=list(model_group_headers),
-    )
-    # 探测与真实请求一样经过凭据插件，测通的才是实际会发出的鉴权。
-    hooked = await apply_credential_hooks(
-        system_run(app_state.plugin_registry.hook_set(), channel.protocol.value),
-        UpstreamCall(
-            channel=channel,
-            protocol=channel.protocol.value,
-            url=upstream.url,
-            headers=dict(upstream.headers),
-            body=upstream.json_body,
-            credential_id=credential_id,
-            model_name=model_name,
-        ),
-    )
-    upstream = UpstreamRequest(
-        method=upstream.method,
-        url=hooked.url,
-        headers=hooked.headers,
-        json_body=hooked.body,
     )
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client = resolve_http_client(proxy_url)

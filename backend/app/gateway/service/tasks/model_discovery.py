@@ -22,8 +22,6 @@ from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
 from ....models.sites import SiteBaseUrlKind
 from ....models.upstream_rules import UpstreamHeadersConfig
-from ....plugins.contract import UpstreamCall
-from ....plugins.runtime import apply_credential_hooks, system_run
 from ...upstream_request import (
     build_upstream_auth_headers,
     build_upstream_headers,
@@ -156,7 +154,7 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
     client = resolve_http_client(proxy_url)
 
     try:
-        request = await _model_list_request(channel, runtime["upstream_headers_config"])
+        request = _model_list_request(channel, runtime["upstream_headers_config"])
         response = await client.request(**request, timeout=30)
         response.raise_for_status()
         return _parse_model_list(response.json(), protocol=channel.protocol)
@@ -169,7 +167,7 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
         raise ModelDiscoveryError(str(exc), status_code=400) from exc
 
 
-async def _model_list_request(
+def _model_list_request(
     channel: ChannelConfig, upstream_headers_config: UpstreamHeadersConfig | None = None
 ) -> dict[str, Any]:
     api_key = resolve_channel_api_key(channel)
@@ -181,18 +179,7 @@ async def _model_list_request(
         upstream_headers_config=upstream_headers_config,
         context=request_rule_context(url, model_name="", protocol=channel.protocol),
     )
-    # 凭据插件接手渠道鉴权时，模型列表请求也要用它签发的凭据；GET 没有请求体。
-    hooked = await apply_credential_hooks(
-        system_run(app_state.plugin_registry.hook_set(), channel.protocol.value),
-        UpstreamCall(
-            channel=channel,
-            protocol=channel.protocol.value,
-            url=url,
-            headers=headers,
-            body={},
-        ),
-    )
-    return {"method": "GET", "url": hooked.url, "headers": hooked.headers}
+    return {"method": "GET", "url": url, "headers": headers}
 
 
 def _parse_model_list(

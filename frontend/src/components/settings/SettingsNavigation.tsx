@@ -1,7 +1,6 @@
 import {
   type LucideIcon,
   Palette,
-  Puzzle,
   ServerCog,
   ShieldAlert,
   TimerReset,
@@ -18,7 +17,6 @@ export interface SettingsTabDefinition {
     | "circuit-breaker"
     | "api-keys"
     | "cronjobs"
-    | "plugins"
     | "backups";
   label: string;
   icon: LucideIcon;
@@ -53,11 +51,6 @@ export function createSettingsTabs(
       value: "cronjobs",
       label: titleForLocale(locale, "计划任务", "Scheduled Tasks"),
       icon: TimerReset,
-    },
-    {
-      value: "plugins",
-      label: titleForLocale(locale, "插件", "Plugins"),
-      icon: Puzzle,
     },
     {
       value: "backups",
