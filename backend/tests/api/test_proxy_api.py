@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from time import sleep
@@ -250,6 +251,161 @@ def test_failed_stream_closes_upstream_and_finalizes_logs(
     assert log["attempts"][-1]["success"] is False
 
 
+@pytest.mark.parametrize(
+    ("content_type", "client_protocol", "compressed"),
+    [
+        ("text/event-stream", "openai_chat", False),
+        ("application/json", "openai_chat", False),
+        ("text/html", "openai_chat", False),
+        (None, "openai_chat", False),
+        ("application/json", "openai_responses", True),
+    ],
+)
+def test_stream_with_wrong_content_type_delivers_output_within_first_token_budget(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site_group_and_key,
+    content_type,
+    client_protocol,
+    compressed,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    _, _, key = create_site_group_and_key()
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={
+            "items": [
+                {"key": "first_token_timeout_seconds", "value": "1"},
+                {"key": "stream_idle_timeout_seconds", "value": "5"},
+            ]
+        },
+    )
+    assert settings.status_code == 200, settings.text
+
+    class SlowStream(httpx.AsyncByteStream):
+        is_closed = False
+
+        async def __aiter__(self):
+            compressor = zlib.compressobj(wbits=31) if compressed else None
+            chunks = [
+                b": ping\n\n" if compressed else b"da",
+                (b"data: " if compressed else b"ta: ")
+                + b'{"choices":[{"index":0,"delta":{"content":"hello"}}]}\n\n',
+                b'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+                b"data: [DONE]\n\n",
+            ]
+            for index, chunk in enumerate(chunks):
+                if index == 2:
+                    await asyncio.sleep(1.2)
+                yield (
+                    compressor.compress(chunk) + compressor.flush(zlib.Z_SYNC_FLUSH)
+                    if compressor
+                    else chunk
+                )
+            if compressor:
+                yield compressor.flush()
+
+        async def aclose(self):
+            self.is_closed = True
+
+    upstream_stream = SlowStream()
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        headers = {"content-type": content_type} if content_type else {}
+        if compressed:
+            headers["content-encoding"] = "gzip"
+        return httpx.Response(
+            200,
+            stream=upstream_stream,
+            headers=headers,
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    is_responses = client_protocol == "openai_responses"
+    response = client.post(
+        "/v1/responses" if is_responses else "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "gpt-4o",
+            "stream": True,
+            **(
+                {"input": "hello"}
+                if is_responses
+                else {"messages": [{"role": "user", "content": "hello"}]}
+            ),
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "hello" in response.text
+    assert ("response.completed" if is_responses else "data: [DONE]") in response.text
+    assert '"error"' not in response.text
+    assert upstream_stream.is_closed
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
+        "items"
+    ]
+    assert logs[0]["success"] is True
+
+
+def test_upstream_error_body_respects_first_token_budget(
+    client, admin_headers, monkeypatch, create_site_group_and_key
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    _, _, key = create_site_group_and_key()
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": "first_token_timeout_seconds", "value": "1"}]},
+    )
+    assert settings.status_code == 200, settings.text
+
+    class SlowErrorStream(httpx.AsyncByteStream):
+        is_closed = False
+        body_finished = False
+
+        async def __aiter__(self):
+            yield b"<html><title>504 Gateway Timeout</title>"
+            await asyncio.sleep(1.2)
+            self.body_finished = True
+            yield b"</html>"
+
+        async def aclose(self):
+            self.is_closed = True
+
+    upstream_stream = SlowErrorStream()
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        return httpx.Response(
+            504,
+            stream=upstream_stream,
+            headers={"content-type": "text/html"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={
+            "model": "gpt-4o",
+            "stream": True,
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+    assert response.status_code == 504, response.text
+    assert upstream_stream.is_closed
+    assert upstream_stream.body_finished is False
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
+        "items"
+    ]
+    assert logs[0]["lifecycle_status"] == "failed"
+
+
 def test_upstream_retry_after_and_single_recovery_probe(
     client, admin_headers, monkeypatch, create_site_group_and_key
 ) -> None:
@@ -494,8 +650,16 @@ def test_context_window_routing_keeps_executable_endpoints(
     assert sent == ["https://upstream.example/v1/chat/completions"]
 
 
-def test_context_window_error_with_escaped_chinese_uses_fallback(
-    client, monkeypatch, create_site, create_model_group, create_gateway_key
+@pytest.mark.parametrize(("status_code", "stream"), [(400, False), (504, True)])
+def test_upstream_error_uses_fallback(
+    client,
+    admin_headers,
+    monkeypatch,
+    create_site,
+    create_model_group,
+    create_gateway_key,
+    status_code,
+    stream,
 ) -> None:
     import app.gateway.service.proxy.proxy_upstream as proxy_upstream
 
@@ -526,9 +690,17 @@ def test_context_window_error_with_escaped_chinese_uses_fallback(
         request = httpx.Request("POST", upstream.url)
         if calls == 1:
             return httpx.Response(
-                400,
-                content=json.dumps({"error": {"message": "上下文超过最大长度"}}),
-                headers={"Content-Type": "application/json"},
+                status_code,
+                content=(
+                    json.dumps({"error": {"message": "上下文超过最大长度"}})
+                    if status_code == 400
+                    else "<html><title>504 Gateway Timeout</title></html>"
+                ),
+                headers={
+                    "Content-Type": "application/json"
+                    if status_code == 400
+                    else "text/html"
+                },
                 request=request,
             )
         return httpx.Response(
@@ -544,10 +716,20 @@ def test_context_window_error_with_escaped_chinese_uses_fallback(
         json={
             "model": "context-group",
             "messages": [{"role": "user", "content": "hello"}],
+            "stream": stream,
         },
     )
     assert response.status_code == 200, response.text
+    assert response.json()["choices"][0]["message"]["content"] == "ok"
     assert calls == 2
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
+        "items"
+    ]
+    log = client.get(
+        f"/api/admin/request-logs/{logs[0]['id']}", headers=admin_headers
+    ).json()
+    assert log["success"] is True
+    assert [attempt["status_code"] for attempt in log["attempts"]] == [status_code, 200]
 
 
 def test_proxy_routes_accept_supported_request_shapes(
