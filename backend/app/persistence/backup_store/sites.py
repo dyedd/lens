@@ -57,6 +57,7 @@ async def replace_sites(
                 id=site.id,
                 name=site.name,
                 enabled=int(site.enabled),
+                supports_model_listing=int(site.supports_model_listing),
                 tags_json=json.dumps(site.tags, ensure_ascii=True),
                 updated_at=parse_optional_datetime(site.updated_at)
                 or datetime.now(UTC).replace(tzinfo=None),

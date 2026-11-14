@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from ....core.context_windows import parse_upstream_model_context_window
-from ....core.errors import ModelDiscoveryError
+from ....core.errors import ModelCatalogIncompleteError, ModelDiscoveryError
 from ....core.model_names import (
     ModelPatternKind,
     classify_model_pattern,
@@ -42,6 +42,7 @@ LISTING_PROTOCOLS = (
     ProtocolKind.GEMINI,
 )
 NATIVE_LISTING_PROTOCOLS = frozenset({ProtocolKind.ANTHROPIC, ProtocolKind.GEMINI})
+MAX_MODEL_LIST_PAGES = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +101,8 @@ async def fetch_upstream_model_list(
             models = await fetch_upstream_models(
                 channel.model_copy(update={"protocol": protocol})
             )
+        except ModelCatalogIncompleteError:
+            raise
         except ModelDiscoveryError as exc:
             errors.append(exc)
             continue
@@ -152,19 +155,56 @@ async def fetch_upstream_models(channel: ChannelConfig) -> list[UpstreamModel]:
     runtime = await app_state.settings_repo.get_runtime_settings()
     proxy_url = resolve_upstream_proxy_url(channel, runtime["proxy_url"])
     client = resolve_http_client(proxy_url)
+    models: dict[str, UpstreamModel] = {}
+    seen_cursors: set[tuple[str, str]] = set()
+    has_page = False
 
     try:
         request = _model_list_request(channel, runtime["upstream_headers_config"])
-        response = await client.request(**request, timeout=30)
-        response.raise_for_status()
-        return _parse_model_list(response.json(), protocol=channel.protocol)
-    except httpx.HTTPStatusError as exc:
-        detail = format_http_response_error(exc.response)
-        raise ModelDiscoveryError(detail, status_code=exc.response.status_code) from exc
-    except httpx.HTTPError as exc:
-        raise ModelDiscoveryError(f"Transport error: {exc}") from exc
-    except ValueError as exc:
-        raise ModelDiscoveryError(str(exc), status_code=400) from exc
+        for _ in range(MAX_MODEL_LIST_PAGES):
+            response = await client.request(**request, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+            for model in _parse_model_list(payload, protocol=channel.protocol):
+                models.setdefault(model.name, model)
+            has_page = True
+
+            if "nextPageToken" in payload:
+                cursor = payload["nextPageToken"]
+                if not isinstance(cursor, str):
+                    raise ValueError("Model list nextPageToken must be a string")
+                if not cursor:
+                    return list(models.values())
+                param = "pageToken"
+            else:
+                has_more = payload.get("has_more", False)
+                if not isinstance(has_more, bool):
+                    raise ValueError("Model list has_more must be a boolean")
+                if not has_more:
+                    return list(models.values())
+                cursor = payload.get("last_id")
+                if not isinstance(cursor, str) or not cursor.strip():
+                    raise ValueError("Model list pagination is missing last_id")
+                param = (
+                    "after_id"
+                    if channel.protocol == ProtocolKind.ANTHROPIC
+                    else "after"
+                )
+            if (param, cursor) in seen_cursors:
+                raise ValueError("Model list pagination repeated a cursor")
+            seen_cursors.add((param, cursor))
+            request["url"] = httpx.URL(request["url"]).copy_set_param(param, cursor)
+        raise ValueError("Model list pagination exceeded the page limit")
+    except (httpx.HTTPError, ValueError) as exc:
+        error_type = ModelCatalogIncompleteError if has_page else ModelDiscoveryError
+        if isinstance(exc, httpx.HTTPStatusError):
+            raise error_type(
+                format_http_response_error(exc.response),
+                status_code=exc.response.status_code,
+            ) from exc
+        if isinstance(exc, httpx.HTTPError):
+            raise error_type(f"Transport error: {exc}") from exc
+        raise error_type(str(exc), status_code=400) from exc
 
 
 def _model_list_request(

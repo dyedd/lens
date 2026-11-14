@@ -174,6 +174,7 @@ export const emptyForm = (): FormState => {
     credentials: [],
     protocolConfigs: [emptyProtocolConfig(baseUrlId)],
     proxy_mode: "inherit",
+    supports_model_listing: true,
     channel_proxy: "",
     headersJson: "",
     paramsJson: "",

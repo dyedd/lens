@@ -71,6 +71,9 @@ class SiteEntity(Base):
         String(120), nullable=False, unique=True, index=True
     )
     enabled: Mapped[int] = enabled_column()
+    supports_model_listing: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     tags_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )

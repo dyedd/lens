@@ -111,8 +111,8 @@ export function ChannelModelsTable({
             >
               {!hasModels
                 ? locale === "zh-CN"
-                  ? "还没有模型。先获取模型列表，或手动添加模型。"
-                  : "No models yet. Fetch the model list or add models manually."
+                  ? "暂无模型。"
+                  : "No models yet."
                 : locale === "zh-CN"
                   ? "没有匹配的模型。"
                   : "No matching models."}

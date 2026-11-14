@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
+from ....core.model_names import filter_model_names
 from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS
 from ....core.runtime_channel_ids import compose_runtime_channel_id
 from ....models.channels import (
@@ -24,7 +26,7 @@ from .litellm_sync_tasks import (
 )
 from .model_discovery import (
     UpstreamModelList,
-    fetch_model_rule_list,
+    fetch_upstream_model_list,
     model_list_protocols,
 )
 
@@ -72,14 +74,15 @@ async def sync_channel_models(
         site
         for site in await state.channel_store.list_sites()
         if site.enabled
+        and site.supports_model_listing
         and (requested_site_ids is None or site.id in requested_site_ids)
     ]
     items: list[ChannelModelSyncResultItem] = []
     context_windows: dict[str, int] = {}
     if any(
-        credential.model_pattern.strip()
+        any(credential.model_pattern.strip() for credential in site.credentials)
+        or any(config.models for config in site.protocols)
         for site in sites
-        for credential in site.credentials
     ):
         try:
             context_windows = await fetch_context_windows(state)
@@ -182,6 +185,16 @@ async def _sync_credential_models(
     context_windows: dict[str, int],
 ) -> None:
     pattern = validate_model_pattern(credential.model_pattern)
+    fallback_pattern = ""
+    if not pattern:
+        names = {
+            model.model_name
+            for protocol_config in site.protocols
+            for model in protocol_config.models
+            if model.credential_id == credential.id
+        }
+        fallback_pattern = "\n".join(f"^{re.escape(name)}$" for name in sorted(names))
+        pattern = fallback_pattern
     if not pattern:
         return
     source = next(
@@ -221,7 +234,7 @@ async def _sync_credential_models(
             channel_proxy=site.channel_proxy,
         )
         try:
-            catalog = await fetch_model_rule_list(channel, pattern)
+            catalog = await fetch_upstream_model_list(channel)
         except ModelDiscoveryError as exc:
             # 同一次同步内，共用目录失败也要复用，避免后续出口改用另一份目录。
             catalogs[catalog_key] = exc
@@ -230,6 +243,10 @@ async def _sync_credential_models(
     if isinstance(catalog, ModelDiscoveryError):
         raise catalog
 
+    catalog_names = {model.name for model in catalog.models}
+    matched_names = set().union(
+        *(filter_model_names(catalog_names, rule) for rule in pattern.splitlines())
+    )
     existing_protocols: dict[str, set[ProtocolKind]] = defaultdict(set)
     for model in config.models:
         if model.credential_id == credential.id and model.protocol is not None:
@@ -238,6 +255,7 @@ async def _sync_credential_models(
     protocols = {
         model.name: model_list_protocols(model, catalog.protocol, source.kind)
         for model in catalog.models
+        if model.name in matched_names
     }
     if pinned is not None:
         protocols = {
@@ -250,6 +268,7 @@ async def _sync_credential_models(
         config.id,
         credential.id,
         upstream_names=upstream_names,
+        fallback_pattern=fallback_pattern,
         upstream_context_windows={
             model.name: model.context_window
             for model in catalog.models

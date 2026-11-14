@@ -73,6 +73,7 @@ class SiteImportItem(StrictBaseModel):
 
     name: str
     enabled: bool
+    supports_model_listing: bool = True
     tags: SiteTags = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
