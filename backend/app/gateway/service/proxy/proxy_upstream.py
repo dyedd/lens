@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -68,6 +68,7 @@ from .routing_plan import (
 )
 
 _NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
+_SSE_PREFIXES = (b"event:", b"data:", b":")
 
 
 @dataclass(slots=True)
@@ -110,17 +111,59 @@ def _response_media_type(response: httpx.Response) -> str:
 
 def _looks_like_sse_body(content: bytes) -> bool:
     """Detect an SSE body from upstreams that mislabel their content-type."""
-    return content[:64].lstrip().startswith((b"event:", b"data:"))
+    return content[:64].lstrip().startswith(_SSE_PREFIXES)
 
 
-def _response_with_buffered_body(
-    response: httpx.Response, content: bytes, media_type: str
+class _PrefixedResponseStream(httpx.AsyncByteStream):
+    def __init__(
+        self,
+        response: httpx.Response,
+        iterator: AsyncGenerator[bytes],
+        prefix: bytes,
+    ) -> None:
+        self.response = response
+        self.iterator = iterator
+        self.prefix = prefix
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self.prefix
+        async for chunk in self.iterator:
+            yield chunk
+
+    async def aclose(self) -> None:
+        try:
+            await self.iterator.aclose()
+        finally:
+            await self.response.aclose()
+
+
+async def _sniff_stream_response(
+    response: httpx.Response, deadline: RequestDeadline
 ) -> httpx.Response:
+    iterator = response.aiter_bytes()
+    prefix = b""
+    async with gateway_timeout_scope(
+        deadline.first_token_remaining_seconds(),
+        timeout_message=deadline.timeout_message(kind="first_token"),
+    ):
+        async for chunk in iterator:
+            prefix += chunk
+            probe = prefix[:64].lstrip()
+            if (
+                _looks_like_sse_body(prefix)
+                or len(prefix) >= 64
+                or not any(marker.startswith(probe) for marker in _SSE_PREFIXES)
+            ):
+                break
     headers = httpx.Headers(response.headers)
-    headers["content-type"] = media_type
+    if _looks_like_sse_body(prefix):
+        headers["content-type"] = "text/event-stream"
+    # aiter_bytes 已解压正文，重放时不能再次解压或沿用压缩前的长度。
+    headers.pop("content-encoding", None)
+    headers.pop("content-length", None)
     return httpx.Response(
         response.status_code,
-        content=content,
+        stream=_PrefixedResponseStream(response, iterator, prefix),
         headers=headers,
         request=response.request,
     )
@@ -533,24 +576,17 @@ async def _build_channel_result(
     """Build a response result and return the response still owned by the caller."""
     channel = context.channel
     body = context.body
-    active_response = response
+    original_response = response
     try:
         is_stream_request = bool(body.get("stream"))
         media_type = _response_media_type(response)
         is_event_stream = media_type == "text/event-stream"
         is_ndjson_stream = is_stream_request and media_type in _NDJSON_MEDIA_TYPES
         if is_stream_request and not is_event_stream and not is_ndjson_stream:
-            # Proxies often default Content-Type to text/html; classify the body.
-            content = await _read_response_body(response, context.deadline)
-            if _looks_like_sse_body(content):
-                buffered = _response_with_buffered_body(
-                    response, content, "text/event-stream"
-                )
-                await response.aclose()
-                response = buffered
-                active_response = response
-                is_event_stream = True
-            else:
+            response = await _sniff_stream_response(response, context.deadline)
+            is_event_stream = _response_media_type(response) == "text/event-stream"
+            if not is_event_stream:
+                content = await _read_response_body(response, context.deadline)
                 result = await _build_json_result(
                     response,
                     content,
@@ -592,8 +628,8 @@ async def _build_channel_result(
         result.first_token_latency_ms = elapsed_ms(stream_started_at)
         return result, response
     except BaseException:
-        if active_response is not response:
-            await active_response.aclose()
+        if response is not original_response:
+            await response.aclose()
         raise
 
 
@@ -619,16 +655,17 @@ async def execute_upstream_request(
         return result
     except httpx.HTTPStatusError as exc:
         response = exc.response
+        status_code = response.status_code
+        detail = f"HTTP {status_code}"
         if not response.is_stream_consumed:
             try:
-                await response.aread()
-            except httpx.HTTPError:
+                await _read_response_body(response, context.deadline)
+            except (httpx.HTTPError, GatewayTimeoutError):
                 pass
-        status_code = response.status_code
-        if response.is_stream_consumed:
-            detail = format_http_response_error(response)
+            else:
+                detail = format_http_response_error(response)
         else:
-            detail = f"HTTP {status_code}"
+            detail = format_http_response_error(response)
         retry_after_seconds = (
             _parse_retry_after_seconds(response.headers.get("retry-after"))
             if status_code in (429, 503)
