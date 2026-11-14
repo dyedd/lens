@@ -121,6 +121,11 @@ def _client_request(protocol: str, stream: bool) -> tuple[str, dict[str, Any]]:
                     ],
                 },
                 {
+                    "type": "reasoning",
+                    "summary": [{"type": "summary_text", "text": "Previous analysis"}],
+                    "encrypted_content": "gAAAA-openai-history",
+                },
+                {
                     "type": "function_call",
                     "call_id": "call-prev",
                     "name": "weather",
@@ -652,6 +657,14 @@ def test_protocol_conversion_preserves_tool_history_response_and_usage(
     async def send(_client, upstream, *, stream: bool, body_bytes: bytes):
         body = json.loads(body_bytes)
         _assert_upstream_request(target, body)
+        if source == "openai_responses":
+            if target == "openai_responses":
+                reasoning = next(
+                    item for item in body["input"] if item.get("type") == "reasoning"
+                )
+                assert reasoning == _client_request(source, stream)[1]["input"][1]
+            else:
+                assert "gAAAA-openai-history" not in json.dumps(body)
         if target == "gemini":
             results = [
                 part["functionResponse"]

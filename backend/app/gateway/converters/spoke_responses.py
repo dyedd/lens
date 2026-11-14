@@ -458,16 +458,21 @@ def _responses_input_to_messages(
                 )
             )
         elif item_type == "reasoning":
+            item_id = item.get("id")
+            if item_id is not None:
+                item_id = required_string(
+                    item_id, "Responses reasoning item id must be a non-empty string"
+                )
+            # 历史输入可省略 ID；原始推理状态由 sealed 保留。
             messages.append(
                 Message(
                     role=MessageRole.ASSISTANT,
                     parts=[
                         ReasoningPart(
                             text=reasoning_summary_text(item),
-                            opaque=encode_reasoning_item(item),
                             origin=_ORIGIN,
                             kind=ReasoningKind.ENCRYPTED,
-                            item_id=_text(item.get("id")),
+                            item_id=item_id or "",
                             summary=tuple(_reasoning_summary_parts(item)),
                             sealed=dict(item),
                         )
