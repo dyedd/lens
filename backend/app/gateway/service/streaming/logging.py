@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ....core.errors import RequestCancelledError
 from ....models.channels import ChannelConfig
 from ....models.protocols import RequestLogLifecycleStatus
 from ....models.request_logs import RequestLogInput
@@ -63,6 +64,12 @@ class StreamLogOutcome:
 def stream_log_outcome(
     result: UpstreamResult, capture: StreamCapture | None
 ) -> StreamLogOutcome:
+    if capture is not None and capture.is_admin_cancelled:
+        return StreamLogOutcome(
+            lifecycle_status=RequestLogLifecycleStatus.CANCELLED,
+            capture_issue=str(RequestCancelledError()),
+            status_code=499,
+        )
     capture_issue = _describe_stream_capture_issue(capture)
     return StreamLogOutcome(
         lifecycle_status=_stream_log_lifecycle_status(capture, capture_issue),

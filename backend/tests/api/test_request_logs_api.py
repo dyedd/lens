@@ -1,13 +1,219 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from threading import Event
+from time import monotonic, sleep
 
+import anyio
 import httpx
 import pytest
 from conftest import gateway_headers, run_async, seed_request_log, valid_site_payload
 
 from app.persistence.entities import RequestLogEntity
+
+
+@pytest.mark.parametrize(
+    ("phase", "protocol"),
+    [
+        ("connecting", "openai_chat"),
+        ("body", "openai_chat"),
+        ("streaming", "openai_chat"),
+        ("first_chunk", "openai_chat"),
+        ("streaming", "openai_responses"),
+        ("streaming", "anthropic"),
+        ("streaming", "gemini"),
+    ],
+)
+def test_cancel_request_stops_upstream_and_keeps_log(
+    client, admin_headers, monkeypatch, create_site_group_and_key, phase, protocol
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    _, group, key = create_site_group_and_key()
+    blocked = Event()
+    closed = Event()
+    calls = 0
+    is_stream = phase in {"streaming", "first_chunk"}
+
+    async def wait_for_cancel():
+        blocked.set()
+        with anyio.fail_after(10):
+            await anyio.sleep_forever()
+
+    class SlowStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            if phase == "streaming":
+                yield b'data: {"choices":[{"delta":{"content":"hello"}}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\n'
+            await wait_for_cancel()
+
+        async def aclose(self):
+            await anyio.sleep(0)
+            closed.set()
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        nonlocal calls
+        calls += 1
+        if b"unrelated" in body_bytes:
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+                request=httpx.Request("POST", upstream.url),
+            )
+        if phase == "connecting":
+            try:
+                await wait_for_cancel()
+            finally:
+                closed.set()
+        return httpx.Response(
+            200,
+            stream=SlowStream(),
+            headers={
+                "content-type": "text/event-stream" if is_stream else "application/json"
+            },
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    path = "/v1/chat/completions"
+    body = {
+        "model": group["name"],
+        "stream": is_stream,
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+    if protocol == "openai_responses":
+        path = "/v1/responses"
+        body = {"model": group["name"], "stream": True, "input": "hello"}
+    elif protocol == "anthropic":
+        path = "/v1/messages"
+        body["max_tokens"] = 16
+    elif protocol == "gemini":
+        path = f"/v1beta/models/{group['name']}:streamGenerateContent"
+        body = {"contents": [{"role": "user", "parts": [{"text": "hello"}]}]}
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            client.post,
+            path,
+            headers=gateway_headers(key),
+            json=body,
+        )
+        assert blocked.wait(5), "upstream did not start"
+        page = client.get("/api/admin/request-logs/page", headers=admin_headers).json()
+        log = page["items"][0]
+        assert log["can_cancel"] is True
+        other = client.post(
+            "/v1/chat/completions",
+            headers=gateway_headers(key),
+            json={
+                "model": group["name"],
+                "messages": [{"role": "user", "content": "unrelated"}],
+            },
+        )
+        assert other.status_code == 200, other.text
+        cancelled = client.post(
+            f"/api/admin/request-logs/{log['id']}/cancel", headers=admin_headers
+        )
+        assert cancelled.status_code == 204, cancelled.text
+        response = future.result(timeout=5)
+
+    assert closed.is_set()
+    assert calls == 2
+    assert response.status_code == (200 if is_stream else 499)
+    assert "Request cancelled by administrator" in response.text
+    if protocol == "gemini":
+        assert '"status": "CANCELLED"' in response.text
+    elif protocol != "anthropic":
+        assert "request_cancelled" in response.text
+    detail = client.get(
+        f"/api/admin/request-logs/{log['id']}", headers=admin_headers
+    ).json()
+    assert detail["lifecycle_status"] == "cancelled"
+    assert detail["can_cancel"] is False
+    assert detail["status_code"] == 499
+    assert detail["attempts"][0]["success"] is False
+    assert detail["upstream_model_name"] == "gpt-4o"
+    if phase == "streaming":
+        assert detail["input_tokens"] == 3
+        assert detail["output_tokens"] == 1
+    health = client.get("/api/admin/model-health", headers=admin_headers).json()
+    assert all(item["cooldown_remaining_seconds"] == 0 for item in health["items"])
+    assert (
+        client.post(
+            f"/api/admin/request-logs/{log['id']}/cancel", headers=admin_headers
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            "/api/admin/request-logs/999999/cancel", headers=admin_headers
+        ).status_code
+        == 404
+    )
+
+
+def test_cancel_request_during_cooldown_keeps_previous_failures(
+    client, admin_headers, monkeypatch, create_site_group_and_key
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    _, group, key = create_site_group_and_key()
+    calls = 0
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "60"},
+            json={"error": {"message": "rate limited"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    body = {"model": group["name"], "messages": [{"role": "user", "content": "hello"}]}
+    first = client.post("/v1/chat/completions", headers=gateway_headers(key), json=body)
+    assert first.status_code == 429
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": "failover_cooled_wait_seconds", "value": "30"}]},
+    )
+    assert settings.status_code == 200, settings.text
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            client.post, "/v1/chat/completions", headers=gateway_headers(key), json=body
+        )
+        deadline = monotonic() + 5
+        while monotonic() < deadline:
+            logs = client.get(
+                "/api/admin/request-logs/page",
+                headers=admin_headers,
+                params={"status": "running"},
+            ).json()["items"]
+            if logs and logs[0]["can_cancel"]:
+                break
+            sleep(0.01)
+        else:
+            pytest.fail("request did not enter cooldown wait")
+        log_id = logs[0]["id"]
+        cancelled = client.post(
+            f"/api/admin/request-logs/{log_id}/cancel", headers=admin_headers
+        )
+        assert cancelled.status_code == 204
+        assert future.result(timeout=5).status_code == 499
+    assert calls == 1
+    log = client.get(f"/api/admin/request-logs/{log_id}", headers=admin_headers).json()
+    assert log["lifecycle_status"] == "cancelled"
+    assert log["attempts"][0]["status_code"] == 503
+    assert "rate limited" in log["attempts"][0]["error_message"]
+    failed = client.get(
+        "/api/admin/request-logs/page",
+        headers=admin_headers,
+        params={"status": "failed"},
+    ).json()["items"]
+    assert len(failed) == 1
+    assert failed[0]["status_code"] == 429
 
 
 @pytest.mark.parametrize("mode", ["model", "channel"])

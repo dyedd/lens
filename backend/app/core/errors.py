@@ -51,6 +51,15 @@ class ResourceConflictError(LensError):
         super().__init__(message, status_code=409, error_type="conflict")
 
 
+class RequestCancelledError(LensError):
+    def __init__(self) -> None:
+        super().__init__(
+            "Request cancelled by administrator",
+            status_code=499,
+            error_type="request_cancelled",
+        )
+
+
 class ModelDiscoveryError(LensError):
     """An upstream model catalog could not be fetched or parsed."""
 

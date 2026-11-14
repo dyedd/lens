@@ -117,6 +117,7 @@ def stream_error_frame(
     protocol: ProtocolKind,
     message: str,
     error_type: str = "server_error",
+    status_code: int = status.HTTP_502_BAD_GATEWAY,
 ) -> bytes:
     """Build an in-band SSE error frame for a stream that already started.
 
@@ -133,7 +134,7 @@ def stream_error_frame(
     else:
         payload = _protocol_error_payload(
             protocol=protocol,
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=status_code,
             error_type=error_type,
             message=message,
         )
@@ -238,6 +239,7 @@ def _gemini_error_status(status_code: int) -> str:
         status.HTTP_404_NOT_FOUND: "NOT_FOUND",
         status.HTTP_409_CONFLICT: "ABORTED",
         status.HTTP_429_TOO_MANY_REQUESTS: "RESOURCE_EXHAUSTED",
+        499: "CANCELLED",
         status.HTTP_504_GATEWAY_TIMEOUT: "DEADLINE_EXCEEDED",
     }
     if status_code in statuses:

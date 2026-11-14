@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ...models.channels import ChannelConfig
@@ -9,6 +9,7 @@ from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from ...models.request_logs import RequestLogInput
 from .app_state import app_state
 from .proxy.routing_plan import elapsed_ms
+from .request_cancellation import RequestCancellation
 from .runtime_types import (
     AttemptLog,
     UpstreamResult,
@@ -38,6 +39,20 @@ class RequestLogger:
     resolved_group_name: str | None = None
     rate_multiplier: float | None = None
     last_channel: ChannelConfig | None = None
+    cancellation: RequestCancellation = field(default_factory=RequestCancellation)
+
+    async def record_cancelled(self, message: str, *, is_stream: bool) -> None:
+        last_attempt = self.attempts[-1] if self.attempts else None
+        await self._write(
+            upstream_model_name=last_attempt.model_name if last_attempt else None,
+            channel=None,
+            lifecycle_status=RequestLogLifecycleStatus.CANCELLED,
+            status_code=499,
+            success=False,
+            is_stream=is_stream,
+            rate_multiplier=self.rate_multiplier,
+            error_message=message,
+        )
 
     def plan_route(
         self, *, requested_group_name: str | None, resolved_group_name: str | None
@@ -60,6 +75,8 @@ class RequestLogger:
             self.user_agent = user_agent
         if rate_multiplier is not None:
             self.rate_multiplier = rate_multiplier
+        if request_content is not None:
+            self.request_content = request_content
         await self._write(
             upstream_model_name=upstream_model_name,
             channel=channel,

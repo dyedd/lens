@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from fastapi import Depends, Query, Response
 
+from ....core.errors import ResourceConflictError
 from ....models.protocols import (
     ProtocolKind,
     RequestLogSortMode,
@@ -30,7 +31,7 @@ async def list_request_logs(
     _: Any = Depends(get_current_admin),
 ) -> RequestLogPage:
     """Return a filtered page of request logs."""
-    return await app_state.request_log_store.queries.list_request_log_page(
+    page = await app_state.request_log_store.queries.list_request_log_page(
         limit=limit,
         offset=offset,
         days=days,
@@ -44,6 +45,10 @@ async def list_request_logs(
         keyword=keyword,
         sort=sort,
     )
+    for item in page.items:
+        cancellation = app_state.active_requests.get(item.id)
+        item.can_cancel = cancellation is not None and not cancellation.is_cancelled
+    return page
 
 
 async def clear_request_logs(_: Any = Depends(get_current_admin)) -> Response:
@@ -56,4 +61,16 @@ async def get_request_log_detail(
     log_id: int, _: Any = Depends(get_current_admin)
 ) -> RequestLogDetail:
     """Return one request log with its payload and attempts."""
-    return await app_state.request_log_store.queries.get_request_log(log_id)
+    detail = await app_state.request_log_store.queries.get_request_log(log_id)
+    cancellation = app_state.active_requests.get(log_id)
+    detail.can_cancel = cancellation is not None and not cancellation.is_cancelled
+    return detail
+
+
+async def cancel_request(log_id: int, _: Any = Depends(get_current_admin)) -> Response:
+    cancellation = app_state.active_requests.get(log_id)
+    if cancellation is None:
+        await app_state.request_log_store.queries.get_request_log(log_id)
+        raise ResourceConflictError("Request is no longer active on this instance")
+    cancellation.cancel()
+    return Response(status_code=204)
