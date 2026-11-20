@@ -236,6 +236,12 @@ class ModelGroupItemEntity(Base):
     )
 
 
+class ModelGroupAutoCreateExclusionEntity(Base):
+    __tablename__ = "model_group_auto_create_exclusions"
+
+    model_name: Mapped[str] = mapped_column(String(200), primary_key=True)
+
+
 class ModelSyncRunEntity(Base):
     __tablename__ = "model_sync_runs"
 

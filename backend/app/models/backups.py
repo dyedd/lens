@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -191,6 +191,9 @@ class ConfigBackupDump(StrictBaseModel):
     settings: list[SettingItem] = Field(default_factory=list)
     sites: list[SiteConfig] = Field(default_factory=list)
     groups: list[ModelGroup] = Field(default_factory=list)
+    model_group_auto_create_exclusions: list[
+        Annotated[str, Field(min_length=1, max_length=200)]
+    ] = Field(default_factory=list)
     model_prices: list[ModelPriceItem] = Field(default_factory=list)
     cronjobs: list[ConfigBackupCronjob] = Field(default_factory=list)
     stats: ConfigBackupStatsSnapshot = Field(default_factory=ConfigBackupStatsSnapshot)

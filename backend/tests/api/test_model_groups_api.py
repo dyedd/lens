@@ -317,6 +317,84 @@ def test_model_group_defaults_to_failover(client, admin_headers) -> None:
     assert response.json()["strategy"] == "failover"
 
 
+@pytest.mark.parametrize(
+    ("group_name", "join_existing"), [("gpt-4o", False), ("daily-chat", True)]
+)
+def test_deleted_group_models_stay_unplaced_until_explicit_placement(
+    client, peer_client, admin_headers, create_site, group_name, join_existing
+) -> None:
+    site = create_site(valid_site_payload())
+    [group] = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    response = client.put(
+        f"/api/admin/model-groups/{group['id']}",
+        headers=admin_headers,
+        json={"name": group_name},
+    )
+    assert response.status_code == 200, response.text
+    response = client.delete(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    )
+    assert response.status_code == 204, response.text
+    pending = client.get("/api/admin/unplaced-models", headers=admin_headers).json()
+    assert [item["model_name"] for item in pending["items"]] == ["gpt-4o"]
+
+    for _ in range(2):
+        response = peer_client.post(
+            "/api/admin/channel-model-sync",
+            headers=admin_headers,
+            json={"site_ids": []},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["groups"]["created_groups"] == []
+        assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
+
+    payload = valid_site_payload()
+    payload["protocols"][0]["models"].append(
+        {
+            "credential_id": "cred-1",
+            "model_name": "claude-sonnet-4",
+            "protocol": "openai_chat",
+        }
+    )
+    response = client.put(
+        f"/api/admin/sites/{site['id']}", headers=admin_headers, json=payload
+    )
+    assert response.status_code == 200, response.text
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert [item["name"] for item in groups] == ["claude-sonnet-4"]
+    pending = client.get("/api/admin/unplaced-models", headers=admin_headers).json()
+    assert [item["model_name"] for item in pending["items"]] == ["gpt-4o"]
+
+    response = client.post(
+        "/api/admin/model-group-placements",
+        headers=admin_headers,
+        json={
+            "model_names": ["gpt-4o"],
+            "group_id": groups[0]["id"] if join_existing else "",
+        },
+    )
+    assert response.status_code == 200, response.text
+    if join_existing:
+        assert [item["model_name"] for item in response.json()["joined"]] == ["gpt-4o"]
+    else:
+        assert [item["name"] for item in response.json()["created"]] == ["gpt-4o"]
+    pending = client.get("/api/admin/unplaced-models", headers=admin_headers).json()
+    assert pending["items"] == []
+
+    placed_group_id = (
+        groups[0]["id"] if join_existing else response.json()["created"][0]["id"]
+    )
+    response = client.delete(
+        f"/api/admin/model-groups/{placed_group_id}", headers=admin_headers
+    )
+    assert response.status_code == 204, response.text
+    response = peer_client.post(
+        "/api/admin/channel-model-sync", headers=admin_headers, json={"site_ids": []}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["groups"]["created_groups"] == []
+
+
 def test_model_group_fallback_groups_round_trip(
     client, admin_headers, create_model_group
 ) -> None:

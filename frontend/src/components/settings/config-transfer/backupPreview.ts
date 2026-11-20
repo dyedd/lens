@@ -78,6 +78,10 @@ export function resultLabelForLocale(locale: Locale, key: string) {
     imported_stats_daily: ["导入统计(日)", "Imported stats (daily)"],
     imported_stats_total: ["导入统计(总计)", "Imported stats (total)"],
     model_group_items: ["模型组成员", "Model group items"],
+    model_group_auto_create_exclusions: [
+      "自动建组排除项",
+      "Automatic group creation exclusions",
+    ],
     model_groups: ["模型组", "Model groups"],
     model_prices: ["模型价格", "Model prices"],
     overview_model_daily_stats: ["模型统计(日)", "Model stats (daily)"],
