@@ -126,19 +126,18 @@ export function ChannelsDialogs({
           )}
           onOpenRemote={() => onRemoteModelsOpenChange(true)}
           initialStatusFilter={modelsStatusFilter}
-        />
-      ) : null}
-      {editor.isDialogOpen ? (
-        <ChannelRemoteModelsDialog
-          open={remoteModelsOpen}
-          locale={locale}
-          channelName={editor.form.name}
-          loading={picker.fetching}
-          importing={picker.detecting}
-          onOpenChange={onRemoteModelsOpenChange}
-          onLoad={picker.discoverRemoteCatalog}
-          onImport={picker.importRemoteModels}
-        />
+        >
+          <ChannelRemoteModelsDialog
+            open={remoteModelsOpen}
+            locale={locale}
+            channelName={editor.form.name}
+            loading={picker.fetching}
+            importing={picker.detecting}
+            onOpenChange={onRemoteModelsOpenChange}
+            onLoad={picker.discoverRemoteCatalog}
+            onImport={picker.importRemoteModels}
+          />
+        </ChannelModelsDialog>
       ) : null}
       {transfer.batchImportOpen ? (
         <BatchImportDialog
