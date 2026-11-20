@@ -7,7 +7,12 @@ import {
   Plus,
   Wand2,
 } from "lucide-react";
-import { type FormEventHandler, useMemo, useState } from "react";
+import {
+  type FormEventHandler,
+  type ReactNode,
+  useMemo,
+  useState,
+} from "react";
 import {
   BulkActionButton,
   BulkActionsPopover,
@@ -57,6 +62,7 @@ import { ProtocolDropdown } from "./ProtocolDropdown";
 type ModelSort = "name-asc" | "name-desc" | "status-desc";
 
 type Props = {
+  children?: ReactNode;
   open: boolean;
   locale: Locale;
   channelName: string;
@@ -85,11 +91,17 @@ type Props = {
 };
 
 /** Renders the model binding table for one channel. */
-export function ChannelModelsDialog({ open, onOpenChange, ...props }: Props) {
+export function ChannelModelsDialog({
+  children,
+  open,
+  onOpenChange,
+  ...props
+}: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <ChannelModelsBody onOpenChange={onOpenChange} {...props} />
+        {children}
       </DialogContent>
     </Dialog>
   );
@@ -116,7 +128,7 @@ function ChannelModelsBody({
   credentialOptions,
   onApplyModelPattern,
   initialStatusFilter = "all",
-}: Omit<Props, "open">) {
+}: Omit<Props, "open" | "children">) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<ModelStatusFilter>(initialStatusFilter);
