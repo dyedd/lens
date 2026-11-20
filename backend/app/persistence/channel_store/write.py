@@ -279,6 +279,7 @@ async def upsert_site_payload(
                 updated_at=now,
                 headers_json=_dump_rules(payload.headers),
                 proxy_mode=payload.proxy_mode.value,
+                supports_model_listing=int(payload.supports_model_listing),
                 channel_proxy=payload.channel_proxy.strip(),
                 param_override=_dump_rules(payload.param_override),
             )
@@ -290,6 +291,7 @@ async def upsert_site_payload(
         site.updated_at = now
         site.headers_json = _dump_rules(payload.headers)
         site.proxy_mode = payload.proxy_mode.value
+        site.supports_model_listing = int(payload.supports_model_listing)
         site.channel_proxy = payload.channel_proxy.strip()
         site.param_override = _dump_rules(payload.param_override)
 

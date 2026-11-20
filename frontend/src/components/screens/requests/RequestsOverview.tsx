@@ -91,6 +91,8 @@ type Props = {
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: (typeof PAGE_SIZE_OPTIONS)[number]) => void;
   onOpenDetail: (id: number) => void;
+  onCancel: (id: number) => void;
+  cancellingId?: number;
 };
 
 /** Renders request logs as a toolbar and table. */
@@ -131,6 +133,8 @@ export function RequestsOverview({
   onPageChange,
   onPageSizeChange,
   onOpenDetail,
+  onCancel,
+  cancellingId,
 }: Props) {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const displayPage = page + 1;
@@ -424,6 +428,8 @@ export function RequestsOverview({
         emptyLabel={emptyLabel}
         timeZone={timeZone}
         onOpenDetail={onOpenDetail}
+        onCancel={onCancel}
+        cancellingId={cancellingId}
       />
 
       <ConfirmDeleteDialog

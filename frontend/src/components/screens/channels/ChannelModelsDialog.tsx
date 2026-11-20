@@ -60,6 +60,7 @@ type Props = {
   open: boolean;
   locale: Locale;
   channelName: string;
+  supportsModelListing: boolean;
   models: AggregatedModel[];
   saving: boolean;
   fetching: boolean;
@@ -74,7 +75,6 @@ type Props = {
   detecting: boolean;
   onDetectProtocols: (keys: string[]) => Promise<void>;
   onOpenRemote: () => void;
-  /** Keys whose model rule can be edited, with their current filters. */
   credentialOptions: Array<{ id: string; label: string }>;
   onApplyModelPattern: (
     credentialId: string,
@@ -98,6 +98,7 @@ export function ChannelModelsDialog({ open, onOpenChange, ...props }: Props) {
 function ChannelModelsBody({
   locale,
   channelName,
+  supportsModelListing,
   models,
   saving,
   fetching,
@@ -203,9 +204,13 @@ function ChannelModelsBody({
               : `Models - ${channelName}`}
           </DialogTitle>
           <DialogDescription>
-            {locale === "zh-CN"
-              ? "同步会核对已保存的模型，移除已从上游目录下线的模型。"
-              : "Sync checks saved models and removes those no longer in the upstream catalog."}
+            {supportsModelListing
+              ? locale === "zh-CN"
+                ? "同步会核对已保存的模型，移除已从上游目录下线的模型。"
+                : "Sync checks saved models and removes those no longer in the upstream catalog."
+              : locale === "zh-CN"
+                ? "目录获取已关闭，模型不会自动同步。"
+                : "Model listing is off. Models will not sync automatically."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -356,7 +361,7 @@ function ChannelModelsBody({
               size="sm"
               variant="outline"
               className="h-8"
-              disabled={fetching || detecting}
+              disabled={fetching || detecting || !supportsModelListing}
               onClick={onOpenRemote}
             >
               <CloudDownload className="size-3.5" />
@@ -427,6 +432,7 @@ function ChannelModelsBody({
         onOpenChange={setNewOpen}
         onSubmit={onApplyModelPattern}
         credentialOptions={credentialOptions}
+        supportsModelListing={supportsModelListing}
       />
       <ConfirmDeleteDialog
         open={removeRequest !== null}

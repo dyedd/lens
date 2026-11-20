@@ -2,6 +2,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field, HttpUrl, field_validator, model_validator
 
+from ..core.model_names import ModelPatternKind, classify_model_pattern
 from ..core.urls import canonicalize_base_url
 from .credential_scopes import parse_legacy_credential_scopes
 from .protocols import ChannelProxyMode, ProtocolKind
@@ -18,6 +19,7 @@ ModelTestMode = Literal["direct", "codex", "claude"]
 
 
 class SiteModelFetchRequest(StrictBaseModel):
+    supports_model_listing: bool = True
     base_url_id: str = Field(default="preview", min_length=1)
     base_url: HttpUrl
     endpoint_kind: SiteBaseUrlKind = "default"
@@ -33,6 +35,19 @@ class SiteModelFetchRequest(StrictBaseModel):
     _canonicalize_base_url = field_validator("base_url", mode="before")(
         canonicalize_base_url
     )
+
+    @model_validator(mode="after")
+    def validate_model_listing(self) -> "SiteModelFetchRequest":
+        if not self.supports_model_listing and (
+            self.model_pattern is None
+            or any(
+                classify_model_pattern(rule) is not ModelPatternKind.LITERAL
+                for rule in self.model_pattern.splitlines()
+                if rule.strip()
+            )
+        ):
+            raise ValueError("Model listing is disabled; enter model names directly")
+        return self
 
     @model_validator(mode="before")
     @classmethod

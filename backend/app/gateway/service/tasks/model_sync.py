@@ -59,6 +59,7 @@ async def sync_channel_models(
         site
         for site in await state.channel_store.list_sites()
         if site.enabled
+        and site.supports_model_listing
         and (requested_site_ids is None or site.id in requested_site_ids)
     ]
     items: list[ChannelModelSyncResultItem] = []

@@ -10,6 +10,7 @@ from starlette.background import BackgroundTask
 
 from app.core.model_name_parser import extract_request_reasoning_effort
 
+from ....core.errors import RequestCancelledError
 from ....core.upstream_rules import (
     RuleEvaluationError,
     apply_param_rules,
@@ -333,14 +334,20 @@ async def _send_attempt(
             deadline=run.deadline,
             tool_mapping=prepared.tool_mapping,
         )
-        return await execute_upstream_request(
-            UpstreamExecutionRequest(
-                upstream=prepared.upstream,
-                body_bytes=prepared.body_bytes,
-                response_context=response_context,
-                global_proxy_url=str(request.runtime["proxy_url"]),
-            ),
-        )
+        with run.log_ctx.cancellation.watch():
+            return await execute_upstream_request(
+                UpstreamExecutionRequest(
+                    upstream=prepared.upstream,
+                    body_bytes=prepared.body_bytes,
+                    response_context=response_context,
+                    global_proxy_url=str(request.runtime["proxy_url"]),
+                ),
+            )
+    except RequestCancelledError as exc:
+        run.attempt.status_code = exc.status_code
+        run.attempt.error_message = str(exc)
+        run.attempt.duration_ms = elapsed_ms(run.attempt_started_at)
+        raise
     except UpstreamRequestError as exc:
         return await _record_target_failure(
             run,
@@ -360,6 +367,7 @@ async def _finish_attempt(
     run.attempt.duration_ms = elapsed_ms(run.attempt_started_at)
 
     if not result.is_stream:
+        app_state.active_requests.pop(run.log_ctx.request_log_id, None)
         app_state.router.record_success(
             channel.id,
             credential_id=target.credential_id,
@@ -489,16 +497,20 @@ async def _finalize_stream_request(
             lifecycle_status=outcome.lifecycle_status,
             target=target,
         )
-        if outcome.capture_issue is None:
+        if outcome.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED:
             app_state.router.note_success(
                 result.stream_capture.route_cursor_key
                 if result.stream_capture is not None
                 else "",
                 target,
             )
-        elif was_probe and not (
-            result.stream_capture is not None
-            and result.stream_capture.error_classification is not None
+        elif (
+            outcome.lifecycle_status != RequestLogLifecycleStatus.CANCELLED
+            and was_probe
+            and not (
+                result.stream_capture is not None
+                and result.stream_capture.error_classification is not None
+            )
         ):
             app_state.router.record_failure(
                 channel.id,

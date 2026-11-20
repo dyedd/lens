@@ -161,6 +161,7 @@ def build_site_configs(rows: SiteRows) -> list[SiteConfig]:
             id=row.id,
             name=row.name,
             enabled=bool(row.enabled),
+            supports_model_listing=bool(row.supports_model_listing),
             tags=load_json_column(row.tags_json, STRING_LIST, "tags_json"),
             updated_at=format_site_updated_at(row.updated_at),
             proxy_mode=ChannelProxyMode(row.proxy_mode),

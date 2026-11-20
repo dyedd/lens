@@ -96,6 +96,7 @@ export function ChannelsDialogs({
           open
           locale={locale}
           channelName={editor.form.name}
+          supportsModelListing={editor.form.supports_model_listing}
           models={overviewModels}
           saving={save.isSaving}
           fetching={picker.fetching}

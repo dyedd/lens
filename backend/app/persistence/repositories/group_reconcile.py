@@ -1,10 +1,7 @@
-"""Reconcile saved model group members with names, placement, and upstream state.
+"""按名称和规则归组，并移除目标已不存在的成员。
 
-One pass runs the group stages of the model pipeline in order: models join the
-group named after them, unplaced models join a same-named group or get a new
-one, and members whose target is no longer available are removed when they
-were joined automatically. Every member it adds is saved, so reads and
-routing never infer membership from names themselves.
+手动成员保留其归组关系，但同样要求目标存在。归组结果写入数据库，
+读取和路由不再根据名称推断成员关系。
 """
 
 from __future__ import annotations

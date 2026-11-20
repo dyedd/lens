@@ -43,6 +43,7 @@ from ..gateway.service.admin.overview import (
     list_overview_daily,
 )
 from ..gateway.service.admin.request_logs import (
+    cancel_request,
     clear_request_logs,
     get_request_log_detail,
     list_request_logs,
@@ -314,6 +315,12 @@ def register_overview(app: APIRouter) -> None:
 
 
 def register_request_logs(app: APIRouter) -> None:
+    app.add_api_route(
+        "/api/admin/request-logs/{log_id}/cancel",
+        cancel_request,
+        methods=["POST"],
+        status_code=204,
+    )
     app.add_api_route(
         "/api/admin/request-logs/page",
         list_request_logs,

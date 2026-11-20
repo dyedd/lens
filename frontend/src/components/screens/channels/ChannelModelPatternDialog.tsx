@@ -23,6 +23,7 @@ export function ChannelModelPatternDialog({
   onOpenChange,
   onSubmit,
   credentialOptions,
+  supportsModelListing,
 }: {
   open: boolean;
   locale: Locale;
@@ -33,6 +34,7 @@ export function ChannelModelPatternDialog({
     signal: AbortSignal,
   ) => Promise<boolean>;
   credentialOptions: Array<{ id: string; label: string }>;
+  supportsModelListing: boolean;
 }) {
   const [credentialId, setCredentialId] = useState(
     credentialOptions[0]?.id ?? "",
@@ -85,9 +87,13 @@ export function ChannelModelPatternDialog({
         className="max-w-md"
         title={locale === "zh-CN" ? "模型规则" : "Model rule"}
         description={
-          locale === "zh-CN"
-            ? "每行一个模型名或正则。模型名直接加入；正则和 * 从上游匹配。"
-            : "One model name or regex per line. Names are added directly; regex and * match upstream models."
+          supportsModelListing
+            ? locale === "zh-CN"
+              ? "每行一个模型名或正则，正则从上游目录匹配。"
+              : "One model name or regex per line. Regex matches the upstream catalog."
+            : locale === "zh-CN"
+              ? "每行一个模型名。"
+              : "One model name per line."
         }
         footer={
           <>
@@ -145,13 +151,23 @@ export function ChannelModelPatternDialog({
           ) : null}
           <Field data-invalid={patternError || undefined}>
             <FieldLabel htmlFor="channel-model-pattern">
-              {locale === "zh-CN" ? "模型名 / 正则" : "Model names / regex"}
+              {supportsModelListing
+                ? locale === "zh-CN"
+                  ? "模型名 / 正则"
+                  : "Model names / regex"
+                : locale === "zh-CN"
+                  ? "模型名"
+                  : "Model names"}
             </FieldLabel>
             <Textarea
               id="channel-model-pattern"
               value={pattern}
               onChange={(event) => setPattern(event.target.value)}
-              placeholder={"gpt-4o\nclaude-3.5-sonnet\n^gemini-.*"}
+              placeholder={
+                supportsModelListing
+                  ? "gpt-4o\nclaude-3.5-sonnet\n^gemini-.*"
+                  : "gpt-4o\nclaude-3.5-sonnet"
+              }
               disabled={isApplying}
               aria-invalid={patternError || undefined}
               className="max-h-48 font-mono placeholder:font-sans"

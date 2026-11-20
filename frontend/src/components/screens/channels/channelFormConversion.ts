@@ -175,6 +175,7 @@ export function toForm(site: Site): FormState {
     credentials,
     protocolConfigs,
     proxy_mode: site.proxy_mode,
+    supports_model_listing: site.supports_model_listing,
     channel_proxy: site.channel_proxy,
     headersJson: headerDraftsToJson(headerRulesToDraft(site.headers)),
     paramsJson: paramDraftsToJson(
@@ -211,6 +212,7 @@ export function toPayload(form: FormState): SitePayload {
     name: rebuilt.name.trim(),
     tags: rebuilt.tags,
     proxy_mode: rebuilt.proxy_mode,
+    supports_model_listing: rebuilt.supports_model_listing,
     channel_proxy: rebuilt.channel_proxy.trim(),
     headers: headerDraftToRules(
       headerDraftsFromJson(rebuilt.headersJson) ?? [],

@@ -88,6 +88,7 @@ export type Site = {
   id: string;
   name: string;
   enabled: boolean;
+  supports_model_listing: boolean;
   tags: string[];
   updated_at?: string | null;
   proxy_mode: ChannelProxyMode;
@@ -129,6 +130,7 @@ export type HealthSummary = {
 };
 export type SitePayload = {
   name: string;
+  supports_model_listing: boolean;
   tags: string[];
   proxy_mode: ChannelProxyMode;
   channel_proxy: string;
@@ -184,6 +186,7 @@ export type SiteBatchImportProtocolInput = {
 export type SiteBatchImportItem = {
   name: string;
   enabled: boolean;
+  supports_model_listing?: boolean;
   tags: string[];
   proxy_mode?: ChannelProxyMode;
   channel_proxy?: string;
@@ -242,6 +245,7 @@ export type SiteEndpointProbeResult = {
   error_message: string;
 };
 export type SiteModelFetchPayload = {
+  supports_model_listing?: boolean;
   base_url_id: string;
   base_url: string;
   endpoint_kind?: SiteBaseUrlKind;

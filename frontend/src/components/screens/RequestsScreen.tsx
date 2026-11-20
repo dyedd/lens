@@ -100,6 +100,12 @@ export function RequestsScreen() {
         onPageChange={screen.setPage}
         onPageSizeChange={screen.changePageSize}
         onOpenDetail={screen.setDetailId}
+        onCancel={(id) => screen.cancelRequest.mutate(id)}
+        cancellingId={
+          screen.cancelRequest.isPending
+            ? screen.cancelRequest.variables
+            : undefined
+        }
       />
       <RequestLogDetailSheet
         item={selectedItem}
@@ -110,6 +116,11 @@ export function RequestsScreen() {
         timeZone={screen.timeZone}
         relayLogBodyEnabled={screen.relayLogBodyEnabled}
         onClose={() => screen.setDetailId(null)}
+        onCancel={(id) => screen.cancelRequest.mutate(id)}
+        isCancelling={
+          screen.cancelRequest.isPending &&
+          screen.cancelRequest.variables === screen.detailId
+        }
       />
       {screen.showBackToTop ? (
         <Tooltip>

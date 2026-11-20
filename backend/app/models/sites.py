@@ -179,6 +179,7 @@ class SiteConfig(StrictBaseModel):
     id: str
     name: str
     enabled: bool
+    supports_model_listing: bool = True
     tags: SiteTags
     updated_at: str | None = None
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
@@ -196,6 +197,7 @@ class SiteCreate(StrictBaseModel):
     )
 
     name: str
+    supports_model_listing: bool = True
     tags: SiteTags = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""
@@ -212,6 +214,7 @@ class SiteUpdate(StrictBaseModel):
     )
 
     name: str
+    supports_model_listing: bool = True
     tags: SiteTags = Field(default_factory=list)
     proxy_mode: ChannelProxyMode = ChannelProxyMode.INHERIT
     channel_proxy: str = ""

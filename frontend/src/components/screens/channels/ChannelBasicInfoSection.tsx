@@ -10,6 +10,12 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/Command";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+} from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import {
@@ -17,6 +23,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/Popover";
+import { Switch } from "@/components/ui/Switch";
 import {
   Tooltip,
   TooltipContent,
@@ -245,6 +252,29 @@ export function ChannelBasicInfoSection({
         siteId={siteId}
         canSyncRates={canSyncRates}
       />
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldLabel htmlFor="channel-model-listing">
+            {locale === "zh-CN" ? "支持获取模型列表" : "Supports model listing"}
+          </FieldLabel>
+          <FieldDescription id="channel-model-listing-description">
+            {locale === "zh-CN"
+              ? "关闭后保留模型，不自动同步。"
+              : "Turn off to keep models without automatic sync."}
+          </FieldDescription>
+        </FieldContent>
+        <Switch
+          id="channel-model-listing"
+          aria-describedby="channel-model-listing-description"
+          checked={form.supports_model_listing}
+          onCheckedChange={(checked) =>
+            setForm((current) => ({
+              ...current,
+              supports_model_listing: checked,
+            }))
+          }
+        />
+      </Field>
     </section>
   );
 }

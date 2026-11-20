@@ -203,8 +203,7 @@ def replace_group_items(
                 credential_id=item.credential_id,
                 model_name=item.model_name,
                 enabled=0 if is_excluded or not item.enabled else 1,
-                # A group an admin saved holds its members explicitly;
-                # reconcile only manages what it joined by name or rule.
+                # 手动保存的归组关系不随匹配规则变化而移除。
                 source=ModelGroupMemberSource.MANUAL.value,
                 excluded=1 if is_excluded else 0,
                 sort_order=index,

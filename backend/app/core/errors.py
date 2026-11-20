@@ -51,6 +51,15 @@ class ResourceConflictError(LensError):
         super().__init__(message, status_code=409, error_type="conflict")
 
 
+class RequestCancelledError(LensError):
+    def __init__(self) -> None:
+        super().__init__(
+            "Request cancelled by administrator",
+            status_code=499,
+            error_type="request_cancelled",
+        )
+
+
 class ModelDiscoveryError(LensError):
     """An upstream model catalog could not be fetched or parsed."""
 
@@ -60,3 +69,7 @@ class ModelDiscoveryError(LensError):
             status_code=status_code,
             error_type="model_discovery_error",
         )
+
+
+class ModelCatalogIncompleteError(ModelDiscoveryError):
+    """目录已开始返回，但分页未完成，不能换协议后使用另一份目录。"""

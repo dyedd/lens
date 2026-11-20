@@ -82,6 +82,7 @@ export function useChannelModelPicker({
     rule?: CredentialModelRule,
   ): Promise<RemoteModelCatalog | null> {
     if (signal.aborted) return null;
+    if (!form.supports_model_listing && !rule) return null;
     const drafted = acceptApiKeyDrafts(form);
     const editor = {
       ...drafted,
@@ -125,6 +126,7 @@ export function useChannelModelPicker({
         targetsBySource.set(key, {
           configs: [config],
           payload: {
+            supports_model_listing: editor.supports_model_listing,
             base_url_id: source.id,
             base_url: source.url.trim(),
             endpoint_kind: source.kind,
