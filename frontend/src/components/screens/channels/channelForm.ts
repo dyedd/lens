@@ -71,7 +71,6 @@ function emptyCredential(): FormCredential {
     id: createLocalId("credential"),
     name: "",
     api_key: "",
-    model_pattern: "",
     rate_source: "none",
     rate_protocol_config_id: "",
     rate_group: "",

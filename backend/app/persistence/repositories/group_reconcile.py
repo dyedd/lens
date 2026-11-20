@@ -273,8 +273,6 @@ def _join_matching_members(run: _ReconcileRun) -> None:
     """Join the members a group's rules (or its name) match, prune dead ones."""
     for state in run.groups.values():
         for row in list(state.members):
-            if ModelGroupMemberSource(row.source) not in _AUTO_SOURCES:
-                continue
             dead_target = (
                 evaluate_model_group_item(
                     ModelGroupItemInput(
@@ -286,7 +284,10 @@ def _join_matching_members(run: _ReconcileRun) -> None:
                 ).state
                 == ModelGroupItemState.INVALID
             )
-            if dead_target or not _matches_group(state, row.model_name):
+            if dead_target or (
+                ModelGroupMemberSource(row.source) in _AUTO_SOURCES
+                and not _matches_group(state, row.model_name)
+            ):
                 run.report.removed.append(run.describe(state, row))
                 run.delete(state, row)
         run.add(

@@ -137,7 +137,6 @@ async def replace_sites(
                         if credential.base_url_ids is not None
                         else None
                     ),
-                    model_pattern=credential.model_pattern,
                 )
             )
 

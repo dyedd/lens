@@ -75,8 +75,8 @@ type Props = {
   onDetectProtocols: (keys: string[]) => Promise<void>;
   onOpenRemote: () => void;
   /** Keys whose model rule can be edited, with their current filters. */
-  credentialOptions: Array<{ id: string; label: string; pattern: string }>;
-  onUpdateCredentialPattern: (
+  credentialOptions: Array<{ id: string; label: string }>;
+  onApplyModelPattern: (
     credentialId: string,
     pattern: string,
     signal: AbortSignal,
@@ -113,7 +113,7 @@ function ChannelModelsBody({
   onDetectProtocols,
   onOpenRemote,
   credentialOptions,
-  onUpdateCredentialPattern,
+  onApplyModelPattern,
   initialStatusFilter = "all",
 }: Omit<Props, "open">) {
   const [query, setQuery] = useState("");
@@ -204,8 +204,8 @@ function ChannelModelsBody({
           </DialogTitle>
           <DialogDescription>
             {locale === "zh-CN"
-              ? "直接填写的模型名会保留；正则匹配的模型随上游同步，未匹配或已下线的会移除。"
-              : "Explicit model names are kept. Regex matches follow the upstream catalog; unmatched or retired models are removed."}
+              ? "同步会核对已保存的模型，移除已从上游目录下线的模型。"
+              : "Sync checks saved models and removes those no longer in the upstream catalog."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -425,7 +425,7 @@ function ChannelModelsBody({
         open={newOpen}
         locale={locale}
         onOpenChange={setNewOpen}
-        onSubmit={onUpdateCredentialPattern}
+        onSubmit={onApplyModelPattern}
         credentialOptions={credentialOptions}
       />
       <ConfirmDeleteDialog

@@ -74,6 +74,11 @@ def _migrate_legacy_sites(data: object) -> object:
             continue
         for key in _LEGACY_SITE_KEYS:
             site.pop(key, None)
+        credentials = site.get("credentials", [])
+        if isinstance(credentials, list):
+            for credential in credentials:
+                if isinstance(credential, dict):
+                    credential.pop("model_pattern", None)
         base_urls = site.get("base_urls", [])
         urls_by_id = (
             {

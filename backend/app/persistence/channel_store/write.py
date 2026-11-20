@@ -359,7 +359,6 @@ async def _upsert_credentials(
                     if item.base_url_ids is not None
                     else None
                 ),
-                model_pattern=item.model_pattern,
             )
         )
 

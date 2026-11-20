@@ -172,7 +172,6 @@ def build_credentials(
                 api_key=item.api_key,
                 sort_order=index,
                 base_url_ids=item.base_url_ids,
-                model_pattern=item.model_pattern,
                 rate_source=item.rate_source,
                 rate_protocol_config_id=item.rate_protocol_config_id,
                 rate_group=item.rate_group,
