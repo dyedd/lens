@@ -112,7 +112,7 @@ export function ChannelsDialogs({
           testing={modelTest.testingModel}
           detecting={picker.detecting}
           onDetectProtocols={picker.detectModelProtocols}
-          onUpdateCredentialPattern={picker.applyModelPattern}
+          onApplyModelPattern={picker.applyModelPattern}
           credentialOptions={editor.form.credentials.flatMap(
             (credential, index) =>
               credential.api_key.trim()
@@ -120,7 +120,6 @@ export function ChannelsDialogs({
                     {
                       id: credential.id,
                       label: formatCredentialTitle(credential, index, locale),
-                      pattern: credential.model_pattern,
                     },
                   ]
                 : [],

@@ -33,25 +33,21 @@ export function ChannelModelPatternDialog({
     pattern: string,
     signal: AbortSignal,
   ) => Promise<boolean>;
-  credentialOptions: Array<{ id: string; label: string; pattern: string }>;
+  credentialOptions: Array<{ id: string; label: string }>;
   supportsModelListing: boolean;
 }) {
   const [credentialId, setCredentialId] = useState(
     credentialOptions[0]?.id ?? "",
   );
-  const [pattern, setPattern] = useState(credentialOptions[0]?.pattern ?? "");
+  const [pattern, setPattern] = useState("");
   const wasOpen = useRef(false);
   const [isApplying, setIsApplying] = useState(false);
   const controller = useRef<AbortController | null>(null);
 
-  // 仅在打开时填充，避免覆盖输入中的内容。
   useEffect(() => {
     if (open && !wasOpen.current) {
-      const active = credentialOptions[0];
-      if (active) {
-        setCredentialId(active.id);
-        setPattern(active.pattern);
-      }
+      setCredentialId(credentialOptions[0]?.id ?? "");
+      setPattern("");
     }
     wasOpen.current = open;
   }, [open, credentialOptions]);
@@ -112,7 +108,9 @@ export function ChannelModelPatternDialog({
             <Button
               type="button"
               size="sm"
-              disabled={patternError || !credentialId || isApplying}
+              disabled={
+                patternError || !pattern.trim() || !credentialId || isApplying
+              }
               onClick={() => void applyPattern()}
             >
               {isApplying
@@ -135,10 +133,7 @@ export function ChannelModelPatternDialog({
                 disabled={isApplying}
                 onValueChange={(value) => {
                   setCredentialId(value);
-                  setPattern(
-                    credentialOptions.find((item) => item.id === value)
-                      ?.pattern ?? "",
-                  );
+                  setPattern("");
                 }}
               >
                 <SelectTrigger aria-label="API Key">
@@ -178,13 +173,9 @@ export function ChannelModelPatternDialog({
               className="max-h-48 font-mono placeholder:font-sans"
             />
             <FieldDescription>
-              {supportsModelListing
-                ? locale === "zh-CN"
-                  ? "保存后自动同步。留空则跟踪当前模型。"
-                  : "Models sync after saving. Leave empty to track current models."
-                : locale === "zh-CN"
-                  ? "保存后生效，不自动同步。"
-                  : "Save to apply. Automatic sync is off."}
+              {locale === "zh-CN"
+                ? "一次性添加到列表，保存后生效。"
+                : "Add to this list once; save to persist."}
             </FieldDescription>
             {patternError ? (
               <p className="text-xs text-destructive">

@@ -32,7 +32,6 @@ export type SiteCredential = {
   api_key: string;
   sort_order: number;
   base_url_ids: string[] | null;
-  model_pattern: string;
   rate_source: "none" | "sub2api" | "newapi";
   rate_protocol_config_id: string;
   rate_group: string;
@@ -46,8 +45,6 @@ export type SiteCredentialInput = {
   name: string;
   api_key: string;
   base_url_ids: string[] | null;
-  /** Whole-name filter deciding which upstream models this key keeps. */
-  model_pattern?: string;
   rate_source: "none" | "sub2api" | "newapi";
   rate_protocol_config_id: string;
   rate_group: string;

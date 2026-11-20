@@ -27,8 +27,6 @@ import {
 } from "./channelFormConversion";
 import {
   aggregateModelGroupKey,
-  escapeModelName,
-  mergeModelPatterns,
   modelSourceKey,
   protocolConfigModelKey,
 } from "./channelModels";
@@ -190,13 +188,15 @@ export function useChannelModelPicker({
                     model.credential_id === item.credential_id &&
                     model.model_name === item.model_name,
                 );
-                const protocols =
-                  targets[index].payload.endpoint_kind === "models"
-                    ? (existing?.protocols ?? [item.protocol]).filter(
-                        (protocol) =>
-                          endpointSupportsProtocol(address.kind, [protocol]),
-                      )
-                    : [item.protocol];
+                let protocols = [item.protocol];
+                if (rule && existing) {
+                  protocols = existing.protocols;
+                } else if (targets[index].payload.endpoint_kind === "models") {
+                  protocols = (existing?.protocols ?? [item.protocol]).filter(
+                    (protocol) =>
+                      endpointSupportsProtocol(address.kind, [protocol]),
+                  );
+                }
                 return protocols.map((protocol) => ({
                   ...item,
                   protocol,
@@ -265,25 +265,11 @@ export function useChannelModelPicker({
     }
   }
 
-  function importRemoteModels(
-    items: PickerModelItem[],
-    rule?: CredentialModelRule,
-  ) {
-    if (detectionController.current || (!items.length && !rule)) return;
+  function importRemoteModels(items: PickerModelItem[]) {
+    if (detectionController.current || !items.length) return;
     items = [
       ...new Map(items.map((item) => [modelSourceKey(item), item])).values(),
     ];
-    const sources = new Set(
-      items.map((item) =>
-        protocolConfigModelKey({ id: item.protocol_config_id }, item),
-      ),
-    );
-    const additionsByCredential = new Map<string, string[]>();
-    for (const item of items) {
-      const names = additionsByCredential.get(item.credential_id) ?? [];
-      names.push(escapeModelName(item.model_name));
-      additionsByCredential.set(item.credential_id, names);
-    }
     const existingSources = new Set(
       form.protocolConfigs.flatMap((config) =>
         config.models.map((model) => protocolConfigModelKey(config, model)),
@@ -304,25 +290,8 @@ export function useChannelModelPicker({
       const configs = rebuildProtocolConfigs(current);
       return {
         ...current,
-        credentials: current.credentials.map((credential) => {
-          if (credential.id === rule?.credentialId)
-            return { ...credential, model_pattern: rule.pattern };
-          const additions = additionsByCredential.get(credential.id);
-          return additions
-            ? {
-                ...credential,
-                model_pattern: mergeModelPatterns(credential.model_pattern, [
-                  ...new Set(additions),
-                ]),
-              }
-            : credential;
-        }),
         protocolConfigs: configs.map((config) => {
-          const models = config.models.filter(
-            (model) =>
-              model.credential_id !== rule?.credentialId ||
-              sources.has(protocolConfigModelKey(config, model)),
-          );
+          const models = [...config.models];
           for (const item of items) {
             if (
               item.protocol_config_id !== config.id ||
@@ -336,11 +305,6 @@ export function useChannelModelPicker({
             );
             if (index >= 0) {
               const existing = models[index];
-              if (
-                rule &&
-                existingSources.has(protocolConfigModelKey(config, existing))
-              )
-                continue;
               if (!existing.protocols.includes(item.protocol))
                 models[index] = {
                   ...existing,
@@ -453,21 +417,11 @@ export function useChannelModelPicker({
   ): Promise<boolean> {
     if (signal.aborted || detectionController.current) return false;
     const trimmed = pattern.trim();
-    if (!trimmed) {
-      setForm((current) => ({
-        ...current,
-        credentials: current.credentials.map((credential) =>
-          credential.id === credentialId
-            ? { ...credential, model_pattern: "" }
-            : credential,
-        ),
-      }));
-      return true;
-    }
+    if (!trimmed) return false;
     const rule = { credentialId, pattern: trimmed };
     const catalog = await discoverRemoteCatalog(signal, rule);
     if (!catalog || signal.aborted) return false;
-    importRemoteModels(catalog.items, rule);
+    importRemoteModels(catalog.items);
     return true;
   }
 

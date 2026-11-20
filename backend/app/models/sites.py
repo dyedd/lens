@@ -6,7 +6,7 @@ from ..core.urls import canonicalize_base_url
 from .credential_scopes import parse_legacy_credential_scopes
 from .protocols import ChannelProxyMode, ProtocolKind
 from .upstream_rules import HeaderRule, ParamOverrideRule
-from .validation import ContextWindow, StrictBaseModel, validate_model_pattern
+from .validation import ContextWindow, StrictBaseModel
 
 
 def require_non_empty_text(value: str) -> str:
@@ -95,8 +95,6 @@ class SiteCredential(StrictBaseModel):
     api_key: str = Field(min_length=1)
     sort_order: int = Field(default=0, ge=0)
     base_url_ids: list[str] | None
-    # 每行一个固定模型名或上游匹配规则；仅在写入时校验，避免旧数据阻断读取。
-    model_pattern: str = ""
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
     rate_group: str = ""
@@ -111,14 +109,10 @@ class SiteCredentialInput(StrictBaseModel):
     name: str
     api_key: str = Field(min_length=1)
     base_url_ids: list[str] | None
-    model_pattern: str = Field(default="")
     rate_source: SiteCredentialRateSource = "none"
     rate_protocol_config_id: str = ""
     rate_group: str = ""
 
-    _validate_model_pattern = field_validator("model_pattern")(
-        lambda value: validate_model_pattern(value)
-    )
     _validate_base_url_ids = field_validator("base_url_ids")(
         lambda value: canonicalize_text_list(value) if value else value
     )

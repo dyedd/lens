@@ -133,7 +133,6 @@ export function toForm(site: Site): FormState {
     id: persistedCredentialId(item.id),
     name: isGeneratedCredentialName(item.name) ? "" : item.name,
     api_key: item.api_key,
-    model_pattern: item.model_pattern ?? "",
     rate_source: item.rate_source,
     rate_protocol_config_id: item.rate_protocol_config_id,
     rate_group: item.rate_group,
@@ -227,7 +226,6 @@ export function toPayload(form: FormState): SitePayload {
       name: item.name.trim() || fallbackCredentialName(index),
       api_key: item.api_key.trim(),
       base_url_ids: item.base_url_ids,
-      model_pattern: item.model_pattern.trim(),
       rate_source: item.rate_source,
       rate_protocol_config_id:
         item.rate_source === "none" ? "" : item.rate_protocol_config_id,

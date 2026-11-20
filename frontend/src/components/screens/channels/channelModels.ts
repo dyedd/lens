@@ -76,19 +76,3 @@ export function protocolConfigEffectiveProtocols(
     new Set(protocolConfig.models.flatMap((model) => model.protocols)),
   );
 }
-
-/** Builds the whole-name filter that selects exactly this model. */
-export function escapeModelName(modelName: string) {
-  return `^${modelName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
-}
-
-/** Appends exact-name filters to a key's pattern, skipping ones it has. */
-export function mergeModelPatterns(
-  current: string,
-  additions: string[],
-): string {
-  const existing = current.trim();
-  const rules = existing.split(/\r?\n/).map((line) => line.trim());
-  if (rules.includes("*")) return existing;
-  return [...new Set([...rules, ...additions])].filter(Boolean).join("\n");
-}

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import re
-from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from ....core.errors import ModelDiscoveryError, ResourceNotFoundError
-from ....core.model_names import filter_model_names
 from ....core.model_protocols import ENDPOINT_KIND_PROTOCOLS
 from ....core.runtime_channel_ids import compose_runtime_channel_id
 from ....models.channels import (
@@ -17,17 +14,10 @@ from ....models.channels import (
 from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus, ProtocolKind
 from ....models.sites import SiteBaseUrl, SiteConfig, SiteCredential, SiteProtocolConfig
-from ....models.validation import validate_model_pattern
 from ..app_state import logger
-from .litellm_sync_tasks import (
-    ModelPriceSyncError,
-    fetch_context_windows,
-    find_context_window,
-)
 from .model_discovery import (
     UpstreamModelList,
     fetch_upstream_model_list,
-    model_list_protocols,
 )
 
 if TYPE_CHECKING:
@@ -59,12 +49,7 @@ async def sync_channel_models(
     site_ids: list[str] | None = None,
     credential_ids: list[str] | None = None,
 ) -> ChannelModelSyncResponse:
-    """Run the model pipeline for enabled sites and record the run.
-
-    Discovery, filtering, and storage run per credential; grouping, member
-    writes, and retirement then run once over every group, so the record
-    shows where each new or vanished model ended up.
-    """
+    """Refresh saved models per credential, update groups, and record the run."""
     started_at = datetime.now(UTC)
     requested_site_ids = set(site_ids) if site_ids is not None else None
     requested_credential_ids = (
@@ -78,22 +63,8 @@ async def sync_channel_models(
         and (requested_site_ids is None or site.id in requested_site_ids)
     ]
     items: list[ChannelModelSyncResultItem] = []
-    context_windows: dict[str, int] = {}
-    if any(
-        any(credential.model_pattern.strip() for credential in site.credentials)
-        or any(config.models for config in site.protocols)
-        for site in sites
-    ):
-        try:
-            context_windows = await fetch_context_windows(state)
-        except ModelPriceSyncError as exc:
-            logger.warning("Model context lookup failed: %s", exc)
     for site in sites:
-        items.extend(
-            await _sync_site_models(
-                state, site, requested_credential_ids, context_windows
-            )
-        )
+        items.extend(await _sync_site_models(state, site, requested_credential_ids))
 
     logger.info(
         "Channel model sync: targets=%s updated=%s failed=%s",
@@ -101,7 +72,7 @@ async def sync_channel_models(
         sum(item.status == ChannelModelSyncStatus.UPDATED for item in items),
         sum(item.status == ChannelModelSyncStatus.FAILED for item in items),
     )
-    groups = await _reconcile_synced_groups(state, items)
+    groups = await _reconcile_synced_groups(state)
     run = ChannelModelSyncResponse(
         started_at=started_at,
         finished_at=datetime.now(UTC),
@@ -113,9 +84,7 @@ async def sync_channel_models(
     return await state.model_sync_run_repo.create_run(run)
 
 
-async def _reconcile_synced_groups(
-    state: AppState, items: list[ChannelModelSyncResultItem]
-) -> ModelGroupReconcileReport:
+async def _reconcile_synced_groups(state: AppState) -> ModelGroupReconcileReport:
     report = await state.group_repo.reconcile_group_members()
     logger.info(
         "Model sync groups: added=%s created=%s pending=%s removed=%s",
@@ -131,7 +100,6 @@ async def _sync_site_models(
     state: AppState,
     site: SiteConfig,
     requested_credential_ids: set[str] | None = None,
-    context_windows: dict[str, int] | None = None,
 ) -> list[ChannelModelSyncResultItem]:
     credentials = {credential.id: credential for credential in site.credentials}
     base_urls = {url.id: url for url in site.base_urls}
@@ -166,7 +134,6 @@ async def _sync_site_models(
                     address,
                     item,
                     catalogs,
-                    context_windows or {},
                 )
             except (ModelDiscoveryError, ResourceNotFoundError, ValueError) as exc:
                 item.status = ChannelModelSyncStatus.FAILED
@@ -182,20 +149,8 @@ async def _sync_credential_models(
     address: SiteBaseUrl,
     item: ChannelModelSyncResultItem,
     catalogs: dict[tuple[str, str], UpstreamModelList | ModelDiscoveryError],
-    context_windows: dict[str, int],
 ) -> None:
-    pattern = validate_model_pattern(credential.model_pattern)
-    fallback_pattern = ""
-    if not pattern:
-        names = {
-            model.model_name
-            for protocol_config in site.protocols
-            for model in protocol_config.models
-            if model.credential_id == credential.id
-        }
-        fallback_pattern = "\n".join(f"^{re.escape(name)}$" for name in sorted(names))
-        pattern = fallback_pattern
-    if not pattern:
+    if not any(model.credential_id == credential.id for model in config.models):
         return
     source = next(
         (
@@ -236,49 +191,21 @@ async def _sync_credential_models(
         try:
             catalog = await fetch_upstream_model_list(channel)
         except ModelDiscoveryError as exc:
-            # 同一次同步内，共用目录失败也要复用，避免后续出口改用另一份目录。
+            # Reuse failures so every outlet sees the same catalog result.
             catalogs[catalog_key] = exc
             raise
         catalogs[catalog_key] = catalog
     if isinstance(catalog, ModelDiscoveryError):
         raise catalog
 
-    catalog_names = {model.name for model in catalog.models}
-    matched_names = set().union(
-        *(filter_model_names(catalog_names, rule) for rule in pattern.splitlines())
-    )
-    existing_protocols: dict[str, set[ProtocolKind]] = defaultdict(set)
-    for model in config.models:
-        if model.credential_id == credential.id and model.protocol is not None:
-            existing_protocols[model.model_name].add(model.protocol)
-    pinned = ENDPOINT_KIND_PROTOCOLS.get(address.kind)
-    protocols = {
-        model.name: model_list_protocols(model, catalog.protocol, source.kind)
-        for model in catalog.models
-        if model.name in matched_names
-    }
-    if pinned is not None:
-        protocols = {
-            name: (pinned,)
-            for name, declared in protocols.items()
-            if pinned in existing_protocols.get(name, declared)
-        }
-    upstream_names = set(protocols)
     changes = await state.channel_store.sync_upstream_models(
         config.id,
         credential.id,
-        upstream_names=upstream_names,
-        fallback_pattern=fallback_pattern,
+        upstream_names={model.name for model in catalog.models},
         upstream_context_windows={
             model.name: model.context_window
             for model in catalog.models
             if model.context_window is not None
-        },
-        upstream_protocols=protocols,
-        context_windows={
-            name: window
-            for name in upstream_names
-            if (window := find_context_window(context_windows, name)) is not None
         },
     )
     item.added = changes.added

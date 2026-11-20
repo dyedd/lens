@@ -1,8 +1,7 @@
-"""Model-name matching for a credential's sync filter.
+"""Whole-name matching for model selection and routing.
 
-A filter selects which upstream models one API key keeps. It matches whole
-names, so ``gpt-4`` covers exactly ``gpt-4`` while ``gpt-4.*`` covers the
-family. A filter without regex characters is a literal name compared
+A filter matches whole names, so ``gpt-4`` covers exactly ``gpt-4`` while
+``gpt-4.*`` covers the family. A filter without regex characters is a literal name compared
 case-insensitively, which keeps ``claude-3.5-sonnet`` from turning its dot
 into a wildcard.
 """
@@ -23,7 +22,6 @@ _INLINE_MODIFIER = re.compile(r"\(\?([aiLmsux]+)\)")
 class ModelPatternKind(str, Enum):
     """How a filter should be applied."""
 
-    # 空规则不选入新模型；同步入口会将已有模型转为精确跟踪规则。
     EMPTY = "empty"
     # "*": every upstream model passes.
     ALL = "all"
@@ -31,7 +29,7 @@ class ModelPatternKind(str, Enum):
     LITERAL = "literal"
     # A usable regex over whole names.
     REGEX = "regex"
-    # Not compilable; the sync keeps every model instead of hiding them all.
+    # Not compilable; matching allows every name.
     INVALID = "invalid"
 
 

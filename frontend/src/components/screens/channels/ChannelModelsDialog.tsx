@@ -75,9 +75,8 @@ type Props = {
   detecting: boolean;
   onDetectProtocols: (keys: string[]) => Promise<void>;
   onOpenRemote: () => void;
-  /** Keys whose model rule can be edited, with their current filters. */
-  credentialOptions: Array<{ id: string; label: string; pattern: string }>;
-  onUpdateCredentialPattern: (
+  credentialOptions: Array<{ id: string; label: string }>;
+  onApplyModelPattern: (
     credentialId: string,
     pattern: string,
     signal: AbortSignal,
@@ -115,7 +114,7 @@ function ChannelModelsBody({
   onDetectProtocols,
   onOpenRemote,
   credentialOptions,
-  onUpdateCredentialPattern,
+  onApplyModelPattern,
   initialStatusFilter = "all",
 }: Omit<Props, "open">) {
   const [query, setQuery] = useState("");
@@ -207,8 +206,8 @@ function ChannelModelsBody({
           <DialogDescription>
             {supportsModelListing
               ? locale === "zh-CN"
-                ? "模型按 API Key 自动同步，上游下线时移除。"
-                : "Models sync per API key and are removed when no longer listed."
+                ? "同步会核对已保存的模型，移除已从上游目录下线的模型。"
+                : "Sync checks saved models and removes those no longer in the upstream catalog."
               : locale === "zh-CN"
                 ? "目录获取已关闭，模型不会自动同步。"
                 : "Model listing is off. Models will not sync automatically."}
@@ -431,7 +430,7 @@ function ChannelModelsBody({
         open={newOpen}
         locale={locale}
         onOpenChange={setNewOpen}
-        onSubmit={onUpdateCredentialPattern}
+        onSubmit={onApplyModelPattern}
         credentialOptions={credentialOptions}
         supportsModelListing={supportsModelListing}
       />

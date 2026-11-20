@@ -94,7 +94,6 @@ def build_site_configs(rows: SiteRows) -> list[SiteConfig]:
             api_key=row.api_key,
             sort_order=row.sort_order,
             base_url_ids=load_base_url_ids(row.base_url_ids_json),
-            model_pattern=row.model_pattern,
             rate_source=rate.source if rate is not None else "none",
             rate_protocol_config_id=(
                 rate.protocol_config_id if rate is not None else ""

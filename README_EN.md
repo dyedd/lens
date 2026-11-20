@@ -29,7 +29,7 @@
 | Connect clients that use different APIs | OpenAI Chat, Responses, Embeddings, and Images; Anthropic, Gemini, and Rerank endpoints, with conversion between supported conversation protocols |
 | Switch providers without editing every client | Model groups and aliases give clients stable names while you change upstream members |
 | Keep a backup ready | Ordered failover, smooth round robin, health tracking, and cooldown controls |
-| Manage several upstream accounts | Multiple URLs and keys, model discovery, sync rules, and automatic group assignment |
+| Manage several upstream accounts | Multiple URLs and keys, model discovery, model synchronization, and automatic group assignment |
 | Understand usage and failures | Usage and cost trends, cache statistics, request details, and the upstream attempt history |
 | Run it on your own terms | Docker deployment, SQLite or PostgreSQL, backups, and scheduled tasks under the MIT license |
 
