@@ -34,7 +34,11 @@ from app.models.model_groups import (
     ModelGroupRefView,
 )
 from app.models.protocols import RoutingStrategy
-from app.persistence.entities import ModelGroupEntity, ModelGroupItemEntity
+from app.persistence.entities import (
+    ModelGroupAutoCreateExclusionEntity,
+    ModelGroupEntity,
+    ModelGroupItemEntity,
+)
 
 from .group_placement import (
     GroupCoverage,
@@ -339,6 +343,12 @@ async def _place_uncovered_models(
         state.entity.name.casefold(): state for state in run.groups.values()
     }
     target = run.groups.get(into_group_id) if into_group_id else None
+    auto_create_exclusions = {
+        name.casefold()
+        for name in await run.session.scalars(
+            select(ModelGroupAutoCreateExclusionEntity.model_name)
+        )
+    }
     item_name_keys = {id(item): item.model_name.casefold() for item in run.ready_items}
     for view in build_unplaced_models(coverage, channels):
         is_requested = placement_names is None or view.model_name in placement_names
@@ -362,7 +372,9 @@ async def _place_uncovered_models(
         ):
             run.add(same_named, items, ModelGroupMemberSource.PLACEMENT)
             continue
-        if not is_placeable_as_new_group(view):
+        if not is_placeable_as_new_group(view) or (
+            placement_names is None and view_name_key in auto_create_exclusions
+        ):
             run.report.pending.append(view)
             continue
         entity = ModelGroupEntity(

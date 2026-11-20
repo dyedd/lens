@@ -13,6 +13,44 @@ from app.persistence.entities import (
 )
 
 
+def test_backup_preserves_deleted_group_placement_decisions(
+    client, admin_headers, create_site
+) -> None:
+    create_site(valid_site_payload())
+    [group] = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    response = client.delete(
+        f"/api/admin/model-groups/{group['id']}", headers=admin_headers
+    )
+    assert response.status_code == 204, response.text
+    response = client.get("/api/admin/backups/export", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    backup = response.json()
+    assert backup["model_group_auto_create_exclusions"] == ["gpt-4o"]
+
+    legacy_backup = dict(backup)
+    del legacy_backup["model_group_auto_create_exclusions"]
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("backup.json", json.dumps(legacy_backup), "application/json")},
+    )
+    assert response.status_code == 200, response.text
+    groups = client.get("/api/admin/model-groups", headers=admin_headers).json()
+    assert [item["name"] for item in groups] == ["gpt-4o"]
+
+    response = client.post(
+        "/api/admin/backups/import",
+        headers=admin_headers,
+        files={"file": ("backup.json", json.dumps(backup), "application/json")},
+    )
+    assert response.status_code == 200, response.text
+    assert client.get("/api/admin/model-groups", headers=admin_headers).json() == []
+    pending = client.get("/api/admin/unplaced-models", headers=admin_headers).json()
+    assert [item["model_name"] for item in pending["items"]] == ["gpt-4o"]
+    restored = client.get("/api/admin/backups/export", headers=admin_headers).json()
+    assert restored["model_group_auto_create_exclusions"] == ["gpt-4o"]
+
+
 def test_legacy_backup_combines_regex_flags(client, admin_headers) -> None:
     backup = {
         "exported_at": "2026-01-01T00:00:00",

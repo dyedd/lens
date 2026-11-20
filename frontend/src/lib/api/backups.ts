@@ -124,6 +124,7 @@ export type ConfigBackupDump = {
   settings: SettingItem[];
   sites: Site[];
   groups: ModelGroup[];
+  model_group_auto_create_exclusions?: string[];
   model_prices: ModelPriceItem[];
   cronjobs: Array<{
     id: string;

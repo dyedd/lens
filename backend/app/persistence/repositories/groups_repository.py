@@ -7,6 +7,8 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import ResourceConflictError, ResourceNotFoundError
@@ -30,6 +32,7 @@ from app.models.model_groups import (
     UnplacedModelView,
 )
 from app.persistence.entities import (
+    ModelGroupAutoCreateExclusionEntity,
     ModelGroupEntity,
     ModelGroupItemEntity,
     SiteDiscoveredModelEntity,
@@ -361,6 +364,26 @@ class ModelGroupRepository:
             ):
                 raise ResourceConflictError(
                     "Model group is still referenced as a fallback"
+                )
+            if not entity.route_group_id:
+                model_names = set(
+                    await session.scalars(
+                        select(ModelGroupItemEntity.model_name).where(
+                            ModelGroupItemEntity.group_id == group_id
+                        )
+                    )
+                )
+                model_names.add(entity.name)
+                insert = (
+                    sqlite_insert
+                    if session.get_bind().dialect.name == "sqlite"
+                    else postgresql_insert
+                )
+                await session.execute(
+                    insert(ModelGroupAutoCreateExclusionEntity).on_conflict_do_nothing(
+                        index_elements=[ModelGroupAutoCreateExclusionEntity.model_name]
+                    ),
+                    [{"model_name": name} for name in sorted(model_names)],
                 )
             await session.execute(
                 delete(ModelGroupItemEntity).where(

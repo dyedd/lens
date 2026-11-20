@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.backups import ConfigBackupDump, ConfigImportResult
@@ -11,7 +11,7 @@ from app.persistence.editable_settings import (
     EDITABLE_SETTING_KEYS,
     effective_editable_setting_items,
 )
-from app.persistence.entities import SettingEntity
+from app.persistence.entities import ModelGroupAutoCreateExclusionEntity, SettingEntity
 
 from .config import (
     load_cronjobs,
@@ -60,6 +60,13 @@ class BackupStore:
             )
             sites = await load_sites(session)
             groups = await load_groups(session)
+            auto_create_exclusions = list(
+                await session.scalars(
+                    select(ModelGroupAutoCreateExclusionEntity.model_name).order_by(
+                        ModelGroupAutoCreateExclusionEntity.model_name
+                    )
+                )
+            )
             model_prices = await load_model_prices(session)
             cronjobs = await load_cronjobs(session)
             stats = await load_stats(session)
@@ -80,6 +87,7 @@ class BackupStore:
             ),
             sites=sites,
             groups=groups,
+            model_group_auto_create_exclusions=auto_create_exclusions,
             model_prices=model_prices,
             cronjobs=cronjobs,
             stats=stats,
@@ -118,6 +126,15 @@ class BackupStore:
             rows_affected["model_groups"] = len(dump.groups)
             rows_affected["model_group_items"] = sum(
                 len(group.items) for group in dump.groups
+            )
+            await session.execute(delete(ModelGroupAutoCreateExclusionEntity))
+            auto_create_exclusions = set(dump.model_group_auto_create_exclusions)
+            session.add_all(
+                ModelGroupAutoCreateExclusionEntity(model_name=name)
+                for name in auto_create_exclusions
+            )
+            rows_affected["model_group_auto_create_exclusions"] = len(
+                auto_create_exclusions
             )
 
             await replace_model_prices(session, dump.model_prices)
