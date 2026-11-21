@@ -3,7 +3,7 @@
 
 **Theme:** light-first (dark companion)
 
-Source of truth is CSS variables in `frontend/src/globals.css`. Hex values below are normalized readings of those tokens for humans. Roles and recommendations are interpreted. HTML examples are reconstructions, not source components. Code conventions stay in [STYLING.md](STYLING.md); this file is the visual contract for any new admin UI.
+Source of truth is CSS variables in `../frontend/src/globals.css`. Hex values below are normalized readings of those tokens for humans. Roles and recommendations are interpreted. HTML examples are reconstructions, not source components. Code conventions stay in [backend coding style](BACKEND-CODING-STYLE.md) and [frontend coding style](FRONTEND-CODING-STYLE.md); this file is the visual contract for any new admin UI.
 
 Lens is an operations console, not a marketing site. The canvas is a warm off-white (`#f8f8f6`) instead of sterile SaaS white. Structure comes from 1px hairlines at `border/60` and quiet `muted/35` wells — not from drop shadows or filled cards. The only chromatic action color is indigo (`#1447e6`): primary buttons, focus rings, and selected text. Almost everything else is ink and paper. Typography is Geist for UI, Geist Mono for identifiers and JSON. Density is compact: 28–32px controls, 12px table type, 20px pagination chevrons. The feel is an instrument panel printed on warm paper — closer to Linear than to a landing page.
 
@@ -84,7 +84,7 @@ Page titles in the dashboard are `text-sm font-semibold`, not 24–64px heroes. 
 
 ## Components
 
-Reuse the primitives in `frontend/src/components/ui`. Do not restyle a one-off copy.
+Reuse the primitives in `../frontend/src/components/ui`. Do not restyle a one-off copy.
 
 ### Primary Button
 **Role:** One committing action per view or footer
@@ -212,7 +212,7 @@ If a block needs to read as “a thing”, use a well or a table shell. Do not r
 
 ## Imagery
 
-No photography, no illustration, no decorative gradients. The mark is `logo.svg` (and optional custom `logo_url`) on paper. Vendor identity is the small monochrome glyphs in `frontend/public/brand-icons/` inside table/group rows — not logo clouds. Lucide icons at `size-3.5`–`size-4`; use `stroke-1` on compact chrome (pagination, toolbars). Charts stay in the indigo `--chart-*` family.
+No photography, no illustration, no decorative gradients. The mark is `logo.svg` (and optional custom `logo_url`) on paper. Vendor identity is the small monochrome glyphs in `../frontend/public/brand-icons/` inside table/group rows — not logo clouds. Lucide icons at `size-3.5`–`size-4`; use `stroke-1` on compact chrome (pagination, toolbars). Charts stay in the indigo `--chart-*` family.
 
 ## Layout
 

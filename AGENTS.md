@@ -1,65 +1,99 @@
-# Lens 项目协作指南
+# Lens Repository Guide
 
-Lens 是统一处理认证、模型组路由、协议转换、上游调用、故障转移和请求/用量日志的多供应商 LLM 网关。本指南适用于仓库内所有日常开发与协作；部署步骤见 [快速开始](docs/guide/quick-start.md)，端口分配与环境变量见 [配置参考](docs/reference/configuration.md)。
+## Project Overview
 
-## 环境与边界
+Lens is a multi-provider LLM gateway for authentication, model-group routing, protocol conversion, upstream requests, failover, and request and usage logging. The backend uses Python 3.14+ in a uv workspace. The frontend and documentation site use pnpm.
 
-- **运行环境**：Python `>=3.14` 由 `uv` 管理，前端由 `pnpm` 管理。根目录 `pyproject.toml` 为 uv workspace；后端位于 `backend/`（源码在 `backend/app/`，API 测试在 `backend/tests/api/`，迁移脚本在 `backend/app/alembic/`）。
-- **工具调用**：后端工具必须从仓库根目录使用 `uv run --no-sync` 执行。缺少依赖时优先执行 `uv sync --locked`；若因本地镜像索引导致锁文件误报漂移，改用 `uv sync --frozen`。
-- **依赖锁定**：更新依赖执行 `uv lock` 时，显式指定 `UV_DEFAULT_INDEX=https://pypi.org/simple`，防止本机镜像配置重写索引 URL，并确保锁文件中的 wheel/tar 下载来源为 `pypi.org` 与 `files.pythonhosted.org`。
-- **前端开发**：前端命令均在 `frontend/` 目录下执行。启动与构建步骤详见 [开发环境](docs/development/setup.md)。
-- **文档开发**：VitePress 文档位于 `docs/`，在该目录执行 `pnpm dev`、`pnpm build`。文档依赖、截图和产物不进入应用 Docker 镜像。
-- **安全与历史约束**：严禁修改已有 Alembic 迁移脚本；严禁在日志、响应或代码中输出 `.env` 及任何真实密钥信息。除非用户明确指示，否则不得提交（commit）、推送（push）或改写 Git 历史。
+See the [development setup](docs/development/setup.md), [quick start](docs/guide/quick-start.md), and [configuration reference](docs/reference/configuration.md) for local setup and operation.
 
-## 代码风格
+## Build and Test Commands
 
-所有代码改动必须严格遵守 [STYLING.md](STYLING.md)。前端界面视觉必须遵守 [DESIGN.md](DESIGN.md)：分页、弹窗、表格外壳与容器（well）的 token 均以该规范为准。修改前需通读通用规则、类型命名、领域术语、动作动词和模块边界，再查阅对应的 Python 或 TypeScript / React 章节。
+Run backend commands from the repository root with `uv run --no-sync`.
 
-- **文案原则**：前端文案遵循 “Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.” —— 由页面结构、字段标签和交互控件承担主要解释，仅在涉及核心操作、状态流转、高危风险或无障碍访问时保留必要的辅助说明。
+Install the locked backend dependencies with `uv sync --locked`.
 
-## 工作流
+When updating `uv.lock`, set the official package index explicitly:
 
-1. **界定最小范围**：查看 `git status`、相关调用链路与现有测试，明确最小改动范围。
-2. **复用与边界治理**：优先复用现有边界与公共工具；修改共享逻辑前全面排查所有调用方，在公共边界解决根因。
-3. **阶段分明与错误收口**：网关代码按“解析输入 → 参数校验 → 路由计划 → 协议转换 → 上游传输 → 响应转换 → 日志落盘”分阶段组织；业务异常统一使用 `app/core/errors.py` 中的领域异常表达，对外协议 envelope 响应统一由 `gateway/service/error_responses.py` 生成。
-4. **精细格式化**：改动代码后仅针对触碰的文件进行格式化与检查：后端执行 `uv run --no-sync ruff format <paths>` 与 `uv run --no-sync ruff check --fix <paths>`；前端执行 `cd frontend && pnpm exec biome check --write <paths>`。
-5. **测试驱动与防护**：后端 API 测试以 [lens-testing](.agents/skills/lens-testing/SKILL.md) 为准，以覆盖核心功能的正常成功流程为主并保持套件全绿；新功能或契约变动仅补充最小的 HTTP 行为测试，不为前端、工具函数、服务层或内部实现细节新增孤立测试。
-6. **收尾与状态汇报**：完成后复查 `git diff --check` 与 `git status --short`，并在最终回复中明确说明未执行的检查或与本次改动无关的既有失败。
+```powershell
+$env:UV_DEFAULT_INDEX = "https://pypi.org/simple"
+uv lock
+```
 
-提交前建议运行 `uv run --no-sync prek install -f` 安装本地格式化 hook；全仓检查仅在明确需要时运行 `uv run --no-sync prek run --all-files`。前端 hook 会格式化整个 `frontend/`，提交前务必复查生成的变更，避免引入范围外修改。
+Check that wheel and source archive URLs in `uv.lock` use `pypi.org` or `files.pythonhosted.org`.
 
-## 发布
-
-发版由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动完成，无需手动打 tag：
-
-- **触发**：每天 UTC 03:00（北京时间 11:00）检查一次，`main` 自上一个 `v*` tag 起的应用提交数达到 5 即发版；纯文档提交不计入。
-- **流程**：通过 `scripts/bump_version.py` 同步更新 `backend/app/__init__.py` 与 `docs/public/version.txt` → 提交并推送 `main` → 构建 amd64/arm64 镜像并推送到 `ghcr.io/dyedd/lens` → 创建正式 release → 发布文档与版本检测文件。镜像构建失败时不发版；在线版本文件以成功发布的 release 为准。
-- **手动**：Actions → Release → Run workflow，默认只预览；取消勾选 `dry_run` 后执行正式发版，至少需要 1 个应用提交。
-- **镜像标签**：正式版产出 `latest`、`dev`、`vX.Y.Z`、`X.Y.Z`、`X.Y` 与 `sha-<7 位提交>`；`main` 的普通推送产出 `dev`。
-
-镜像构建逻辑在 [container-image.yml](.github/workflows/container-image.yml) 中复用，CI 与发版共用同一套多架构构建。纯文档改动跳过应用检查与镜像构建，由 [docs.yml](.github/workflows/docs.yml) 构建文档，合并到 `main` 后发布到 GitHub Pages。
-
-## 常用检查
+Check backend syntax:
 
 ```bash
-# 后端检查（仓库根目录执行）
 uv run --no-sync python -m compileall -q backend/app backend/tests scripts
-uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal
-# 仅在调试单点回归时串行执行
-uv run --no-sync python -m pytest backend/tests/api/test_<area>_api.py -q --confcutdir=backend/tests
+```
 
-# 数据库迁移检查（须先将 LENS_DATABASE_URL 指向隔离的测试数据库）
-uv run --no-sync lens db upgrade
-cd backend
-uv run --no-sync python -m alembic check
-cd ..
+Lint and build the frontend from `frontend/`:
 
-# 前端检查（frontend/ 目录下执行）
-cd frontend
+```bash
 pnpm lint
-# 常规类型检查；需要完整构建验证时使用 pnpm build（内部已包含 tsc）
-pnpm exec tsc --noEmit
 pnpm build
 ```
 
-上述命令应按改动范围按需选用，而非无差别顺序执行。后端测试默认并行运行，单点调试除外；纯文档改动仅需核对内容、链接及 diff 状态。全量 CI 流程参见 [.github/workflows/build.yml](.github/workflows/build.yml)。
+Build the documentation site from `docs/`:
+
+```bash
+pnpm build
+```
+
+## Code Style Guidelines
+
+Follow the [backend coding style](.agents/BACKEND-CODING-STYLE.md) for Python and the [frontend coding style](.agents/FRONTEND-CODING-STYLE.md) for TypeScript and React. Follow [DESIGN.md](.agents/DESIGN.md) for frontend visual decisions.
+
+Format and lint only the changed backend files:
+
+```bash
+uv run --no-sync ruff format <paths>
+uv run --no-sync ruff check --fix <paths>
+```
+
+Format and lint changed frontend files from `frontend/`:
+
+```bash
+pnpm exec biome check --write <paths>
+```
+
+## Testing Instructions
+
+Add tests only when requested, required by repository guidance, or needed to verify specific behavior that existing tests do not cover. Run relevant existing tests and checks, and verify that the requested behavior works as intended.
+
+Follow the [lens-testing skill](.agents/skills/lens-testing/SKILL.md) for backend HTTP test conventions. Choose the applicable commands below according to the changed component.
+
+For documentation-only changes, verify local links.
+
+Run the backend API suite from the repository root:
+
+```bash
+uv run --no-sync python -m pytest backend/tests/api -q --confcutdir=backend/tests -n auto --dist worksteal
+```
+
+Run one API test module during focused debugging:
+
+```bash
+uv run --no-sync python -m pytest backend/tests/api/test_<area>_api.py -q --confcutdir=backend/tests
+```
+
+For database migration changes, set `LENS_DATABASE_URL` to an isolated test database before running migration checks:
+
+```bash
+uv run --no-sync lens db upgrade
+cd backend
+uv run --no-sync python -m alembic check
+```
+
+Before finishing, review the full diff against this guide and the applicable coding style guide. Apply its comment rules to every added comment.
+
+Report the checks that ran, any skipped or failed checks and why, and relevant assumptions or unresolved limitations.
+
+Before finishing, run `git diff --check` and `git status --short`.
+
+## Security Considerations
+
+- Never expose `.env` contents or real credentials in source code, logs, responses, or tests.
+- Keep existing Alembic migration files unchanged. Add a new revision for schema changes.
+- Use an isolated test database for migration checks and tests that modify persistent data.
+- Preserve repository history. Commit, push, or rewrite history only when the user explicitly requests it.
