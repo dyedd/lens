@@ -1,6 +1,5 @@
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
-import "@fontsource-variable/noto-serif";
 import "@/globals.css";
 
 import { type ComponentType, StrictMode } from "react";
@@ -16,13 +15,14 @@ import { AppProviders } from "@/AppProviders";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { LoginScreen } from "@/components/screens/LoginScreen";
 import { DashboardShell } from "@/components/shell/DashboardShell";
+import { lazyComponent } from "@/lib/lazyComponent";
 
-/** Gives a screen its own chunk, fetched the first time its route is visited. */
 function lazyScreen<M>(
   load: () => Promise<M>,
   pick: (module: M) => ComponentType,
 ) {
-  return async () => ({ Component: pick(await load()) });
+  const Screen = lazyComponent(() => load().then(pick));
+  return <Screen />;
 }
 
 const router = createBrowserRouter([
@@ -45,70 +45,70 @@ const router = createBrowserRouter([
         children: [
           {
             index: true,
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/OverviewScreen"),
               (module) => module.OverviewScreen,
             ),
           },
           {
             path: "channels",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/ChannelsScreen"),
               (module) => module.ChannelsScreen,
             ),
           },
           {
             path: "groups",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/GroupsScreen"),
               (module) => module.GroupsScreen,
             ),
           },
           {
             path: "billing",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/ModelPricesScreen"),
               (module) => module.ModelPricesScreen,
             ),
           },
           {
             path: "requests",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/RequestsScreen"),
               (module) => module.RequestsScreen,
             ),
           },
           {
             path: "model-health",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/ModelHealthScreen"),
               (module) => module.ModelHealthScreen,
             ),
           },
           {
             path: "api-keys",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/ApiKeysScreen"),
               (module) => module.ApiKeysScreen,
             ),
           },
           {
             path: "cronjobs",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/CronjobsScreen"),
               (module) => module.CronjobsScreen,
             ),
           },
           {
             path: "backups",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/screens/BackupsScreen"),
               (module) => module.BackupsScreen,
             ),
           },
           {
             path: "settings",
-            lazy: lazyScreen(
+            element: lazyScreen(
               () => import("@/components/settings/SettingsScreen"),
               (module) => module.SettingsScreen,
             ),
