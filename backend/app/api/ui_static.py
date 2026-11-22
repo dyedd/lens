@@ -1,8 +1,9 @@
+from html import escape
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
-from starlette.responses import FileResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, Response
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
@@ -42,6 +43,25 @@ def _register_vite_bundle(app: FastAPI, static_dir: Path) -> None:
         )
     if static_dir.is_dir():
         app.frontend("/", directory=static_dir, check_dir=False)
+
+    index_file = static_dir / "index.html"
+    if index_file.is_file():
+        index_html = index_file.read_text(encoding="utf-8")
+
+        async def serve_login(request: Request) -> HTMLResponse:
+            canonical_url = escape(str(request.url.replace(query="", fragment="")))
+            return HTMLResponse(
+                index_html.replace(
+                    '<link rel="canonical" />',
+                    f'<link rel="canonical" href="{canonical_url}" />',
+                    1,
+                ),
+                headers={"Cache-Control": "no-cache"},
+            )
+
+        app.add_api_route(
+            "/login", serve_login, methods=["GET", "HEAD"], include_in_schema=False
+        )
 
 
 def _register_custom_bundle(app: FastAPI, static_dir: Path) -> None:
