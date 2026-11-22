@@ -1,5 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router";
 import { DashboardHeader } from "@/components/shell/DashboardHeader";
 import {
@@ -31,8 +35,33 @@ import {
   SettingsIcon,
 } from "./SidebarNavIcons";
 
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60_000,
+        gcTime: 5 * 60_000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        refetchOnMount: false,
+        retry: 1,
+      },
+    },
+  });
+}
+
 /** Renders the authenticated dashboard navigation and content shell. */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(createQueryClient);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DashboardShellContent>{children}</DashboardShellContent>
+    </QueryClientProvider>
+  );
+}
+
+function DashboardShellContent({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { locale, setLocale, t } = useI18n();
   const { data: appInfo } = useQuery({

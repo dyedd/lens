@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
@@ -19,14 +18,25 @@ type LoginResponse = {
 export function LoginScreen() {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
-  const { data: branding } = useQuery({
-    queryKey: ["public-branding"],
-    queryFn: () => apiRequest<PublicBranding>("/public/branding"),
-    staleTime: 5 * 60_000,
-  });
+  const [branding, setBranding] = useState<PublicBranding | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    void apiRequest<PublicBranding>("/public/branding")
+      .catch(() => null)
+      .then((value) => {
+        if (active) setBranding(value);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const siteName = branding?.site_name?.trim() || "Lens";
   const logoUrl = branding?.logo_url?.trim() || "/logo.svg";
   const loginInputClassName =
