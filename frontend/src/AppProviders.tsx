@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster as SonnerToaster } from "@/components/ui/Sonner";
@@ -24,7 +25,17 @@ function createQueryClient() {
 
 /** Provides shared query, localization, theme, tooltip, and error contexts. */
 export function AppProviders({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
   const [queryClient] = useState(createQueryClient);
+
+  useEffect(() => {
+    const canonical = document.querySelector<HTMLLinkElement>(
+      'link[rel="canonical"]',
+    );
+    if (canonical) {
+      canonical.href = window.location.origin + pathname;
+    }
+  }, [pathname]);
 
   return (
     <QueryClientProvider client={queryClient}>

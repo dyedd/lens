@@ -55,14 +55,17 @@ export function LoginScreen() {
       <div className="w-full max-w-[360px]">
         <img
           src={logoUrl}
-          alt={siteName}
+          alt=""
           width={32}
           height={32}
           loading="eager"
           className="mx-auto h-12 w-auto object-contain"
         />
+        <h1 className="mt-3 text-center text-base font-semibold leading-6">
+          {siteName}
+        </h1>
 
-        <form className="mt-7 space-y-4 px-2" onSubmit={submit}>
+        <form className="mt-4 space-y-4 px-2" onSubmit={submit}>
           <div className="space-y-2">
             <label
               className="text-sm font-medium leading-none text-foreground"
@@ -115,7 +118,7 @@ export function LoginScreen() {
         href="https://github.com/dyedd/lens"
         target="_blank"
         rel="noreferrer"
-        className="absolute bottom-4 text-center text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+        className="absolute bottom-4 text-center text-xs font-medium text-foreground hover:underline"
       >
         powered by lens
       </a>

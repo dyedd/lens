@@ -5,8 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lens</title>
     <meta name="description" content="渠道、模型组与系统配置管理后台" />
+    <link rel="canonical" />
     <link rel="icon" href="/logo.svg" />
     <link rel="apple-touch-icon" href="/logo.svg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebPage",
+            "name": "Lens",
+            "speakable": {
+              "@type": "SpeakableSpecification",
+              "cssSelector": ["h1"]
+            }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "Lens",
+            "description": "Self-hosted multi-provider LLM gateway and administration console.",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Web"
+          }
+        ]
+      }
+    </script>
     <!--
       Applies the stored theme before first paint. Must stay a classic inline
       script: a module script is deferred and would flash the default theme.
@@ -14,6 +37,11 @@
     -->
     <script>
       (() => {
+        const canonical = document.querySelector('link[rel="canonical"]');
+        if (canonical) {
+          canonical.href = window.location.origin + window.location.pathname;
+        }
+
         try {
           const stored = localStorage.getItem("lens_theme");
           const dark =
@@ -30,7 +58,11 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main>
+        <h1>Lens</h1>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
