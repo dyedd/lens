@@ -17,6 +17,9 @@ class _ImmutableStaticFiles(StaticFiles):
         response = await super().get_response(path, scope)
         if response.status_code in (200, 304):
             response.headers["Cache-Control"] = _IMMUTABLE_ASSET_CACHE_CONTROL
+        if isinstance(response, FileResponse) and path.endswith((".js", ".mjs")):
+            # Windows file associations can map JavaScript modules to text/plain.
+            response.headers["Content-Type"] = "text/javascript"
         return response
 
 

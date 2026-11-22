@@ -2,7 +2,7 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "@/globals.css";
 
-import { type ComponentType, StrictMode } from "react";
+import { type ComponentType, lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import {
   createBrowserRouter,
@@ -14,8 +14,14 @@ import {
 import { AppProviders } from "@/AppProviders";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { LoginScreen } from "@/components/screens/LoginScreen";
-import { DashboardShell } from "@/components/shell/DashboardShell";
+import { AppLoadingScreen } from "@/components/ui/LoadingState";
 import { lazyComponent } from "@/lib/lazyComponent";
+
+const DashboardShell = lazy(() =>
+  import("@/components/shell/DashboardShell").then(({ DashboardShell }) => ({
+    default: DashboardShell,
+  })),
+);
 
 function lazyScreen<M>(
   load: () => Promise<M>,
@@ -37,9 +43,11 @@ const router = createBrowserRouter([
       {
         element: (
           <AuthGuard>
-            <DashboardShell>
-              <Outlet />
-            </DashboardShell>
+            <Suspense fallback={<AppLoadingScreen />}>
+              <DashboardShell>
+                <Outlet />
+              </DashboardShell>
+            </Suspense>
           </AuthGuard>
         ),
         children: [

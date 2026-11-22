@@ -59,6 +59,7 @@ export function LoginScreen() {
           width={32}
           height={32}
           loading="eager"
+          fetchPriority="high"
           className="mx-auto h-12 w-auto object-contain"
         />
         <h1 className="mt-3 text-center text-base font-semibold leading-6">
