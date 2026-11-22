@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from math import ceil
+from math import ceil, isfinite
 from time import monotonic
 from typing import NamedTuple
 
@@ -70,7 +70,7 @@ class CooldownPolicy:
 def parse_cooldown_seconds(value: object, *, absolute: bool = False) -> float | None:
     """Parse a relative duration or UTC timestamp into non-negative seconds."""
     seconds = _parse_duration_or_timestamp(value, absolute=absolute)
-    if seconds is None:
+    if seconds is None or not isfinite(seconds):
         return None
     return seconds if seconds >= 0 else 0.0
 
@@ -79,7 +79,10 @@ def _parse_duration_or_timestamp(value: object, *, absolute: bool) -> float | No
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
-        seconds = float(value)
+        try:
+            seconds = float(value)
+        except OverflowError:
+            return None
         return seconds - datetime.now(UTC).timestamp() if absolute else seconds
     if not isinstance(value, str):
         return None

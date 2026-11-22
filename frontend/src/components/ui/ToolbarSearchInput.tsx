@@ -12,12 +12,14 @@ export function ToolbarSearchInput({
   onChange,
   onClear,
   placeholder,
+  clearLabel,
   className,
 }: {
   value: string;
   onChange: (value: string) => void;
   onClear: () => void;
   placeholder: string;
+  clearLabel: string;
   className?: string;
 }) {
   return (
@@ -31,9 +33,11 @@ export function ToolbarSearchInput({
         // Detach from ancestor forms so Enter cannot trigger channel/group submit.
         form={TOOLBAR_SEARCH_FORM_ID}
         value={value}
+        aria-label={placeholder}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.key !== "Enter") return;
+          if (event.key !== "Enter") return;
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
           event.preventDefault();
           event.stopPropagation();
         }}
@@ -48,6 +52,7 @@ export function ToolbarSearchInput({
           variant="ghost"
           size="icon-xs"
           className="absolute top-1/2 right-1 -translate-y-1/2 rounded-full"
+          aria-label={clearLabel}
           onClick={onClear}
         >
           <X />

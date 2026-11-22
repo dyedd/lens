@@ -172,6 +172,10 @@ export function GroupsOverview({
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
   const sortOptions = groupSortOptions(locale);
+  const searchPlaceholder =
+    locale === "zh-CN"
+      ? "搜索模型组、渠道或模型..."
+      : "Search groups, channels, or models...";
 
   return (
     <div className="space-y-5 pb-10">
@@ -206,11 +210,8 @@ export function GroupsOverview({
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
-              placeholder={
-                locale === "zh-CN"
-                  ? "搜索模型组、渠道或模型..."
-                  : "Search groups, channels, or models..."
-              }
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
               onChange={(event) => {
                 onSearchChange(event.target.value);
                 resetPage();

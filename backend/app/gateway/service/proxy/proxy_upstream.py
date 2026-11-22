@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from time import perf_counter
 from typing import Any
 
@@ -26,6 +24,7 @@ from ...converters.unified import ToolDefinition
 from ...router.cooldown import (
     ErrorCategory,
     classify_error,
+    parse_cooldown_seconds,
 )
 from ...upstream_request import (
     UpstreamRequest,
@@ -181,23 +180,6 @@ def _describe_upstream_body(response: httpx.Response, content: bytes) -> str:
         return label
     summary = summarize_html_error_detail(preview, content_type=content_type)
     return f"{label}: {summary[:200]}"
-
-
-def _parse_retry_after_seconds(value: str | None) -> float | None:
-    if not value:
-        return None
-    trimmed_value = value.strip()
-    try:
-        seconds = float(trimmed_value)
-    except ValueError:
-        try:
-            retry_at = parsedate_to_datetime(trimmed_value)
-        except (TypeError, ValueError, OverflowError):
-            return None
-        if retry_at.tzinfo is None:
-            retry_at = retry_at.replace(tzinfo=UTC)
-        return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
-    return seconds if seconds >= 0 else None
 
 
 def _is_request_level_client_error(status_code: int) -> bool:
@@ -670,7 +652,7 @@ async def execute_upstream_request(
         else:
             detail = format_http_response_error(response)
         retry_after_seconds = (
-            _parse_retry_after_seconds(response.headers.get("retry-after"))
+            parse_cooldown_seconds(response.headers.get("retry-after"))
             if status_code in (429, 503)
             else None
         )

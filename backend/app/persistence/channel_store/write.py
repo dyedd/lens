@@ -81,6 +81,8 @@ async def _upsert_protocol_configs(
     seen_base_url_ids: set[str] = set()
     for protocol_config in protocol_configs:
         protocol_config_id = protocol_config.id or str(uuid.uuid4())
+        if protocol_config_id in protocol_config_ids:
+            raise ValueError(f"Duplicate protocol config ID: {protocol_config_id}")
         protocol_config_ids.add(protocol_config_id)
         configs_by_url[protocol_config.base_url_id] = protocol_config_id
         if protocol_config.base_url_id not in base_url_ids:
@@ -101,9 +103,12 @@ async def _upsert_protocol_configs(
         )
         entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
         if entity is None:
-            entity = SiteProtocolConfigEntity(id=protocol_config_id)
+            entity = SiteProtocolConfigEntity(id=protocol_config_id, site_id=site_id)
             session.add(entity)
-        entity.site_id = site_id
+        elif entity.site_id != site_id:
+            raise ValueError(
+                f"Protocol config belongs to another site: {protocol_config_id}"
+            )
         entity.base_url_id = protocol_config.base_url_id
         configured_protocols = list(
             dict.fromkeys(

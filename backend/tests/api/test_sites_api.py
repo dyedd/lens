@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from typing import Any
 
 import httpx
-from conftest import gateway_headers, valid_site_payload
+from conftest import assert_error, gateway_headers, valid_site_payload
+from fastapi.testclient import TestClient
 
 
 def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
@@ -35,6 +38,36 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     delete = client.delete(f"/api/admin/sites/{site['id']}", headers=admin_headers)
     assert delete.status_code == 204
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+
+
+def test_site_save_rejects_protocol_config_from_another_site(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    create_site: Callable[[dict[str, Any]], dict[str, Any]],
+) -> None:
+    original_site = create_site(valid_site_payload())
+    other_payload = valid_site_payload(
+        name="Other Site",
+        base_id="base-2",
+        credential_id="cred-2",
+        protocol_config_id="pc-2",
+        model_name="gpt-4.1",
+    )
+    other_site = create_site(other_payload)
+    other_payload["protocols"][0]["id"] = "pc-1"
+
+    response = client.put(
+        f"/api/admin/sites/{other_site['id']}",
+        headers=admin_headers,
+        json=other_payload,
+    )
+    assert_error(response, 400, "Protocol config belongs to another site")
+    sites = client.get("/api/admin/sites", headers=admin_headers)
+    assert sites.status_code == 200, sites.text
+    assert {site["id"]: site for site in sites.json()} == {
+        original_site["id"]: original_site,
+        other_site["id"]: other_site,
+    }
 
 
 def test_site_changes_reach_other_gateway_instance(

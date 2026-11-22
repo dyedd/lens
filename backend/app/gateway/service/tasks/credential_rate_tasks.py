@@ -52,7 +52,10 @@ def _site_credential(site: SiteConfig, credential_id: str) -> SiteCredential | N
 def _nonnegative_number(value: Any, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"Invalid {label}")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"Invalid {label}") from exc
     if not isfinite(number) or number < 0:
         raise ValueError(f"Invalid {label}")
     return number

@@ -223,6 +223,7 @@ export function ChannelRemoteModelsDialog({
               value={query}
               onChange={setQuery}
               onClear={() => setQuery("")}
+              clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
               placeholder={
                 locale === "zh-CN" ? "搜索模型名称..." : "Search model names..."
               }

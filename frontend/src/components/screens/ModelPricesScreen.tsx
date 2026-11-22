@@ -269,6 +269,9 @@ export function ModelPricesScreen() {
   const [syncing, setSyncing] = useState(false);
   const groups = useModelGroupsQuery();
   const isChinese = locale === "zh-CN";
+  const searchPlaceholder = isChinese
+    ? "搜索模型名称..."
+    : "Search model name...";
   const rows = (groups.data ?? []).filter(
     (group) =>
       !group.route_group_id &&
@@ -317,13 +320,12 @@ export function ModelPricesScreen() {
             <Input
               className="pl-8"
               value={search}
+              aria-label={searchPlaceholder}
               onChange={(event) => {
                 setSearch(event.target.value);
                 resetPage();
               }}
-              placeholder={
-                isChinese ? "搜索模型名称..." : "Search model name..."
-              }
+              placeholder={searchPlaceholder}
             />
           </div>
         </div>

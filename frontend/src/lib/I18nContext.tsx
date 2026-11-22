@@ -95,6 +95,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     () => ({
       locale,
       setLocale: (nextLocale) => {
+        document.documentElement.lang = nextLocale;
         setLocaleState(nextLocale);
         try {
           window.localStorage.setItem("lens_locale", nextLocale);

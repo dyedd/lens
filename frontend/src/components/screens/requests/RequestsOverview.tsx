@@ -166,6 +166,11 @@ export function RequestsOverview({
         "No request logs match the current filters.",
       )
     : titleForLocale(locale, "暂无请求日志。", "No request logs yet.");
+  const searchPlaceholder = titleForLocale(
+    locale,
+    "搜索模型、渠道、网关密钥或错误信息...",
+    "Search model, channel, key, or error...",
+  );
 
   return (
     <div className="space-y-5 pb-10">
@@ -197,11 +202,8 @@ export function RequestsOverview({
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={keyword}
-              placeholder={titleForLocale(
-                locale,
-                "搜索模型、渠道、网关密钥或错误信息...",
-                "Search model, channel, key, or error...",
-              )}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
               onChange={(event) => onKeywordChange(event.target.value)}
               className="pl-8"
             />

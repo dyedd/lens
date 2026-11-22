@@ -94,6 +94,10 @@ export function HealthOverview({
         "No matching health data.",
       )
     : titleForLocale(locale, "健康状态", "Health status");
+  const searchPlaceholder =
+    mode === "model"
+      ? titleForLocale(locale, "搜索模型组...", "Search model groups...")
+      : titleForLocale(locale, "搜索渠道...", "Search channels...");
 
   return (
     <div className="space-y-5 pb-10">
@@ -138,15 +142,8 @@ export function HealthOverview({
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
-              placeholder={
-                mode === "model"
-                  ? titleForLocale(
-                      locale,
-                      "搜索模型组...",
-                      "Search model groups...",
-                    )
-                  : titleForLocale(locale, "搜索渠道...", "Search channels...")
-              }
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
               onChange={(event) => onSearchChange(event.target.value)}
               className="pl-8"
             />

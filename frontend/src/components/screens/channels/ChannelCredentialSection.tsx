@@ -192,13 +192,8 @@ export function ChannelCredentialSection({
   }
 
   function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (
-      event.nativeEvent.isComposing ||
-      event.key !== "Enter" ||
-      event.shiftKey
-    ) {
-      return;
-    }
+    if (event.key !== "Enter" || event.shiftKey) return;
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     addDraftKeys();
   }

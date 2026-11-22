@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import zlib
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from time import sleep
@@ -11,8 +12,28 @@ from typing import Any
 import httpx
 import pytest
 from conftest import gateway_headers, json_response, valid_site_payload
+from fastapi.testclient import TestClient
 
+from app.gateway.router.cooldown import parse_cooldown_seconds
+from app.gateway.upstream_request import UpstreamRequest
 from app.models.protocols import ProtocolKind
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        float("inf"),
+        float("-inf"),
+        float("nan"),
+        10**400,
+        "inf",
+        "-inf",
+        "nan",
+        "1e309",
+    ],
+)
+def test_cooldown_parser_rejects_nonfinite_values(value: object) -> None:
+    assert parse_cooldown_seconds(value) is None
 
 
 @pytest.mark.parametrize("protocol", ["openai_chat", "openai_responses", "anthropic"])
@@ -404,6 +425,46 @@ def test_upstream_error_body_respects_first_token_budget(
         "items"
     ]
     assert logs[0]["lifecycle_status"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("upstream_status_code", "gateway_status_code"),
+    [(429, 429), (503, 503), (500, 502)],
+)
+def test_nonfinite_retry_after_preserves_gateway_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    create_site_group_and_key: Callable[
+        [], tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+    ],
+    upstream_status_code: int,
+    gateway_status_code: int,
+) -> None:
+    _, _, gateway_key = create_site_group_and_key()
+
+    async def send(
+        _client: httpx.AsyncClient,
+        upstream: UpstreamRequest,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        return httpx.Response(
+            upstream_status_code,
+            headers={"Retry-After": "inf"},
+            json={"error": {"message": "upstream unavailable"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr("app.gateway.service.proxy.proxy_upstream._send_upstream", send)
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(gateway_key),
+        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert response.status_code == gateway_status_code, response.text
+    assert "upstream unavailable" in response.json()["error"]["message"]
+    assert "retry-after" not in response.headers
 
 
 def test_upstream_retry_after_and_single_recovery_probe(

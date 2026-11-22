@@ -133,6 +133,10 @@ export function ChannelsOverview({
   const selectedSites = selection.selectedRows;
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const sortOptions = channelSortOptions(locale);
+  const searchPlaceholder =
+    locale === "zh-CN"
+      ? "搜索渠道名称或地址..."
+      : "Search channel name or URL...";
 
   return (
     <div className="space-y-5 pb-10">
@@ -148,11 +152,8 @@ export function ChannelsOverview({
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
-              placeholder={
-                locale === "zh-CN"
-                  ? "搜索渠道名称或地址..."
-                  : "Search channel name or URL..."
-              }
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
               onChange={(event) => {
                 onSearchChange(event.target.value);
                 resetPage();

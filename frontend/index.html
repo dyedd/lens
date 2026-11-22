@@ -52,6 +52,8 @@
           const root = document.documentElement;
           root.classList.toggle("dark", dark);
           root.style.colorScheme = dark ? "dark" : "light";
+          const locale = localStorage.getItem("lens_locale");
+          if (locale === "zh-CN" || locale === "en-US") root.lang = locale;
         } catch {
           // localStorage may throw on quota/private mode; default theme still applies
         }
