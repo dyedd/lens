@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from math import isfinite
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -22,12 +22,14 @@ from ...upstream_request import (
     resolve_channel_api_key,
     resolve_upstream_proxy_url,
 )
-from ..app_state import AppState
 from ..upstream_support import (
     default_lens_user_agent,
     format_http_response_error,
 )
 from .model_sync import channel_for_credential
+
+if TYPE_CHECKING:
+    from ..app_state import AppState
 
 
 class CredentialRateSyncError(Exception):

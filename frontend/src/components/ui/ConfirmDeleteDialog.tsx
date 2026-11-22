@@ -15,7 +15,6 @@ type Props = {
   children?: ReactNode;
 };
 
-/** Renders the shared destructive confirmation dialog. */
 export function ConfirmDeleteDialog({
   open,
   locale,

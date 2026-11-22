@@ -5,13 +5,17 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .validation import StrictBaseModel, validate_regex_pattern
 
+_MAX_COOLDOWN_BODY_REGEX_LENGTH = 1_000
+
 
 class CooldownDetectionRule(StrictBaseModel):
     """A validated body/status rule for upstream cooldown classification."""
 
     name: str = Field(min_length=1, max_length=100)
     status_code: int | None = Field(default=None, ge=100, le=599)
-    body_regex: str | None = Field(default=None, max_length=1000)
+    body_regex: str | None = Field(
+        default=None, max_length=_MAX_COOLDOWN_BODY_REGEX_LENGTH
+    )
     scope: Literal["key", "model", "channel"] = "model"
     action: Literal["retry_key", "retry_channel", "terminal"] | None = None
     category: Literal["auth", "not_found", "rate_limit", "server", "timeout", "network"]

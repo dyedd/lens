@@ -52,6 +52,15 @@ from .validation import required_string
 
 _ORIGIN = ProtocolKind.GEMINI
 DUMMY_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
+_GEMINI_25_THINKING_BUDGETS: dict[str, int] = {
+    "minimal": 512,
+    "low": 1_024,
+    "medium": 4_096,
+    "high": 8_192,
+    "xhigh": 16_384,
+    "max": 24_576,
+}
+_LOW_THINKING_LEVEL_MAX_TOKENS = 4_096
 
 _GEMINI_FINISH = {
     "STOP": FinishReason.END_TURN,
@@ -753,14 +762,7 @@ def gemini_thinking_config(intent: ReasoningIntent, model: str) -> dict[str, Any
         if intent.enabled is False or effort == "none":
             budget = 0
         elif budget is None:
-            budget = {
-                "minimal": 512,
-                "low": 1024,
-                "medium": 4096,
-                "high": 8192,
-                "xhigh": 16384,
-                "max": 24576,
-            }.get(effort, -1)
+            budget = _GEMINI_25_THINKING_BUDGETS.get(effort, -1)
         if "pro" in model.lower() and budget == 0:
             budget = 128
         result["thinkingBudget"] = budget
@@ -768,7 +770,7 @@ def gemini_thinking_config(intent: ReasoningIntent, model: str) -> dict[str, Any
         low = (
             intent.enabled is False
             or effort in {"none", "minimal", "low"}
-            or (budget is not None and 0 <= budget <= 4096)
+            or (budget is not None and 0 <= budget <= _LOW_THINKING_LEVEL_MAX_TOKENS)
         )
         result["thinkingLevel"] = "LOW" if low else "HIGH"
     if intent.summarized:

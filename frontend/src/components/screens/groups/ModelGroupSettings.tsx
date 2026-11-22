@@ -19,9 +19,7 @@ interface ModelGroupSettingsProps {
   locale: "zh-CN" | "en-US";
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
-  changeName: (name: string) => void;
   routeTargetOptions: ModelGroup[];
-  changeRouteTarget: (routeGroupId: string) => void;
 }
 
 /** 标签始终位于控件上方，保持设置表单的纵向层级。 */
@@ -54,9 +52,7 @@ export function ModelGroupSettings({
   locale,
   form,
   setForm,
-  changeName,
   routeTargetOptions,
-  changeRouteTarget,
 }: ModelGroupSettingsProps) {
   const isZh = locale === "zh-CN";
   const groupMode = form.route_group_id ? "alias" : "direct";
@@ -65,6 +61,14 @@ export function ModelGroupSettings({
   const matchRegex = form.match_regex.trim();
   const isMatchRegexInvalid =
     Boolean(matchRegex) && !compileRegexRulePattern(matchRegex);
+
+  function changeRouteTarget(routeGroupId: string) {
+    setForm((current) => ({
+      ...current,
+      route_group_id: routeGroupId,
+      fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
+    }));
+  }
 
   function handleModeChange(mode: "direct" | "alias") {
     if (mode === "direct") {
@@ -92,7 +96,10 @@ export function ModelGroupSettings({
               : "Public model name, e.g. gpt-4o"
           }
           value={form.name}
-          onChange={(event) => changeName(event.target.value)}
+          onChange={(event) => {
+            const name = event.target.value;
+            setForm((current) => ({ ...current, name }));
+          }}
         />
       </SettingsRow>
 

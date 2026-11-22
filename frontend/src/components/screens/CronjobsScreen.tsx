@@ -2,13 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { SettingsSection } from "@/components/settings/settingsLayout";
 import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
 import {
   BulkActionButton,
   BulkActionsPopover,
 } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
+import { SettingsSection } from "@/components/ui/SettingsLayout";
 import {
   Tooltip,
   TooltipContent,
@@ -16,9 +16,14 @@ import {
 } from "@/components/ui/Tooltip";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useRowSelection } from "@/hooks/useRowSelection";
-import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type { CronjobItem, CronjobRunResult } from "@/lib/api/cronjobs";
-import type { SettingItem } from "@/lib/api/settings";
+import { getApiErrorMessage } from "@/lib/api/client";
+import {
+  type CronjobItem,
+  requestCronjobs,
+  runCronjob,
+  updateCronjob,
+} from "@/lib/api/cronjobs";
+import { requestSettings } from "@/lib/api/settings";
 import { titleForLocale, useI18n } from "@/lib/I18nContext";
 
 import { CronjobEditDialog } from "./cronjobs/CronjobEditDialog";
@@ -57,7 +62,6 @@ function draftPayload(draft: TaskDraft, enabled: boolean) {
   };
 }
 
-/** Render cron job schedules and manual run controls. */
 export function CronjobsScreen() {
   const queryClient = useQueryClient();
   const { locale, t } = useI18n();
@@ -66,18 +70,26 @@ export function CronjobsScreen() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const tasksQuery = useQuery({
     queryKey: ["cronjobs"],
-    queryFn: () => apiRequest<CronjobItem[]>("/admin/cronjobs"),
+    queryFn: requestCronjobs,
     staleTime: 10_000,
   });
   const settingsQuery = useQuery({
     queryKey: ["settings"],
-    queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
+    queryFn: () => requestSettings(),
     staleTime: 5 * 60_000,
   });
   const tasks = tasksQuery.data ?? [];
   const selection = useRowSelection(tasks, cronjobId);
   const selectedTasks = selection.selectedRows;
   const retentionDraft = parseRetentionSettings(settingsQuery.data);
+
+  function updateCronjobCache(updatedTask: CronjobItem) {
+    queryClient.setQueryData<CronjobItem[]>(["cronjobs"], (current) =>
+      (current ?? []).map((task) =>
+        task.id === updatedTask.id ? updatedTask : task,
+      ),
+    );
+  }
 
   const updateTask = useMutation({
     mutationFn: async ({
@@ -89,17 +101,11 @@ export function CronjobsScreen() {
       payload: ReturnType<typeof schedulePayload>;
       retention?: RetentionDraft;
     }) => {
-      const updatedTask = await apiRequest<CronjobItem>(
-        `/admin/cronjobs/${encodeURIComponent(task.id)}`,
-        {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        },
-      );
+      const updatedTask = await updateCronjob(task.id, payload);
       if (task.id !== REQUEST_LOG_PRUNE_TASK_ID || !retention) {
         return { task: updatedTask, settings: undefined };
       }
-      const settings = await apiRequest<SettingItem[]>("/admin/settings", {
+      const settings = await requestSettings({
         method: "PUT",
         body: JSON.stringify({
           items: [
@@ -117,11 +123,7 @@ export function CronjobsScreen() {
       return { task: updatedTask, settings };
     },
     onSuccess: (result) => {
-      queryClient.setQueryData<CronjobItem[]>(["cronjobs"], (current) =>
-        (current ?? []).map((item) =>
-          item.id === result.task.id ? result.task : item,
-        ),
-      );
+      updateCronjobCache(result.task);
       if (result.settings) {
         queryClient.setQueryData(["settings"], result.settings);
       }
@@ -147,17 +149,9 @@ export function CronjobsScreen() {
   });
 
   const runTask = useMutation({
-    mutationFn: (task: CronjobItem) =>
-      apiRequest<CronjobRunResult>(
-        `/admin/cronjobs/${encodeURIComponent(task.id)}/runs`,
-        { method: "POST" },
-      ),
-    onSuccess: (result) => {
-      queryClient.setQueryData<CronjobItem[]>(["cronjobs"], (current) =>
-        (current ?? []).map((item) =>
-          item.id === result.cronjob.id ? result.cronjob : item,
-        ),
-      );
+    mutationFn: (task: CronjobItem) => runCronjob(task.id),
+    onSuccess: (task) => {
+      updateCronjobCache(task);
       toast.success(
         titleForLocale(locale, "计划任务已开始", "Scheduled task started"),
       );
@@ -175,8 +169,12 @@ export function CronjobsScreen() {
       ),
   });
 
-  async function bulkSetEnabled(enabled: boolean) {
-    const items = selectedTasks.filter((task) => task.enabled !== enabled);
+  async function runBulkAction(
+    items: CronjobItem[],
+    action: (task: CronjobItem) => Promise<CronjobItem>,
+    successMessage: string,
+    failureMessage: string,
+  ) {
     if (!items.length) {
       selection.clear();
       return;
@@ -184,86 +182,53 @@ export function CronjobsScreen() {
     setBulkBusy(true);
     try {
       for (const task of items) {
-        const updated = await apiRequest<CronjobItem>(
-          `/admin/cronjobs/${encodeURIComponent(task.id)}`,
-          {
-            method: "PUT",
-            body: JSON.stringify(schedulePayload(task, enabled)),
-          },
-        );
-        queryClient.setQueryData<CronjobItem[]>(["cronjobs"], (current) =>
-          (current ?? []).map((item) =>
-            item.id === updated.id ? updated : item,
-          ),
-        );
+        const updated = await action(task);
+        updateCronjobCache(updated);
       }
-      toast.success(
-        titleForLocale(
-          locale,
-          `已${enabled ? "启用" : "停用"} ${items.length} 项计划任务`,
-          `${enabled ? "Enabled" : "Disabled"} ${items.length} scheduled tasks`,
-        ),
-      );
+      toast.success(successMessage);
       selection.clear();
     } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          titleForLocale(
-            locale,
-            "批量更新计划任务失败",
-            "Failed to update scheduled tasks",
-          ),
-        ),
-      );
+      toast.error(getApiErrorMessage(error, failureMessage));
       await queryClient.invalidateQueries({ queryKey: ["cronjobs"] });
     } finally {
       setBulkBusy(false);
     }
   }
 
+  async function bulkSetEnabled(enabled: boolean) {
+    const items = selectedTasks.filter((task) => task.enabled !== enabled);
+    await runBulkAction(
+      items,
+      (task) => updateCronjob(task.id, schedulePayload(task, enabled)),
+      titleForLocale(
+        locale,
+        `已${enabled ? "启用" : "停用"} ${items.length} 项计划任务`,
+        `${enabled ? "Enabled" : "Disabled"} ${items.length} scheduled tasks`,
+      ),
+      titleForLocale(
+        locale,
+        "批量更新计划任务失败",
+        "Failed to update scheduled tasks",
+      ),
+    );
+  }
+
   async function bulkRun() {
     const items = selectedTasks.filter((task) => task.status !== "running");
-    if (!items.length) {
-      selection.clear();
-      return;
-    }
-    setBulkBusy(true);
-    try {
-      for (const task of items) {
-        const result = await apiRequest<CronjobRunResult>(
-          `/admin/cronjobs/${encodeURIComponent(task.id)}/runs`,
-          { method: "POST" },
-        );
-        queryClient.setQueryData<CronjobItem[]>(["cronjobs"], (current) =>
-          (current ?? []).map((item) =>
-            item.id === result.cronjob.id ? result.cronjob : item,
-          ),
-        );
-      }
-      toast.success(
-        titleForLocale(
-          locale,
-          `已触发执行 ${items.length} 项计划任务`,
-          `Ran ${items.length} scheduled tasks`,
-        ),
-      );
-      selection.clear();
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          titleForLocale(
-            locale,
-            "批量执行计划任务失败",
-            "Failed to run scheduled tasks",
-          ),
-        ),
-      );
-      await queryClient.invalidateQueries({ queryKey: ["cronjobs"] });
-    } finally {
-      setBulkBusy(false);
-    }
+    await runBulkAction(
+      items,
+      (task) => runCronjob(task.id),
+      titleForLocale(
+        locale,
+        `已触发执行 ${items.length} 项计划任务`,
+        `Ran ${items.length} scheduled tasks`,
+      ),
+      titleForLocale(
+        locale,
+        "批量执行计划任务失败",
+        "Failed to run scheduled tasks",
+      ),
+    );
   }
 
   const pageError = tasksQuery.isError

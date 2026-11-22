@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { apiRequest } from "@/lib/api/client";
-import type {
-  AttributionDimension,
-  OverviewAttribution,
-  OverviewDailyPoint,
-  OverviewSummary,
+import {
+  type AttributionDimension,
+  OVERVIEW_DAILY_QUERY_KEY,
+  type OverviewAttribution,
+  type OverviewDailyPoint,
+  type OverviewSummary,
 } from "@/lib/api/overview";
 import { getDateBucketPrefix } from "@/lib/datetime";
 import { useI18n } from "@/lib/I18nContext";
@@ -38,12 +39,12 @@ export function OverviewScreen() {
       apiRequest<OverviewSummary>(`/admin/overview-summary?days=${days}`),
   });
   const dailyQuery = useQuery({
-    queryKey: ["overview-daily", days, timeZone],
+    queryKey: [...OVERVIEW_DAILY_QUERY_KEY, days, timeZone],
     queryFn: () =>
       apiRequest<OverviewDailyPoint[]>(`/admin/overview-daily?days=${days}`),
   });
   const heatmapQuery = useQuery({
-    queryKey: ["overview-daily", 371, timeZone],
+    queryKey: [...OVERVIEW_DAILY_QUERY_KEY, 371, timeZone],
     queryFn: () =>
       apiRequest<OverviewDailyPoint[]>("/admin/overview-daily?days=371"),
     staleTime: 60_000,
@@ -69,19 +70,18 @@ export function OverviewScreen() {
       );
     },
   });
-  const activityQuery = useQuery({
-    queryKey: ["overview-activity", days, timeZone],
+  const hourlyQuery = useQuery({
+    queryKey: [...OVERVIEW_DAILY_QUERY_KEY, -1, timeZone, "hourly"],
     queryFn: () =>
       apiRequest<OverviewDailyPoint[]>(
-        `/admin/overview-daily?days=${days}&granularity=${days === -1 ? "hourly" : "daily"}`,
+        "/admin/overview-daily?days=-1&granularity=hourly",
       ),
+    enabled: days === -1,
   });
-  const pageError =
-    summaryQuery.error ||
-    dailyQuery.error ||
-    heatmapQuery.error ||
-    attributionQuery.error ||
-    activityQuery.error;
+  const activityQuery = days === -1 ? hourlyQuery : dailyQuery;
+  const queries = [summaryQuery, dailyQuery, heatmapQuery, attributionQuery];
+  if (days === -1) queries.push(hourlyQuery);
+  const pageError = queries.find((query) => query.error)?.error;
   useEffect(() => {
     if (!pageError) return;
     toast.error(
@@ -159,13 +159,6 @@ export function OverviewScreen() {
     }
     return points;
   }, [heatmapQuery.data, todayKey]);
-  const queries = [
-    summaryQuery,
-    dailyQuery,
-    heatmapQuery,
-    attributionQuery,
-    activityQuery,
-  ];
   return (
     <section className="flex min-w-0 flex-col gap-6">
       <OverviewStats

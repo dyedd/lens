@@ -93,6 +93,42 @@ export interface SettingsDraft {
   upstreamParamOverrideConfig: UpstreamParamOverrideDraft;
 }
 
+const SETTINGS_DEFAULTS = {
+  proxyUrl: "",
+  corsAllowOrigins: "*",
+  authAccessTokenMinutes: "",
+  firstTokenTimeoutSeconds: "180",
+  streamIdleTimeoutSeconds: "180",
+  maxRequestBodyBytes: "",
+  circuitBreakerThreshold: "3",
+  circuitBreakerFailureWindowSeconds: "300",
+  circuitBreakerTimeoutThreshold: "2",
+  circuitBreakerNetworkThreshold: "2",
+  circuitBreakerCooldown: "60",
+  circuitBreakerAuthCooldown: "300",
+  circuitBreakerNotFoundCooldown: "300",
+  circuitBreakerRateLimitCooldown: "60",
+  circuitBreakerTimeoutCooldown: "60",
+  circuitBreakerNetworkCooldown: "60",
+  circuitBreakerBackoffMultiplier: "2",
+  circuitBreakerMaxCooldown: "600",
+  failoverCooledWaitSeconds: "0",
+  circuitBreakerEscalateThreshold: "2",
+  circuitBreakerEscalateWindowSeconds: "60",
+  failoverAffinitySeconds: "30",
+  isHealthScoringEnabled: true,
+  healthWindowSeconds: "300",
+  healthPenaltyWeight: "0.5",
+  healthMinSamples: "10",
+  isRelayLogBodyEnabled: false,
+  siteName: "Lens",
+  siteLogoUrl: "",
+  timeZone: "Asia/Shanghai",
+} satisfies Omit<
+  SettingsDraft,
+  "upstreamHeadersConfig" | "upstreamParamOverrideConfig"
+>;
+
 function serializeCorsOrigins(rawValue: string) {
   const items: string[] = [];
   const seen = new Set<string>();
@@ -115,39 +151,23 @@ function serializeCorsOrigins(rawValue: string) {
 /** Create the initial settings form draft. */
 export function createEmptySettingsDraft(): SettingsDraft {
   return {
-    proxyUrl: "",
-    corsAllowOrigins: "*",
-    authAccessTokenMinutes: "",
-    firstTokenTimeoutSeconds: "180",
-    streamIdleTimeoutSeconds: "180",
-    maxRequestBodyBytes: "",
-    circuitBreakerThreshold: "3",
-    circuitBreakerFailureWindowSeconds: "300",
-    circuitBreakerTimeoutThreshold: "2",
-    circuitBreakerNetworkThreshold: "2",
-    circuitBreakerCooldown: "60",
-    circuitBreakerAuthCooldown: "300",
-    circuitBreakerNotFoundCooldown: "300",
-    circuitBreakerRateLimitCooldown: "60",
-    circuitBreakerTimeoutCooldown: "60",
-    circuitBreakerNetworkCooldown: "60",
-    circuitBreakerBackoffMultiplier: "2",
-    circuitBreakerMaxCooldown: "600",
-    failoverCooledWaitSeconds: "0",
-    circuitBreakerEscalateThreshold: "2",
-    circuitBreakerEscalateWindowSeconds: "60",
-    failoverAffinitySeconds: "30",
-    isHealthScoringEnabled: true,
-    healthWindowSeconds: "300",
-    healthPenaltyWeight: "0.5",
-    healthMinSamples: "10",
-    isRelayLogBodyEnabled: false,
-    siteName: "Lens",
-    siteLogoUrl: "",
-    timeZone: "Asia/Shanghai",
+    ...SETTINGS_DEFAULTS,
     upstreamHeadersConfig: createEmptyUpstreamHeadersDraft(),
     upstreamParamOverrideConfig: createEmptyUpstreamParamOverrideDraft(),
   };
+}
+
+/** Report whether the current draft needs a new automatic save attempt. */
+export function shouldAutoSaveSettingsDraft(
+  draft: SettingsDraft,
+  savedDraft: string | null,
+  submittedDraft: string | null,
+) {
+  if (savedDraft === null) {
+    return false;
+  }
+  const serializedDraft = JSON.stringify(draft);
+  return serializedDraft !== savedDraft && serializedDraft !== submittedDraft;
 }
 
 /** Convert persisted setting items into the editable settings draft. */
@@ -155,53 +175,122 @@ export function createSettingsDraft(
   items: SettingItem[] | undefined,
 ): SettingsDraft {
   const mapping = new Map((items ?? []).map((item) => [item.key, item.value]));
+  const value = (key: string, fallback: string) => mapping.get(key) ?? fallback;
   return {
-    proxyUrl: mapping.get(PROXY_URL) ?? "",
-    corsAllowOrigins: mapping.get(CORS_ALLOW_ORIGINS) ?? "*",
-    authAccessTokenMinutes: mapping.get(AUTH_ACCESS_TOKEN_MINUTES) ?? "",
-    firstTokenTimeoutSeconds: mapping.get(FIRST_TOKEN_TIMEOUT_SECONDS) ?? "180",
-    streamIdleTimeoutSeconds: mapping.get(STREAM_IDLE_TIMEOUT_SECONDS) ?? "180",
-    maxRequestBodyBytes: mapping.get(MAX_REQUEST_BODY_BYTES) ?? "",
-    circuitBreakerThreshold: mapping.get(CIRCUIT_BREAKER_THRESHOLD) ?? "3",
-    circuitBreakerFailureWindowSeconds:
-      mapping.get(CIRCUIT_BREAKER_FAILURE_WINDOW) ?? "300",
-    circuitBreakerTimeoutThreshold:
-      mapping.get(CIRCUIT_BREAKER_TIMEOUT_THRESHOLD) ?? "2",
-    circuitBreakerNetworkThreshold:
-      mapping.get(CIRCUIT_BREAKER_NETWORK_THRESHOLD) ?? "2",
-    circuitBreakerCooldown: mapping.get(CIRCUIT_BREAKER_COOLDOWN) ?? "60",
-    circuitBreakerAuthCooldown:
-      mapping.get(CIRCUIT_BREAKER_AUTH_COOLDOWN) ?? "300",
-    circuitBreakerNotFoundCooldown:
-      mapping.get(CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN) ?? "300",
-    circuitBreakerRateLimitCooldown:
-      mapping.get(CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN) ?? "60",
-    circuitBreakerTimeoutCooldown:
-      mapping.get(CIRCUIT_BREAKER_TIMEOUT_COOLDOWN) ?? "60",
-    circuitBreakerNetworkCooldown:
-      mapping.get(CIRCUIT_BREAKER_NETWORK_COOLDOWN) ?? "60",
-    circuitBreakerBackoffMultiplier:
-      mapping.get(CIRCUIT_BREAKER_BACKOFF_MULTIPLIER) ?? "2",
-    circuitBreakerMaxCooldown:
-      mapping.get(CIRCUIT_BREAKER_MAX_COOLDOWN) ?? "600",
-    failoverCooledWaitSeconds: mapping.get(FAILOVER_COOLED_WAIT_SECONDS) ?? "0",
-    circuitBreakerEscalateThreshold:
-      mapping.get(CIRCUIT_BREAKER_ESCALATE_THRESHOLD) ?? "2",
-    circuitBreakerEscalateWindowSeconds:
-      mapping.get(CIRCUIT_BREAKER_ESCALATE_WINDOW) ?? "60",
-    failoverAffinitySeconds: mapping.get(FAILOVER_AFFINITY_SECONDS) ?? "30",
+    proxyUrl: value(PROXY_URL, SETTINGS_DEFAULTS.proxyUrl),
+    corsAllowOrigins: value(
+      CORS_ALLOW_ORIGINS,
+      SETTINGS_DEFAULTS.corsAllowOrigins,
+    ),
+    authAccessTokenMinutes: value(
+      AUTH_ACCESS_TOKEN_MINUTES,
+      SETTINGS_DEFAULTS.authAccessTokenMinutes,
+    ),
+    firstTokenTimeoutSeconds: value(
+      FIRST_TOKEN_TIMEOUT_SECONDS,
+      SETTINGS_DEFAULTS.firstTokenTimeoutSeconds,
+    ),
+    streamIdleTimeoutSeconds: value(
+      STREAM_IDLE_TIMEOUT_SECONDS,
+      SETTINGS_DEFAULTS.streamIdleTimeoutSeconds,
+    ),
+    maxRequestBodyBytes: value(
+      MAX_REQUEST_BODY_BYTES,
+      SETTINGS_DEFAULTS.maxRequestBodyBytes,
+    ),
+    circuitBreakerThreshold: value(
+      CIRCUIT_BREAKER_THRESHOLD,
+      SETTINGS_DEFAULTS.circuitBreakerThreshold,
+    ),
+    circuitBreakerFailureWindowSeconds: value(
+      CIRCUIT_BREAKER_FAILURE_WINDOW,
+      SETTINGS_DEFAULTS.circuitBreakerFailureWindowSeconds,
+    ),
+    circuitBreakerTimeoutThreshold: value(
+      CIRCUIT_BREAKER_TIMEOUT_THRESHOLD,
+      SETTINGS_DEFAULTS.circuitBreakerTimeoutThreshold,
+    ),
+    circuitBreakerNetworkThreshold: value(
+      CIRCUIT_BREAKER_NETWORK_THRESHOLD,
+      SETTINGS_DEFAULTS.circuitBreakerNetworkThreshold,
+    ),
+    circuitBreakerCooldown: value(
+      CIRCUIT_BREAKER_COOLDOWN,
+      SETTINGS_DEFAULTS.circuitBreakerCooldown,
+    ),
+    circuitBreakerAuthCooldown: value(
+      CIRCUIT_BREAKER_AUTH_COOLDOWN,
+      SETTINGS_DEFAULTS.circuitBreakerAuthCooldown,
+    ),
+    circuitBreakerNotFoundCooldown: value(
+      CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN,
+      SETTINGS_DEFAULTS.circuitBreakerNotFoundCooldown,
+    ),
+    circuitBreakerRateLimitCooldown: value(
+      CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN,
+      SETTINGS_DEFAULTS.circuitBreakerRateLimitCooldown,
+    ),
+    circuitBreakerTimeoutCooldown: value(
+      CIRCUIT_BREAKER_TIMEOUT_COOLDOWN,
+      SETTINGS_DEFAULTS.circuitBreakerTimeoutCooldown,
+    ),
+    circuitBreakerNetworkCooldown: value(
+      CIRCUIT_BREAKER_NETWORK_COOLDOWN,
+      SETTINGS_DEFAULTS.circuitBreakerNetworkCooldown,
+    ),
+    circuitBreakerBackoffMultiplier: value(
+      CIRCUIT_BREAKER_BACKOFF_MULTIPLIER,
+      SETTINGS_DEFAULTS.circuitBreakerBackoffMultiplier,
+    ),
+    circuitBreakerMaxCooldown: value(
+      CIRCUIT_BREAKER_MAX_COOLDOWN,
+      SETTINGS_DEFAULTS.circuitBreakerMaxCooldown,
+    ),
+    failoverCooledWaitSeconds: value(
+      FAILOVER_COOLED_WAIT_SECONDS,
+      SETTINGS_DEFAULTS.failoverCooledWaitSeconds,
+    ),
+    circuitBreakerEscalateThreshold: value(
+      CIRCUIT_BREAKER_ESCALATE_THRESHOLD,
+      SETTINGS_DEFAULTS.circuitBreakerEscalateThreshold,
+    ),
+    circuitBreakerEscalateWindowSeconds: value(
+      CIRCUIT_BREAKER_ESCALATE_WINDOW,
+      SETTINGS_DEFAULTS.circuitBreakerEscalateWindowSeconds,
+    ),
+    failoverAffinitySeconds: value(
+      FAILOVER_AFFINITY_SECONDS,
+      SETTINGS_DEFAULTS.failoverAffinitySeconds,
+    ),
     isHealthScoringEnabled:
-      (mapping.get(HEALTH_SCORING_ENABLED) ?? "true").trim().toLowerCase() ===
-      "true",
-    healthWindowSeconds: mapping.get(HEALTH_WINDOW_SECONDS) ?? "300",
-    healthPenaltyWeight: mapping.get(HEALTH_PENALTY_WEIGHT) ?? "0.5",
-    healthMinSamples: mapping.get(HEALTH_MIN_SAMPLES) ?? "10",
+      value(
+        HEALTH_SCORING_ENABLED,
+        String(SETTINGS_DEFAULTS.isHealthScoringEnabled),
+      )
+        .trim()
+        .toLowerCase() === "true",
+    healthWindowSeconds: value(
+      HEALTH_WINDOW_SECONDS,
+      SETTINGS_DEFAULTS.healthWindowSeconds,
+    ),
+    healthPenaltyWeight: value(
+      HEALTH_PENALTY_WEIGHT,
+      SETTINGS_DEFAULTS.healthPenaltyWeight,
+    ),
+    healthMinSamples: value(
+      HEALTH_MIN_SAMPLES,
+      SETTINGS_DEFAULTS.healthMinSamples,
+    ),
     isRelayLogBodyEnabled:
-      (mapping.get(RELAY_LOG_BODY_ENABLED) ?? "false").trim().toLowerCase() ===
-      "true",
-    siteName: mapping.get(SITE_NAME) ?? "Lens",
-    siteLogoUrl: mapping.get(SITE_LOGO_URL) ?? "",
-    timeZone: mapping.get(TIME_ZONE) ?? "Asia/Shanghai",
+      value(
+        RELAY_LOG_BODY_ENABLED,
+        String(SETTINGS_DEFAULTS.isRelayLogBodyEnabled),
+      )
+        .trim()
+        .toLowerCase() === "true",
+    siteName: value(SITE_NAME, SETTINGS_DEFAULTS.siteName),
+    siteLogoUrl: value(SITE_LOGO_URL, SETTINGS_DEFAULTS.siteLogoUrl),
+    timeZone: value(TIME_ZONE, SETTINGS_DEFAULTS.timeZone),
     upstreamHeadersConfig: parseUpstreamHeadersConfig(
       mapping.get(UPSTREAM_HEADERS_CONFIG),
     ),
@@ -237,67 +326,99 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
     },
     {
       key: CIRCUIT_BREAKER_THRESHOLD,
-      value: draft.circuitBreakerThreshold.trim() || "3",
+      value:
+        draft.circuitBreakerThreshold.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerThreshold,
     },
     {
       key: CIRCUIT_BREAKER_FAILURE_WINDOW,
-      value: draft.circuitBreakerFailureWindowSeconds.trim() || "300",
+      value:
+        draft.circuitBreakerFailureWindowSeconds.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerFailureWindowSeconds,
     },
     {
       key: CIRCUIT_BREAKER_TIMEOUT_THRESHOLD,
-      value: draft.circuitBreakerTimeoutThreshold.trim() || "2",
+      value:
+        draft.circuitBreakerTimeoutThreshold.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerTimeoutThreshold,
     },
     {
       key: CIRCUIT_BREAKER_NETWORK_THRESHOLD,
-      value: draft.circuitBreakerNetworkThreshold.trim() || "2",
+      value:
+        draft.circuitBreakerNetworkThreshold.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerNetworkThreshold,
     },
     {
       key: CIRCUIT_BREAKER_COOLDOWN,
-      value: draft.circuitBreakerCooldown.trim() || "60",
+      value:
+        draft.circuitBreakerCooldown.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerCooldown,
     },
     {
       key: CIRCUIT_BREAKER_AUTH_COOLDOWN,
-      value: draft.circuitBreakerAuthCooldown.trim() || "300",
+      value:
+        draft.circuitBreakerAuthCooldown.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerAuthCooldown,
     },
     {
       key: CIRCUIT_BREAKER_NOT_FOUND_COOLDOWN,
-      value: draft.circuitBreakerNotFoundCooldown.trim() || "300",
+      value:
+        draft.circuitBreakerNotFoundCooldown.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerNotFoundCooldown,
     },
     {
       key: CIRCUIT_BREAKER_RATE_LIMIT_COOLDOWN,
-      value: draft.circuitBreakerRateLimitCooldown.trim() || "60",
+      value:
+        draft.circuitBreakerRateLimitCooldown.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerRateLimitCooldown,
     },
     {
       key: CIRCUIT_BREAKER_TIMEOUT_COOLDOWN,
-      value: draft.circuitBreakerTimeoutCooldown.trim() || "60",
+      value:
+        draft.circuitBreakerTimeoutCooldown.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerTimeoutCooldown,
     },
     {
       key: CIRCUIT_BREAKER_NETWORK_COOLDOWN,
-      value: draft.circuitBreakerNetworkCooldown.trim() || "60",
+      value:
+        draft.circuitBreakerNetworkCooldown.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerNetworkCooldown,
     },
     {
       key: CIRCUIT_BREAKER_BACKOFF_MULTIPLIER,
-      value: draft.circuitBreakerBackoffMultiplier.trim() || "2",
+      value:
+        draft.circuitBreakerBackoffMultiplier.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerBackoffMultiplier,
     },
     {
       key: CIRCUIT_BREAKER_MAX_COOLDOWN,
-      value: draft.circuitBreakerMaxCooldown.trim() || "600",
+      value:
+        draft.circuitBreakerMaxCooldown.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerMaxCooldown,
     },
     {
       key: FAILOVER_COOLED_WAIT_SECONDS,
-      value: draft.failoverCooledWaitSeconds.trim() || "0",
+      value:
+        draft.failoverCooledWaitSeconds.trim() ||
+        SETTINGS_DEFAULTS.failoverCooledWaitSeconds,
     },
     {
       key: CIRCUIT_BREAKER_ESCALATE_THRESHOLD,
-      value: draft.circuitBreakerEscalateThreshold.trim() || "2",
+      value:
+        draft.circuitBreakerEscalateThreshold.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerEscalateThreshold,
     },
     {
       key: CIRCUIT_BREAKER_ESCALATE_WINDOW,
-      value: draft.circuitBreakerEscalateWindowSeconds.trim() || "60",
+      value:
+        draft.circuitBreakerEscalateWindowSeconds.trim() ||
+        SETTINGS_DEFAULTS.circuitBreakerEscalateWindowSeconds,
     },
     {
       key: FAILOVER_AFFINITY_SECONDS,
-      value: draft.failoverAffinitySeconds.trim() || "30",
+      value:
+        draft.failoverAffinitySeconds.trim() ||
+        SETTINGS_DEFAULTS.failoverAffinitySeconds,
     },
     {
       key: HEALTH_SCORING_ENABLED,
@@ -305,23 +426,34 @@ export function createSettingItems(draft: SettingsDraft): SettingItem[] {
     },
     {
       key: HEALTH_WINDOW_SECONDS,
-      value: draft.healthWindowSeconds.trim() || "300",
+      value:
+        draft.healthWindowSeconds.trim() ||
+        SETTINGS_DEFAULTS.healthWindowSeconds,
     },
     {
       key: HEALTH_PENALTY_WEIGHT,
-      value: draft.healthPenaltyWeight.trim() || "0.5",
+      value:
+        draft.healthPenaltyWeight.trim() ||
+        SETTINGS_DEFAULTS.healthPenaltyWeight,
     },
     {
       key: HEALTH_MIN_SAMPLES,
-      value: draft.healthMinSamples.trim() || "10",
+      value:
+        draft.healthMinSamples.trim() || SETTINGS_DEFAULTS.healthMinSamples,
     },
     {
       key: RELAY_LOG_BODY_ENABLED,
       value: draft.isRelayLogBodyEnabled ? "true" : "false",
     },
-    { key: SITE_NAME, value: draft.siteName.trim() || "Lens" },
+    {
+      key: SITE_NAME,
+      value: draft.siteName.trim() || SETTINGS_DEFAULTS.siteName,
+    },
     { key: SITE_LOGO_URL, value: draft.siteLogoUrl.trim() },
-    { key: TIME_ZONE, value: draft.timeZone.trim() || "Asia/Shanghai" },
+    {
+      key: TIME_ZONE,
+      value: draft.timeZone.trim() || SETTINGS_DEFAULTS.timeZone,
+    },
     {
       key: UPSTREAM_HEADERS_CONFIG,
       value: serializeUpstreamHeadersConfig(draft.upstreamHeadersConfig),

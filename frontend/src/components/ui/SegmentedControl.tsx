@@ -23,6 +23,7 @@ export function SegmentedControl<T extends string>({
         <button
           key={option.value}
           type="button"
+          aria-pressed={option.value === value}
           className={cn(
             "h-6 min-w-0 truncate rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
             option.value === value

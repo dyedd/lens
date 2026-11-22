@@ -2,8 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type { SettingItem } from "@/lib/api/settings";
+import { getApiErrorMessage } from "@/lib/api/client";
+import { OVERVIEW_DAILY_QUERY_KEY } from "@/lib/api/overview";
+import { requestSettings } from "@/lib/api/settings";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import {
   type NumericSettingErrors,
@@ -13,6 +14,7 @@ import {
   createEmptySettingsDraft,
   createSettingItems,
   createSettingsDraft,
+  shouldAutoSaveSettingsDraft,
 } from "./settingsDraft";
 import { validateUpstreamHeadersConfig } from "./upstreamHeaderConfig";
 import { validateUpstreamParamOverrideConfig } from "./upstreamParamOverride";
@@ -24,7 +26,7 @@ const REFRESH_QUERY_KEYS = [
   ["app-info"],
   ["groups"],
   ["overview-summary"],
-  ["overview-daily"],
+  OVERVIEW_DAILY_QUERY_KEY,
   ["overview-attribution"],
 ] as const;
 
@@ -33,11 +35,12 @@ export function useSettingsDraft(locale: Locale) {
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({
     queryKey: ["settings"],
-    queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
+    queryFn: () => requestSettings(),
     staleTime: 5 * 60_000,
   });
   const [draft, setDraft] = useState(createEmptySettingsDraft);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasSaveError, setHasSaveError] = useState(false);
   const savedDraftRef = useRef<string | null>(null);
   const submittedDraftRef = useRef<string | null>(null);
   const [isNumericValidationVisible, setIsNumericValidationVisible] =
@@ -117,9 +120,10 @@ export function useSettingsDraft(locale: Locale) {
       return;
     }
     submittedDraftRef.current = JSON.stringify(draft);
+    setHasSaveError(false);
     setIsSaving(true);
     try {
-      await apiRequest<SettingItem[]>("/admin/settings", {
+      await requestSettings({
         method: "PUT",
         body: JSON.stringify({ items: createSettingItems(draft) }),
       });
@@ -131,17 +135,33 @@ export function useSettingsDraft(locale: Locale) {
         requestError,
         titleForLocale(locale, "保存设置失败", "Failed to save settings"),
       );
+      setHasSaveError(true);
       toast.error(message);
     } finally {
       setIsSaving(false);
     }
   }, [draft, isSaving, locale, refresh, settingsQuery.isSuccess]);
 
-  useEffect(() => {
-    if (!settingsQuery.isSuccess || savedDraftRef.current === null || isSaving)
+  const retrySettings = useCallback(() => {
+    if (!hasSaveError || isSaving) {
       return;
-    if (JSON.stringify(draft) === savedDraftRef.current) return;
-    if (JSON.stringify(draft) === submittedDraftRef.current) return;
+    }
+    void submitSettings();
+  }, [hasSaveError, isSaving, submitSettings]);
+
+  useEffect(() => {
+    if (!settingsQuery.isSuccess || isSaving) {
+      return;
+    }
+    if (
+      !shouldAutoSaveSettingsDraft(
+        draft,
+        savedDraftRef.current,
+        submittedDraftRef.current,
+      )
+    ) {
+      return;
+    }
     const timer = window.setTimeout(() => void submitSettings(), 500);
     return () => window.clearTimeout(timer);
   }, [draft, isSaving, settingsQuery.isSuccess, submitSettings]);
@@ -150,9 +170,10 @@ export function useSettingsDraft(locale: Locale) {
     draft,
     numericSettingErrors,
     isSaving,
+    hasSaveError,
     isSettingsReady: settingsQuery.isSuccess,
     refresh,
-    submitSettings,
+    retrySettings,
     ...actions,
   };
 }

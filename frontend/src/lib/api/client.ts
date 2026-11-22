@@ -1,36 +1,29 @@
 import { getStoredToken, signOut } from "@/lib/auth";
 
-type ApiErrorPayload = {
-  error?: {
-    message?: string;
-    type?: string;
-    details?: Array<{ loc?: Array<string | number>; msg?: string }>;
-  };
-};
-
 /** Represents an unsuccessful API response with its HTTP status. */
 export class ApiError extends Error {
   status: number;
   errorType?: string;
-  override cause?: unknown;
-
   constructor(
     message: string,
     status: number,
     cause?: unknown,
     errorType?: string,
   ) {
-    super(message);
+    super(message, cause === undefined ? undefined : { cause });
     this.name = "ApiError";
     this.status = status;
     this.errorType = errorType;
-    this.cause = cause;
   }
 }
 
 /** Returns an API error message or the supplied fallback. */
 export function getApiErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseJsonResponse<T>(
@@ -72,20 +65,31 @@ export async function apiFetch(
     let errorMessage = "";
     let errorType: string | undefined;
     if (contentType.includes("application/json") && text) {
-      const payload = parseJsonResponse<ApiErrorPayload>(
-        text,
-        response.status,
-        "Invalid JSON error response from API",
-      );
-      errorType = payload.error?.type;
-      if (payload.error?.message) {
-        errorMessage = payload.error.message;
-        const detail = payload.error.details?.[0];
-        if (detail) {
-          const field = detail.loc
-            ? detail.loc.filter((item) => item !== "body").join(".")
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text);
+      } catch (parseError) {
+        throw new ApiError(text, response.status, parseError);
+      }
+      const error =
+        isRecord(payload) && isRecord(payload.error) ? payload.error : null;
+      if (typeof error?.type === "string") errorType = error.type;
+      if (typeof error?.message === "string" && error.message) {
+        errorMessage = error.message;
+        const detail = Array.isArray(error.details)
+          ? error.details[0]
+          : undefined;
+        if (isRecord(detail)) {
+          const field = Array.isArray(detail.loc)
+            ? detail.loc
+                .filter(
+                  (item): item is string | number =>
+                    typeof item === "string" || typeof item === "number",
+                )
+                .filter((item) => item !== "body")
+                .join(".")
             : "";
-          if (field && detail.msg) {
+          if (field && typeof detail.msg === "string" && detail.msg) {
             errorMessage += `: ${field}: ${detail.msg}`;
           }
         }

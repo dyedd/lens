@@ -1,9 +1,12 @@
 import { Field, FieldError, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import {
+  SettingsFieldList,
+  SettingsFieldRow,
+} from "@/components/ui/SettingsLayout";
 import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { titleForLocale } from "@/lib/I18nContext";
-import { SettingsFieldList, SettingsFieldRow } from "../settingsLayout";
 import type { GatewayGeneralSettingsProps } from "./gatewaySettingsTypes";
 
 /** Renders the gateway proxy, CORS, compatibility, and logging fields. */

@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "format": "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true ./",
     "lint": "biome ci .",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -39,8 +40,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "28.1.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vite": "^8.2.0"
+    "vite": "^8.2.0",
+    "vitest": "^4.1.12"
   }
 }

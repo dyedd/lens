@@ -115,6 +115,9 @@ jobs:
       - name: Lint frontend
         run: pnpm exec biome ci .
 
+      - name: Test frontend
+        run: pnpm test
+
       - name: Type check frontend
         run: pnpm exec tsc --noEmit
 

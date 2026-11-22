@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
-
-from ..app_state import logger
 
 if TYPE_CHECKING:
     from ..app_state import AppState
+
+logger = logging.getLogger(__name__)
 
 
 async def run_model_group_reconcile(

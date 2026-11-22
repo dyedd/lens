@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,9 +9,9 @@ from ....models.channels import ChannelConfig
 from ....models.protocols import RequestLogLifecycleStatus
 from ....models.request_logs import RequestLogInput
 from ....persistence.repositories.model_price_repository import ModelCostEstimate
-from ..app_state import app_state, logger
-from ..proxy.routing_plan import elapsed_ms
+from ..app_state import app_state
 from ..request_logger import RequestLogger
+from ..request_support import elapsed_ms
 from ..runtime_types import UpstreamResult
 from .capture import (
     StreamCapture,
@@ -24,6 +25,8 @@ from .usage import (
     _is_stream_body_cut_short,
     extract_stream_usage,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def safe_estimate_cost(

@@ -17,7 +17,6 @@ from typing import Any
 
 from ...models.protocols import ProtocolKind
 from . import cache, capabilities, repair
-from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
 from .responses_common import (
     decode_reasoning_item,
     encode_reasoning_item,
@@ -29,7 +28,6 @@ from .responses_common import (
     validate_terminal_response,
 )
 from .sse import (
-    FINISH_REASON_CHAT_TO_RESPONSES,
     format_sse_event,
     parse_sse_json_stream,
 )
@@ -1408,86 +1406,6 @@ async def serialize_responses_stream(
 ) -> AsyncIterator[bytes]:
     """将统一流事件交给 Responses 状态机，再编码为 SSE。"""
 
-    async def chat_payloads() -> AsyncIterator[dict[str, Any]]:
-        tool_announced: set[int] = set()
-        async for event in events:
-            if isinstance(event, StreamStart):
-                continue
-            if isinstance(event, BlockStart):
-                if event.kind == BlockKind.TOOL_CALL:
-                    state.tool_identities[event.index] = event
-                continue
-            if isinstance(event, TextDelta):
-                yield _chat_payload({"content": event.text})
-            elif isinstance(event, RefusalDelta):
-                # The chat-shaped state has no refusal channel, so the refusal
-                # text streams as content rather than disappearing.
-                yield _chat_payload({"content": event.text})
-            elif isinstance(event, CitationDelta):
-                url = event.citation.url
-                if url:
-                    yield _chat_payload({"content": f" [{url}]"})
-            elif isinstance(event, ServerToolStatusDelta):
-                # Lifecycle ticks carry no content the client can act on.
-                continue
-            elif isinstance(event, ToolCallArgsDelta):
-                identity = state.tool_identities[event.index]
-                function: dict[str, Any] = {"arguments": event.arguments}
-                delta: dict[str, Any] = {"function": function}
-                if event.index not in tool_announced:
-                    tool_announced.add(event.index)
-                    delta["id"] = identity.call_id
-                    delta["type"] = "function"
-                    function["name"] = identity.name
-                yield _chat_payload({"tool_calls": [{"index": event.index, **delta}]})
-            elif isinstance(event, ReasoningDelta):
-                yield _chat_payload({"reasoning_content": event.text})
-            elif isinstance(event, SignatureDelta):
-                # Chat has no signature channel, so the envelope travels in its
-                # own internal chunk for the Responses state to re-encode.
-                yield _chat_payload({"reasoning_signature": event.opaque})
-            elif isinstance(event, StreamFinish):
-                # A tool call whose upstream sent no argument delta still needs
-                # an identity frame; otherwise the response omits the call.
-                for index, identity in sorted(state.tool_identities.items()):
-                    if index in tool_announced:
-                        continue
-                    if not identity.call_id and not identity.name:
-                        continue
-                    tool_announced.add(index)
-                    yield _chat_payload(
-                        {
-                            "tool_calls": [
-                                {
-                                    "index": index,
-                                    "id": identity.call_id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": identity.name,
-                                        "arguments": "{}",
-                                    },
-                                }
-                            ]
-                        }
-                    )
-                yield _chat_payload(
-                    {},
-                    finish_reason=_responses_wire_finish_reason(event.reason),
-                    usage={
-                        "prompt_tokens": event.usage.input_tokens,
-                        "completion_tokens": event.usage.output_tokens,
-                        "cache_write_tokens": event.usage.cache_creation_input_tokens,
-                        "completion_tokens_details": {
-                            "reasoning_tokens": event.usage.reasoning_tokens,
-                        },
-                        "prompt_tokens_details": {
-                            "cached_tokens": event.usage.cached_input_tokens
-                        },
-                    },
-                )
-                return
-        raise ValueError("Unified stream ended before finish event")
-
     state = _ResponsesStreamState(
         response_id=f"resp_{uuid.uuid4().hex[:24]}",
         message_id=f"msg_{uuid.uuid4().hex[:24]}",
@@ -1496,36 +1414,44 @@ async def serialize_responses_stream(
     )
     for event in state.start_events():
         yield event
-    async for payload in chat_payloads():
-        for event in state.update(payload):
-            yield event
-    for event in state.finish_events():
-        yield event
-    yield b"data: [DONE]\n\n"
-
-
-def _chat_payload(
-    delta: dict[str, Any],
-    *,
-    finish_reason: str | None = None,
-    usage: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]
-    }
-    if usage is not None:
-        payload["usage"] = usage
-    return payload
-
-
-def _responses_wire_finish_reason(reason: FinishReason) -> str:
-    if reason == FinishReason.MAX_TOKENS:
-        return "length"
-    if reason == FinishReason.CONTENT_FILTER:
-        return "content_filter"
-    if reason == FinishReason.TOOL_USE:
-        return "tool_calls"
-    return "stop"
+    async for event in events:
+        if isinstance(event, StreamStart):
+            continue
+        if isinstance(event, BlockStart):
+            if event.kind == BlockKind.TOOL_CALL:
+                state.tool_calls[event.index] = _ResponsesToolCall(event)
+        elif isinstance(event, (TextDelta, RefusalDelta)):
+            for frame in state._text_events(event.text):
+                yield frame
+        elif isinstance(event, CitationDelta):
+            if event.citation.url:
+                for frame in state._text_events(f" [{event.citation.url}]"):
+                    yield frame
+        elif isinstance(event, ServerToolStatusDelta):
+            continue
+        elif isinstance(event, ToolCallArgsDelta):
+            for frame in state._tool_events(event.index, event.arguments):
+                yield frame
+        elif isinstance(event, ReasoningDelta):
+            for frame in state._reasoning_events(event.text):
+                yield frame
+        elif isinstance(event, SignatureDelta):
+            for frame in state._reasoning_signature_events(event.opaque):
+                yield frame
+        elif isinstance(event, StreamFinish):
+            for index, tool_call in sorted(state.tool_calls.items()):
+                identity = tool_call.identity
+                if tool_call.output_index is not None or not (
+                    identity.call_id or identity.name
+                ):
+                    continue
+                for frame in state._tool_events(index, "{}"):
+                    yield frame
+            for frame in state.finish_events(event.reason, event.usage):
+                yield frame
+            yield b"data: [DONE]\n\n"
+            return
+    raise ValueError("Unified stream ended before finish event")
 
 
 def _event_int(payload: Mapping[str, Any], key: str) -> int:
@@ -1536,25 +1462,36 @@ def _event_int(payload: Mapping[str, Any], key: str) -> int:
 
 
 @dataclass(slots=True)
+class _ResponsesToolCall:
+    identity: BlockStart
+    argument_parts: list[str] = field(default_factory=list)
+    emitted_argument_parts: int = 0
+    output_index: int | None = None
+    announced: bool = False
+
+    @property
+    def arguments(self) -> str:
+        return "".join(self.argument_parts)
+
+    def take_argument_delta(self) -> str:
+        delta = "".join(self.argument_parts[self.emitted_argument_parts :])
+        self.emitted_argument_parts = len(self.argument_parts)
+        return delta
+
+
+@dataclass(slots=True)
 class _ResponsesStreamState:
     response_id: str
     message_id: str
     created_at: int
     model: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cached_tokens: int = 0
-    cache_write_tokens: int = 0
-    reasoning_tokens: int = 0
     reasoning_output_index: int | None = None
     reasoning_parts: list[str] = field(default_factory=list)
     reasoning_signature: str = ""
     text_output_index: int | None = None
     text_parts: list[str] = field(default_factory=list)
-    tool_calls: ChatToolCalls = field(default_factory=ChatToolCalls)
-    tool_identities: dict[int, BlockStart] = field(default_factory=dict)
+    tool_calls: dict[int, _ResponsesToolCall] = field(default_factory=dict)
     next_output_index: int = 0
-    finish_reason: str | None = None
     sequence_number: int = 0
 
     def start_events(self) -> list[bytes]:
@@ -1566,41 +1503,12 @@ class _ResponsesStreamState:
             for event_type in ("response.created", "response.in_progress")
         ]
 
-    def update(self, payload: dict[str, Any]) -> list[bytes]:
-        model = payload.get("model")
-        if isinstance(model, str) and model:
-            self.model = model
-        usage = payload.get("usage") or {}
-        if usage.get("prompt_tokens"):
-            self.input_tokens = usage["prompt_tokens"]
-        if usage.get("completion_tokens"):
-            self.output_tokens = usage["completion_tokens"]
-        prompt_details = usage.get("prompt_tokens_details")
-        if isinstance(prompt_details, dict):
-            self.cached_tokens = int(prompt_details.get("cached_tokens") or 0)
-        if usage.get("cache_write_tokens"):
-            self.cache_write_tokens = usage["cache_write_tokens"]
-        completion_details = usage.get("completion_tokens_details")
-        if isinstance(completion_details, dict):
-            self.reasoning_tokens = int(completion_details.get("reasoning_tokens") or 0)
-
-        events: list[bytes] = []
-        for choice in payload.get("choices", []):
-            self.finish_reason = choice.get("finish_reason") or self.finish_reason
-            delta = choice.get("delta", {})
-            events.extend(self._reasoning_events(delta.get("reasoning_content")))
-            events.extend(
-                self._reasoning_signature_events(delta.get("reasoning_signature"))
-            )
-            events.extend(self._text_events(delta.get("content")))
-            for value in delta.get("tool_calls") or []:
-                events.extend(
-                    self._tool_events(value, choice_index=chat_choice_index(choice))
-                )
-        return events
-
-    def finish_events(self) -> list[bytes]:
-        status, incomplete_details = _response_status(self.finish_reason)
+    def finish_events(self, reason: FinishReason, usage: Usage) -> list[bytes]:
+        incomplete_reason = {
+            FinishReason.MAX_TOKENS: "max_output_tokens",
+            FinishReason.CONTENT_FILTER: "content_filter",
+        }.get(reason)
+        status = "incomplete" if incomplete_reason else "completed"
         events: list[bytes] = []
         output_by_index: dict[int, dict[str, Any]] = {}
 
@@ -1616,7 +1524,9 @@ class _ResponsesStreamState:
             output_index, item = text_output
             output_by_index[output_index] = item
 
-        for tool_call in self.tool_calls:
+        for _, tool_call in sorted(self.tool_calls.items()):
+            if tool_call.output_index is None:
+                continue
             tool_events, output_index, item = self._finish_tool(tool_call, status)
             events.extend(tool_events)
             output_by_index[output_index] = item
@@ -1624,23 +1534,10 @@ class _ResponsesStreamState:
         response = self.response(
             status=status,
             output=[output_by_index[index] for index in sorted(output_by_index)],
-            usage={
-                "input_tokens": self.input_tokens,
-                "output_tokens": self.output_tokens,
-                "total_tokens": self.input_tokens + self.output_tokens,
-            },
+            usage=_responses_usage_wire(usage),
         )
-        if incomplete_details is not None:
-            response["incomplete_details"] = incomplete_details
-        usage_payload = response.get("usage")
-        if isinstance(usage_payload, dict):
-            usage_payload["input_tokens_details"] = {
-                "cached_tokens": self.cached_tokens,
-                "cache_write_tokens": self.cache_write_tokens,
-            }
-            usage_payload["output_tokens_details"] = {
-                "reasoning_tokens": self.reasoning_tokens,
-            }
+        if incomplete_reason is not None:
+            response["incomplete_details"] = {"reason": incomplete_reason}
         terminal_type = (
             "response.completed" if status == "completed" else "response.incomplete"
         )
@@ -1673,11 +1570,11 @@ class _ResponsesStreamState:
             ),
         ]
 
-    def _reasoning_events(self, delta: Any) -> list[bytes]:
+    def _reasoning_events(self, delta: str) -> list[bytes]:
         if not delta:
             return []
         if not isinstance(delta, str):
-            raise ValueError("Chat reasoning delta must be a string")
+            raise ValueError("Reasoning delta must be a string")
         events = self._ensure_reasoning_started()
         self.reasoning_parts.append(delta)
         events.append(
@@ -1690,7 +1587,7 @@ class _ResponsesStreamState:
         )
         return events
 
-    def _reasoning_signature_events(self, value: Any) -> list[bytes]:
+    def _reasoning_signature_events(self, value: str) -> list[bytes]:
         if not isinstance(value, str) or not value:
             return []
         events = self._ensure_reasoning_started()
@@ -1742,11 +1639,11 @@ class _ResponsesStreamState:
         ]
         return events, (self.reasoning_output_index, item)
 
-    def _text_events(self, delta: Any) -> list[bytes]:
+    def _text_events(self, delta: str) -> list[bytes]:
         if not delta:
             return []
         if not isinstance(delta, str):
-            raise ValueError("Chat content delta must be a string")
+            raise ValueError("Content delta must be a string")
         events: list[bytes] = []
         if self.text_output_index is None:
             self.text_output_index = self.allocate_output_index()
@@ -1786,20 +1683,19 @@ class _ResponsesStreamState:
         )
         return events
 
-    def _tool_events(self, value: Any, *, choice_index: int) -> list[bytes]:
+    def _tool_events(self, index: int, arguments: str) -> list[bytes]:
+        tool_call = self.tool_calls[index]
+        tool_call.argument_parts.append(arguments)
+        if tool_call.output_index is None:
+            tool_call.output_index = self.allocate_output_index()
         events: list[bytes] = []
-        for tool_call in self.tool_calls.update_many(value, choice_index=choice_index):
-            if tool_call.target_index is None:
-                tool_call.target_index = self.allocate_output_index()
-            if not tool_call.announced and tool_call.call_id and tool_call.name:
-                events.append(self._announce_tool(tool_call))
-            identity = self.tool_identities[tool_call.source_index]
-            if tool_call.announced and identity.tool_kind is not ToolKind.CUSTOM:
-                arguments_delta = tool_call.take_argument_delta()
-                if arguments_delta:
-                    events.append(
-                        self._tool_arguments_event(tool_call, arguments_delta)
-                    )
+        identity = tool_call.identity
+        if not tool_call.announced and identity.call_id and identity.name:
+            events.append(self._announce_tool(tool_call))
+        if tool_call.announced and identity.tool_kind is not ToolKind.CUSTOM:
+            arguments_delta = tool_call.take_argument_delta()
+            if arguments_delta:
+                events.append(self._tool_arguments_event(tool_call, arguments_delta))
         return events
 
     def _finish_text(
@@ -1840,12 +1736,14 @@ class _ResponsesStreamState:
         return events, (self.text_output_index, item)
 
     def _finish_tool(
-        self, tool_call: ChatToolCall, status: str
+        self, tool_call: _ResponsesToolCall, status: str
     ) -> tuple[list[bytes], int, dict[str, Any]]:
         events: list[bytes] = []
         if not tool_call.announced:
             events.append(self._announce_tool(tool_call))
-        output_index = _tool_output_index(tool_call)
+        output_index = tool_call.output_index
+        if output_index is None:
+            raise ValueError("Tool call stream ended without an output index")
         item = _tool_item(self, tool_call, status=status)
         if item["type"] == "custom_tool_call":
             raw_input = item["input"]
@@ -1887,20 +1785,20 @@ class _ResponsesStreamState:
         )
         return events, output_index, item
 
-    def _announce_tool(self, tool_call: ChatToolCall) -> bytes:
+    def _announce_tool(self, tool_call: _ResponsesToolCall) -> bytes:
         event = self.event(
             "response.output_item.added",
-            output_index=_tool_output_index(tool_call),
+            output_index=tool_call.output_index,
             item=_tool_item(self, tool_call, status="in_progress"),
         )
         tool_call.announced = True
         return event
 
-    def _tool_arguments_event(self, tool_call: ChatToolCall, delta: str) -> bytes:
+    def _tool_arguments_event(self, tool_call: _ResponsesToolCall, delta: str) -> bytes:
         return self.event(
             "response.function_call_arguments.delta",
             item_id=_tool_item_id(self, tool_call),
-            output_index=_tool_output_index(tool_call),
+            output_index=tool_call.output_index,
             delta=delta,
         )
 
@@ -1923,7 +1821,7 @@ class _ResponsesStreamState:
         *,
         status: str,
         output: list[dict[str, Any]],
-        usage: dict[str, int] | None,
+        usage: dict[str, Any] | None,
     ) -> dict[str, Any]:
         return {
             "id": self.response_id,
@@ -1936,32 +1834,22 @@ class _ResponsesStreamState:
         }
 
 
-def _response_status(finish_reason: Any) -> tuple[str, dict[str, str] | None]:
-    status = FINISH_REASON_CHAT_TO_RESPONSES.get(finish_reason, "completed")
-    if status == "completed":
-        return status, None
-    reason = (
-        "content_filter" if finish_reason == "content_filter" else "max_output_tokens"
-    )
-    return status, {"reason": reason}
-
-
 def _tool_item(
     state: _ResponsesStreamState,
-    tool_call: ChatToolCall,
+    tool_call: _ResponsesToolCall,
     *,
     status: str,
 ) -> dict[str, Any]:
-    if not tool_call.call_id:
-        raise ValueError("Chat tool call stream ended without id")
-    if not tool_call.name:
-        raise ValueError("Chat tool call stream ended without function.name")
-    identity = state.tool_identities[tool_call.source_index]
+    identity = tool_call.identity
+    if not identity.call_id:
+        raise ValueError("Tool call stream ended without id")
+    if not identity.name:
+        raise ValueError("Tool call stream ended without a name")
     item = {
         "id": _tool_item_id(state, tool_call),
         "status": status,
-        "name": tool_call.name,
-        "call_id": tool_call.call_id,
+        "name": identity.name,
+        "call_id": identity.call_id,
     }
     if identity.namespace:
         item["namespace"] = identity.namespace
@@ -1978,13 +1866,7 @@ def _tool_item(
     return item
 
 
-def _tool_item_id(state: _ResponsesStreamState, tool_call: ChatToolCall) -> str:
-    identity = state.tool_identities[tool_call.source_index]
+def _tool_item_id(state: _ResponsesStreamState, tool_call: _ResponsesToolCall) -> str:
+    identity = tool_call.identity
     prefix = "ctc" if identity.tool_kind is ToolKind.CUSTOM else "fc"
-    return f"{prefix}_{state.response_id.removeprefix('resp_')}_{tool_call.index}"
-
-
-def _tool_output_index(tool_call: ChatToolCall) -> int:
-    if tool_call.target_index is None:
-        raise ValueError("Chat tool call stream ended without an output index")
-    return tool_call.target_index
+    return f"{prefix}_{state.response_id.removeprefix('resp_')}_{identity.index}"

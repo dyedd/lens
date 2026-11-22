@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 
-from app.core.errors import ResourceNotFoundError
+from app.core.errors import InvalidInputError, ResourceNotFoundError
 from app.core.model_endpoints import credential_ids_for_url
 from app.models.channels import ChannelConfig
 from app.models.site_import import (
@@ -117,20 +117,22 @@ class ChannelStore:
         credential_map = {item.id: item for item in credentials}
         credential_ids = list(dict.fromkeys(payload.credential_ids))
         if not credential_ids:
-            raise ValueError("At least one credential is required for model discovery")
+            raise InvalidInputError(
+                "At least one credential is required for model discovery"
+            )
 
         previews: list[dict[str, str]] = []
         for credential_id in credential_ids:
             credential = credential_map.get(credential_id)
             if credential is None:
-                raise ValueError(
+                raise InvalidInputError(
                     f"Credential not found for model discovery: {credential_id}"
                 )
             if (
                 credential.base_url_ids is not None
                 and payload.base_url_id not in credential.base_url_ids
             ):
-                raise ValueError(
+                raise InvalidInputError(
                     f"Credential is not allowed for model discovery: {credential_id}"
                 )
             previews.append(
@@ -176,7 +178,7 @@ class ChannelStore:
                 )
             )
             if credential_id not in bound_ids:
-                raise ValueError(
+                raise InvalidInputError(
                     "Credential is not bound to protocol config "
                     f"{protocol_config_id}: {credential_id}"
                 )

@@ -43,20 +43,81 @@ import { type Locale, useI18n } from "@/lib/I18nContext";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
 import { formatMoney } from "./groups/modelGroupFormatting";
 
-const PRICE_FIELDS = [
-  ["input_price_per_million", "输入", "Input"],
-  ["image_input_price_per_million", "图片输入", "Image input"],
-  ["output_price_per_million", "输出", "Output"],
-  ["cache_read_price_per_million", "缓存读取", "Cache read"],
-  ["cache_write_price_per_million", "缓存写入", "Cache write"],
-  ["image_price_per_image", "每张价格", "Per image"],
+type BillingMode = ModelGroup["pricing_mode"];
+type PriceField = {
+  key: keyof Pick<
+    ModelGroup,
+    | "input_price_per_million"
+    | "image_input_price_per_million"
+    | "output_price_per_million"
+    | "cache_read_price_per_million"
+    | "cache_write_price_per_million"
+    | "image_price_per_image"
+  >;
+  zh: string;
+  en: string;
+  modes: readonly BillingMode[];
+  requiresImageMember?: boolean;
+};
+
+const PRICE_FIELDS: PriceField[] = [
+  {
+    key: "input_price_per_million",
+    zh: "输入",
+    en: "Input",
+    modes: ["tokens"],
+  },
+  {
+    key: "image_input_price_per_million",
+    zh: "图片输入",
+    en: "Image input",
+    modes: ["tokens"],
+    requiresImageMember: true,
+  },
+  {
+    key: "output_price_per_million",
+    zh: "输出",
+    en: "Output",
+    modes: ["tokens"],
+  },
+  {
+    key: "cache_read_price_per_million",
+    zh: "缓存读取",
+    en: "Cache read",
+    modes: ["tokens"],
+  },
+  {
+    key: "cache_write_price_per_million",
+    zh: "缓存写入",
+    en: "Cache write",
+    modes: ["tokens"],
+  },
+  {
+    key: "image_price_per_image",
+    zh: "每张价格",
+    en: "Per image",
+    modes: ["non_tokens"],
+  },
 ] as const;
-const TOKEN_PRICE_FIELDS = PRICE_FIELDS.filter(
-  ([key]) => key !== "image_price_per_image",
-);
-const IMAGE_PRICE_FIELDS = PRICE_FIELDS.filter(
-  ([key]) => key === "image_price_per_image",
-);
+
+function isImageMember(group: ModelGroup) {
+  return group.items.some((item) => item.protocol === "openai_image");
+}
+
+function fieldsForMode(mode: BillingMode) {
+  return PRICE_FIELDS.filter((field) => field.modes.includes(mode));
+}
+
+function isFieldApplicable(
+  field: PriceField,
+  mode: BillingMode,
+  group: ModelGroup,
+) {
+  return (
+    field.modes.includes(mode) &&
+    (!field.requiresImageMember || isImageMember(group))
+  );
+}
 
 function PriceEditor({
   group,
@@ -72,33 +133,28 @@ function PriceEditor({
   const isChinese = locale === "zh-CN";
   const [mode, setMode] = useState(group.pricing_mode);
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(PRICE_FIELDS.map(([key]) => [key, String(group[key])])),
+    Object.fromEntries(
+      PRICE_FIELDS.map(({ key }) => [key, String(group[key])]),
+    ),
   );
   const [saving, setSaving] = useState(false);
-  const hasImageMember = group.items.some(
-    (item) => item.protocol === "openai_image",
-  );
-  const fields = PRICE_FIELDS.filter(([key]) =>
-    mode === "free"
-      ? false
-      : mode === "non_tokens"
-        ? key === "image_price_per_image"
-        : key !== "image_price_per_image" &&
-          (key !== "image_input_price_per_million" || hasImageMember),
+  const hasImageMember = isImageMember(group);
+  const fields = PRICE_FIELDS.filter((field) =>
+    isFieldApplicable(field, mode, group),
   );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;
     const parsed = Object.fromEntries(
-      PRICE_FIELDS.map(([key]) => [
+      PRICE_FIELDS.map(({ key }) => [
         key,
         mode === "free" ? 0 : Number(values[key]),
       ]),
     );
     if (
       PRICE_FIELDS.some(
-        ([key]) => !Number.isFinite(parsed[key]) || parsed[key] < 0,
+        ({ key }) => !Number.isFinite(parsed[key]) || parsed[key] < 0,
       )
     ) {
       toast.error(
@@ -196,7 +252,7 @@ function PriceEditor({
                 mode === "tokens" ? "grid grid-cols-2 gap-5" : "grid gap-5"
               }
             >
-              {fields.map(([key, zh, en]) => (
+              {fields.map(({ key, zh, en }) => (
                 <Field key={key} className="gap-1">
                   <FieldLabel
                     htmlFor={`price-${key}`}
@@ -356,12 +412,7 @@ export function ModelPricesScreen() {
       {(["free", "tokens", "non_tokens"] as const).map((mode) => {
         const modeRows = rowsByMode(mode);
         if (!modeRows.length) return null;
-        const fields =
-          mode === "tokens"
-            ? TOKEN_PRICE_FIELDS
-            : mode === "non_tokens"
-              ? IMAGE_PRICE_FIELDS
-              : [];
+        const fields = fieldsForMode(mode);
         return (
           <div key={mode} className="space-y-1.5">
             <h2 className="px-1 text-sm font-medium text-muted-foreground">
@@ -383,7 +434,7 @@ export function ModelPricesScreen() {
                   <TableHead className="min-w-[210px]">
                     {isChinese ? "模型" : "Model"}
                   </TableHead>
-                  {fields.map(([key, zh, en]) => (
+                  {fields.map(({ key, zh, en }) => (
                     <TableHead key={key} className="text-right">
                       <div>{isChinese ? zh : en}</div>
                       <div className="font-normal">
@@ -414,18 +465,15 @@ export function ModelPricesScreen() {
                           ) : null}
                         </div>
                       </TableCell>
-                      {fields.map(([key]) => (
+                      {fields.map((field) => (
                         <TableCell
-                          key={key}
+                          key={field.key}
                           className="py-1.5 text-right tabular-nums"
                         >
-                          {key === "image_input_price_per_million" &&
-                          !group.items.some(
-                            (item) => item.protocol === "openai_image",
-                          ) ? (
+                          {!isFieldApplicable(field, mode, group) ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
-                            formatMoney(group[key])
+                            formatMoney(group[field.key])
                           )}
                         </TableCell>
                       ))}

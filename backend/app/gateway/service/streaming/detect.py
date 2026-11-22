@@ -1,21 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from ....models.protocols import ProtocolKind
-from ..app_state import app_state, logger
+from ..app_state import app_state
 from ..payload_serialization import stringify_text_content
-from ..proxy.routing_plan import elapsed_ms
+from ..request_support import elapsed_ms
 from .capture import StreamCapture
 from .types import (
     OPENAI_RESPONSES_TERMINAL_EVENTS,
+    iter_gemini_candidates,
+    iter_gemini_content_parts,
     parse_anthropic_stream_payload,
     parse_chat_stream_payload,
 )
 
+logger = logging.getLogger(__name__)
 
-def _stream_payload_has_output(protocol: ProtocolKind, payload: dict[str, Any]) -> bool:
+
+def stream_payload_has_output(protocol: ProtocolKind, payload: dict[str, Any]) -> bool:
     if protocol == ProtocolKind.OPENAI_CHAT:
         return _chat_stream_payload_has_output(payload)
     if protocol == ProtocolKind.OPENAI_RESPONSES:
@@ -85,22 +90,18 @@ def _record_stream_completion(
             capture.protocol_completed = True
         return is_terminal
     if protocol == ProtocolKind.OPENAI_IMAGE:
-        if payload.get("type") in {
+        if payload.get("type") in (
             "image_generation.completed",
             "image_edit.completed",
-        }:
+        ):
             capture.image_count += 1
             capture.protocol_completed = True
         return False
     if protocol != ProtocolKind.GEMINI:
         return False
     feedback = payload.get("promptFeedback")
-    candidates = payload.get("candidates")
-    if (isinstance(feedback, dict) and feedback.get("blockReason")) or (
-        isinstance(candidates, list)
-        and any(
-            isinstance(item, dict) and item.get("finishReason") for item in candidates
-        )
+    if (isinstance(feedback, dict) and feedback.get("blockReason")) or any(
+        candidate.get("finishReason") for candidate in iter_gemini_candidates(payload)
     ):
         capture.protocol_completed = True
     return False
@@ -154,7 +155,7 @@ def _anthropic_stream_payload_has_output(payload: dict[str, Any]) -> bool:
     if block.type == "content_block_start":
         content_block = block.content_block
         return (
-            content_block
+            content_block is not None
             and content_block.get("type") == "tool_use"
             and (
                 _has_non_empty_stream_value(content_block.get("name"))
@@ -168,15 +169,9 @@ def _gemini_stream_payload_has_output(payload: dict[str, Any]) -> bool:
     feedback = payload.get("promptFeedback")
     if isinstance(feedback, dict) and feedback.get("blockReason"):
         return True
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list):
-        return False
-    for candidate in candidates:
-        content = candidate.get("content") if isinstance(candidate, dict) else None
-        if not isinstance(content, dict):
-            continue
-        for part in content.get("parts", []):
-            if isinstance(part, dict) and any(
+    for candidate in iter_gemini_candidates(payload):
+        for part in iter_gemini_content_parts(candidate.get("content")):
+            if any(
                 _has_non_empty_stream_value(part.get(key))
                 for key in (
                     "text",

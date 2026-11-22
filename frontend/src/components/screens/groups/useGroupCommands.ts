@@ -7,14 +7,15 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type {
-  ModelGroup,
-  ModelGroupMergeRequest,
-  ModelGroupPlacementRequest,
-  ModelGroupPlacementResponse,
-  RoutingStrategy,
-  UnplacedModelRemovalRequest,
-  UnplacedModelRemovalResponse,
+import {
+  createModelGroup,
+  type ModelGroup,
+  type ModelGroupMergeRequest,
+  type ModelGroupPlacementRequest,
+  type ModelGroupPlacementResponse,
+  type RoutingStrategy,
+  type UnplacedModelRemovalRequest,
+  type UnplacedModelRemovalResponse,
 } from "@/lib/api/groups";
 import { parseContextWindowInput } from "@/lib/contextWindow";
 import {
@@ -53,15 +54,16 @@ export function useGroupCommands({
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null);
 
   async function saveGroup(payload: FormState, groupId: string | null) {
-    const savedGroup = await apiRequest<ModelGroup>(
-      groupId ? `/admin/model-groups/${groupId}` : "/admin/model-groups",
-      {
-        method: groupId ? "PUT" : "POST",
-        body: JSON.stringify(formToModelGroupPayload(payload)),
-      },
-    );
+    const body = JSON.stringify(formToModelGroupPayload(payload));
+    const id = groupId ?? (await createModelGroup(body));
+    if (groupId !== null) {
+      await apiRequest<unknown>(`/admin/model-groups/${groupId}`, {
+        method: "PUT",
+        body,
+      });
+    }
     await invalidateGroupData();
-    return savedGroup;
+    return id;
   }
 
   /** Run one persistence action under a busy marker, toasting failures. */
@@ -318,12 +320,9 @@ export function useGroupCommands({
     let created = 0;
     try {
       for (const name of names) {
-        await apiRequest<ModelGroup>("/admin/model-groups", {
-          method: "POST",
-          body: JSON.stringify(
-            formToModelGroupPayload({ ...EMPTY_FORM, name }),
-          ),
-        });
+        await createModelGroup(
+          JSON.stringify(formToModelGroupPayload({ ...EMPTY_FORM, name })),
+        );
         created += 1;
       }
       await invalidateGroupData();
@@ -353,10 +352,10 @@ export function useGroupCommands({
       `place:${name}`,
       locale === "zh-CN" ? "创建模型组失败" : "Failed to create group",
       async () => {
-        const group = await saveGroup({ ...EMPTY_FORM, name }, null);
+        const groupId = await saveGroup({ ...EMPTY_FORM, name }, null);
         await apiRequest<unknown>("/admin/model-group-placements", {
           method: "POST",
-          body: JSON.stringify({ model_names: modelNames, group_id: group.id }),
+          body: JSON.stringify({ model_names: modelNames, group_id: groupId }),
         });
         await invalidateGroupData();
       },

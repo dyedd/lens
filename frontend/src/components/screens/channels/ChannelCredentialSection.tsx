@@ -229,6 +229,26 @@ export function ChannelCredentialSection({
     setForm({ ...next, protocolConfigs });
   }
 
+  function updateRate(
+    credentialId: string,
+    patch: Partial<
+      Pick<
+        FormCredential,
+        | "rate_multiplier"
+        | "rate_observed_at"
+        | "rate_last_synced_at"
+        | "rate_last_error"
+      >
+    >,
+  ) {
+    setForm((current) => ({
+      ...current,
+      credentials: current.credentials.map((item) =>
+        item.id === credentialId ? { ...item, ...patch } : item,
+      ),
+    }));
+  }
+
   function removeKey(credentialId: string) {
     setForm((current) => ({
       ...current,
@@ -259,7 +279,7 @@ export function ChannelCredentialSection({
         `/admin/sites/${encodeURIComponent(siteId)}/credentials/${encodeURIComponent(credentialId)}/rate-sync`,
         { method: "POST" },
       );
-      updateKey(credentialId, {
+      updateRate(credentialId, {
         rate_multiplier: result.rate_multiplier,
         rate_observed_at: result.rate_observed_at,
         rate_last_synced_at: result.rate_last_synced_at,
@@ -271,7 +291,7 @@ export function ChannelCredentialSection({
         error,
         isZh ? "同步倍率失败" : "Failed to sync rate",
       );
-      updateKey(credentialId, { rate_last_error: message });
+      updateRate(credentialId, { rate_last_error: message });
       toast.error(message);
     } finally {
       setSyncingId(null);

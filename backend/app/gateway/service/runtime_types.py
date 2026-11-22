@@ -5,13 +5,13 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException, Response
-from fastapi.responses import JSONResponse
 
 from ...core.model_name_parser import ParsedModelName
 from ...models.model_groups import ModelGroup
 from ...models.protocols import RoutingStrategy
 from ..router import RouteSelection, RouteTarget
 from ..router.cooldown import CooldownScope, ErrorCategory
+from ..router.failover import RetryAction
 
 if TYPE_CHECKING:
     from .streaming.capture import StreamCapture
@@ -35,9 +35,8 @@ class RoutingPlan:
 
 @dataclass(slots=True)
 class RouteResolution:
-    plan: RoutingPlan | None
-    selection: RouteSelection | None
-    error: JSONResponse | None
+    plan: RoutingPlan
+    selection: RouteSelection
 
 
 @dataclass(slots=True)
@@ -134,7 +133,7 @@ class UpstreamRequestError(HTTPException):
         router_status_code: int | None,
         router_error_category: ErrorCategory | None = None,
         router_error_scope: CooldownScope = "model",
-        router_retry_action: str | None = None,
+        router_retry_action: RetryAction | None = None,
         router_cooldown_seconds: float | None = None,
         error_type: str = "upstream_error",
         skip_route_failure: bool = False,

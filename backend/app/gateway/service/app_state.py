@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
-from contextvars import ContextVar, Token
+from collections import OrderedDict, deque
+from functools import partial
+from threading import Lock
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -27,7 +29,15 @@ from ...persistence.repositories import (
 from ..cronjob_runner import CronjobRunner
 from ..router import GatewayRouter
 from ..router.cooldown import CooldownPolicy
+from .app_context import app_state as app_state
+from .app_context import bind_app_state as bind_app_state
+from .app_context import get_current_app_state as get_current_app_state
+from .app_context import reset_app_state as reset_app_state
 from .request_cancellation import RequestCancellation
+from .tasks.credential_rate_tasks import sync_all_site_credential_rates
+from .tasks.litellm_sync_tasks import sync_litellm_metadata
+from .tasks.model_sync import sync_channel_models
+from .tasks.version_check import sync_version
 
 TASK_REQUEST_LOG_PRUNE = "request_log_prune"
 TASK_MODEL_PRICE_SYNC = "model_price_sync"
@@ -82,6 +92,8 @@ class AppState:
     def __init__(self) -> None:
         self.http = self._create_http_client()
         self._proxy_http_clients: dict[str, httpx.AsyncClient] = {}
+        self.login_attempts_by_client: OrderedDict[str, deque[float]] = OrderedDict()
+        self.login_attempts_lock = Lock()
         self.active_requests: dict[int, RequestCancellation] = {}
         self.engine = create_engine(settings.database_url)
         self.session_factory = create_session_factory(self.engine)
@@ -109,11 +121,13 @@ class AppState:
             specs=CRONJOB_SPECS,
             handlers={
                 TASK_REQUEST_LOG_PRUNE: self.request_log_store.maintenance.prune_request_logs,
-                TASK_MODEL_PRICE_SYNC: self._sync_model_prices,
+                TASK_MODEL_PRICE_SYNC: partial(sync_litellm_metadata, self),
                 TASK_REQUEST_LOG_STATS_PERSIST: self.request_log_store.statistics.persist_request_log_stats,
-                TASK_VERSION_CHECK: self._check_version_update,
+                TASK_VERSION_CHECK: partial(sync_version, self),
                 TASK_CHANNEL_MODEL_SYNC: self._sync_channel_models,
-                TASK_CREDENTIAL_RATE_SYNC: self._sync_credential_rates,
+                TASK_CREDENTIAL_RATE_SYNC: partial(
+                    sync_all_site_credential_rates, self
+                ),
             },
             time_zone_provider=self._runtime_time_zone,
             logger=logger,
@@ -199,52 +213,5 @@ class AppState:
         runtime = await self.settings_repo.get_runtime_settings()
         return load_time_zone(str(runtime["time_zone"]))
 
-    async def _sync_model_prices(self) -> None:
-        from .tasks.litellm_sync_tasks import sync_litellm_metadata
-
-        await sync_litellm_metadata(self)
-
     async def _sync_channel_models(self) -> None:
-        from .tasks.model_sync import sync_channel_models
-
         await sync_channel_models(self)
-
-    async def _sync_credential_rates(self) -> None:
-        from .tasks.credential_rate_tasks import sync_all_site_credential_rates
-
-        await sync_all_site_credential_rates(self)
-
-    async def _check_version_update(self) -> None:
-        from .system_info import sync_version
-
-        await sync_version(self)
-
-
-_current_app_state: ContextVar[AppState | None] = ContextVar(
-    "lens_current_app_state", default=None
-)
-
-
-def bind_app_state(state: AppState) -> Token[AppState | None]:
-    return _current_app_state.set(state)
-
-
-def reset_app_state(token: Token[AppState | None]) -> None:
-    _current_app_state.reset(token)
-
-
-def get_current_app_state() -> AppState:
-    state = _current_app_state.get()
-    if state is None:
-        raise RuntimeError("Lens AppState is not bound to the current context")
-    return state
-
-
-class AppStateProxy:
-    """Resolve the application-owned state for the current async context."""
-
-    def __getattr__(self, name: str):
-        return getattr(get_current_app_state(), name)
-
-
-app_state = AppStateProxy()

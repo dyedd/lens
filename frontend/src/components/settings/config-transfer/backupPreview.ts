@@ -49,7 +49,8 @@ export function parseBackupPreview(rawValue: string): ConfigBackupPreview {
         Number(isRecord(stats.imported_total)) +
         arrayLength(stats.imported_daily) +
         arrayLength(stats.request_daily) +
-        arrayLength(stats.model_daily),
+        arrayLength(stats.model_daily) +
+        arrayLength(stats.attribution_hourly),
     },
   };
 }

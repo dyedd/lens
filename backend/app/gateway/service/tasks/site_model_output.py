@@ -4,9 +4,11 @@ from typing import Any
 
 from ....models.protocols import ProtocolKind
 from ..payload_serialization import stringify_text_content
-from ..streaming.detect import _stream_payload_has_output
-from ..streaming.events import _stream_payload_error_message
+from ..streaming.detect import stream_payload_has_output
+from ..streaming.events import stream_payload_error_message
 from ..streaming.types import (
+    iter_gemini_candidates,
+    iter_gemini_content_parts,
     parse_anthropic_stream_payload,
     parse_chat_stream_payload,
     parse_sse_payloads,
@@ -43,10 +45,10 @@ def extract_site_model_stream_output(protocol: ProtocolKind, raw_content: str) -
     parts: list[str] = []
     has_output = False
     for payload in payloads:
-        error = _stream_payload_error_message(protocol, payload)
+        error = stream_payload_error_message(protocol, payload)
         if error:
             raise ValueError(error[0])
-        has_output |= _stream_payload_has_output(protocol, payload)
+        has_output |= stream_payload_has_output(protocol, payload)
         if protocol == ProtocolKind.OPENAI_CHAT:
             for choice in parse_chat_stream_payload(payload):
                 parts.append(choice.delta.content or "")
@@ -137,17 +139,11 @@ def _extract_anthropic_output(raw_payload: dict[str, Any]) -> str:
 
 def _extract_gemini_output(raw_payload: dict[str, Any]) -> str:
     parts: list[str] = []
-    for candidate in raw_payload.get("candidates", []):
-        content = candidate.get("content") if isinstance(candidate, dict) else None
-        if not isinstance(content, dict):
-            continue
-        for part in content.get("parts", []):
-            if (
-                isinstance(part, dict)
-                and not part.get("thought")
-                and isinstance(part.get("text"), str)
-            ):
-                parts.append(part["text"])
+    for candidate in iter_gemini_candidates(raw_payload):
+        for part in iter_gemini_content_parts(candidate.get("content")):
+            text = part.get("text")
+            if isinstance(text, str) and not part.get("thought"):
+                parts.append(text)
     return "".join(parts).strip()
 
 

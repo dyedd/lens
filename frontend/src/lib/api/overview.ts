@@ -1,3 +1,5 @@
+export const OVERVIEW_DAILY_QUERY_KEY = ["overview-daily"] as const;
+
 export type OverviewSummaryMetric = { value: number; delta: number };
 export type OverviewSummary = {
   request_count: OverviewSummaryMetric;

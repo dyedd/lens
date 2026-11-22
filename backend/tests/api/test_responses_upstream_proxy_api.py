@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 from conftest import gateway_headers, run_async, valid_site_payload
 
 from app.core.runtime_channel_ids import compose_runtime_channel_id
@@ -152,6 +153,7 @@ def _completed_frames() -> list[dict[str, Any]]:
     ]
 
 
+@pytest.mark.parametrize("terminal_has_output", [True, False])
 def test_responses_channel_preserves_responses_stream_and_logs_usage(
     client,
     admin_headers,
@@ -160,9 +162,17 @@ def test_responses_channel_preserves_responses_stream_and_logs_usage(
     create_site,
     create_model_group,
     create_gateway_key,
+    terminal_has_output,
 ) -> None:
     captured: dict[str, Any] = {}
     frames = _completed_frames()
+    if not terminal_has_output:
+        frames = [
+            frame for frame in frames if frame["type"] != "response.output_item.done"
+        ]
+        frames[1]["content_index"] = 1
+        frames[-1]["response"]["output"] = []
+        frames.insert(-1, {"type": ["unknown"]})
     _stub_upstream(monkeypatch, captured, sse_frames=frames)
     _enable_body_logging(monkeypatch, app_state)
     create_site(
@@ -204,6 +214,13 @@ def test_responses_channel_preserves_responses_stream_and_logs_usage(
     assert request_log["output_tokens"] == 2
     assert request_log["cache_read_input_tokens"] == 2
     assert request_log["cache_write_input_tokens"] == 2
+    response_detail = client.get(
+        f"/api/admin/request-logs/{request_log['id']}", headers=admin_headers
+    )
+    assert response_detail.status_code == 200, response_detail.text
+    logged = json.loads(response_detail.json()["response_content"])
+    assert len(logged["output"][0]["content"]) == 1
+    assert logged["output"][0]["content"][0]["text"] == "Hello"
 
 
 def test_chat_client_converts_responses_stream_and_logs_usage(

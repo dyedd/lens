@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
+from contextlib import aclosing
 from typing import Any
 
 from ...models.protocols import ProtocolKind
@@ -60,6 +61,7 @@ from .unified_stream import (
     RefusalDelta,
     ServerToolStatusDelta,
     SignatureDelta,
+    StreamEvent,
     StreamFinish,
     StreamStart,
     TextDelta,
@@ -1257,14 +1259,18 @@ def _anthropic_reasoning_intent(body: Mapping[str, Any]) -> ReasoningIntent | No
 
 async def parse_anthropic_stream(
     raw_iterator: AsyncIterator[bytes],
-) -> AsyncIterator[Any]:
+) -> AsyncIterator[StreamEvent]:
     """Parse an Anthropic SSE stream into unified stream events."""
     state = _AnthropicParseState()
-    async for payload in parse_sse_json_stream(raw_iterator):
-        for event in state.update(payload):
-            yield event
-    for event in state.finish_events():
-        yield event
+    async with aclosing(parse_sse_json_stream(raw_iterator)) as payloads:
+        async for payload in payloads:
+            if payload.get("type") == "message_stop":
+                break
+            for event in state.update(payload):
+                yield event
+        else:
+            raise ValueError("Anthropic stream ended before message_stop")
+    yield state.finish()
 
 
 class _AnthropicParseState:
@@ -1281,10 +1287,10 @@ class _AnthropicParseState:
         self.stop_reason: Any = None
         self.usage = Usage()
 
-    def update(self, payload: Mapping[str, Any]) -> list[Any]:
+    def update(self, payload: Mapping[str, Any]) -> list[StreamEvent]:
 
         event_type = payload.get("type")
-        events: list[Any] = []
+        events: list[StreamEvent] = []
         if event_type == "message_start":
             message = payload.get("message")
             if isinstance(message, Mapping):
@@ -1391,14 +1397,12 @@ class _AnthropicParseState:
         self.block_index[index] = unified_index
         return unified_index
 
-    def finish_events(self) -> list[Any]:
+    def finish(self) -> StreamFinish:
         if not self.started:
             raise ValueError("Anthropic stream ended before message_start")
-        return [
-            StreamFinish(
-                reason=_anthropic_finish_reason(self.stop_reason), usage=self.usage
-            )
-        ]
+        return StreamFinish(
+            reason=_anthropic_finish_reason(self.stop_reason), usage=self.usage
+        )
 
 
 def serialize_anthropic_stream(
@@ -1413,11 +1417,11 @@ async def _anthropic_serializer(
     events: AsyncIterator[Any],
     original_model: str,
 ) -> AsyncIterator[bytes]:
-    kind_by_index: dict[int, Any] = {}
+    kind_by_index: dict[int, BlockKind] = {}
     started = False
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
     model = original_model
-    open_blocks: list[int] = []
+    open_blocks: set[int] = set()
     signed_blocks: set[int] = set()
 
     def message_start() -> bytes:
@@ -1438,6 +1442,17 @@ async def _anthropic_serializer(
             },
         )
 
+    def block_stop_frames(index: int) -> Iterator[bytes]:
+        if (
+            kind_by_index.get(index) == BlockKind.REASONING
+            and index not in signed_blocks
+        ):
+            yield anthropic_block_delta(
+                index,
+                {"type": "signature_delta", "signature": FOREIGN_THINKING_SIGNATURE},
+            )
+        yield anthropic_block_stop(index)
+
     async for event in events:
         if isinstance(event, StreamStart):
             message_id = event.id or message_id
@@ -1453,7 +1468,7 @@ async def _anthropic_serializer(
                 yield message_start()
                 yield format_sse_event("ping", {"type": "ping"})
             kind_by_index[event.index] = event.kind
-            open_blocks.append(event.index)
+            open_blocks.add(event.index)
             if event.kind == BlockKind.TEXT:
                 yield anthropic_block_start(event.index, {"type": "text", "text": ""})
             elif event.kind == BlockKind.REASONING:
@@ -1492,7 +1507,7 @@ async def _anthropic_serializer(
             continue
         if isinstance(event, RefusalDelta):
             if event.index not in open_blocks:
-                open_blocks.append(event.index)
+                open_blocks.add(event.index)
                 yield anthropic_block_start(event.index, {"type": "text", "text": ""})
             yield anthropic_block_delta(
                 event.index, {"type": "text_delta", "text": event.text}
@@ -1519,7 +1534,7 @@ async def _anthropic_serializer(
                 yield anthropic_block_start(
                     event.index, {"type": "thinking", "thinking": ""}
                 )
-                open_blocks.append(event.index)
+                open_blocks.add(event.index)
             yield anthropic_block_delta(
                 event.index, {"type": "thinking_delta", "thinking": event.text}
             )
@@ -1540,20 +1555,9 @@ async def _anthropic_serializer(
             )
             continue
         if isinstance(event, BlockStop):
-            if (
-                kind_by_index.get(event.index) == BlockKind.REASONING
-                and event.index not in signed_blocks
-            ):
-                yield anthropic_block_delta(
-                    event.index,
-                    {
-                        "type": "signature_delta",
-                        "signature": FOREIGN_THINKING_SIGNATURE,
-                    },
-                )
-            if event.index in open_blocks:
-                open_blocks.remove(event.index)
-            yield anthropic_block_stop(event.index)
+            open_blocks.discard(event.index)
+            for frame in block_stop_frames(event.index):
+                yield frame
             continue
         if isinstance(event, StreamFinish):
             if not started:
@@ -1561,18 +1565,8 @@ async def _anthropic_serializer(
                 yield message_start()
                 yield format_sse_event("ping", {"type": "ping"})
             for index in sorted(open_blocks):
-                if (
-                    kind_by_index.get(index) == BlockKind.REASONING
-                    and index not in signed_blocks
-                ):
-                    yield anthropic_block_delta(
-                        index,
-                        {
-                            "type": "signature_delta",
-                            "signature": FOREIGN_THINKING_SIGNATURE,
-                        },
-                    )
-                yield anthropic_block_stop(index)
+                for frame in block_stop_frames(index):
+                    yield frame
             open_blocks.clear()
             has_tools = any(
                 kind in {BlockKind.TOOL_CALL, BlockKind.SERVER_TOOL}

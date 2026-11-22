@@ -1,11 +1,5 @@
 import { SlidersHorizontal } from "lucide-react";
-import {
-  type Dispatch,
-  type FormEventHandler,
-  type SetStateAction,
-  useEffect,
-  useState,
-} from "react";
+import type { Dispatch, FormEventHandler, SetStateAction } from "react";
 import { HeaderRows } from "@/components/ruleEditors/HeaderRows";
 import { ParamRuleRows } from "@/components/ruleEditors/ParamRuleRows";
 import {
@@ -23,19 +17,15 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/Sheet";
-import type { ModelGroup, ModelGroupCandidateItem } from "@/lib/api/groups";
-import type {
-  CandidateChannelGroup,
-  FormState,
-  MemberStatusFilter,
-} from "./groupTypes";
+import type { ModelGroup } from "@/lib/api/groups";
+import type { FormState, MemberStatusFilter } from "./groupTypes";
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
 import { ModelGroupCandidateToolbar } from "./ModelGroupCandidateToolbar";
 import { ModelGroupExcludedMembers } from "./ModelGroupExcludedMembers";
 import { ModelGroupSelectedMembers } from "./ModelGroupSelectedMembers";
 import { ModelGroupSettings } from "./ModelGroupSettings";
 import { MultimodalFallbackGroups } from "./MultimodalFallbackGroups";
-import { modelGroupItemKey } from "./modelGroupFormatting";
+import type { GroupCandidates } from "./useGroupCandidates";
 import type { GroupMembers } from "./useGroupMembers";
 
 interface GroupEditorDialogProps {
@@ -46,24 +36,9 @@ interface GroupEditorDialogProps {
   submit: FormEventHandler<HTMLFormElement>;
   form: FormState;
   setForm: Dispatch<SetStateAction<FormState>>;
-  changeName: (name: string) => void;
   routeTargetOptions: ModelGroup[];
-  changeRouteTarget: (routeGroupId: string) => void;
   members: GroupMembers;
-  candidateSearch: string;
-  changeCandidateSearch: (value: string) => void;
-  refetchCandidates: () => unknown;
-  isFetchingCandidates: boolean;
-  candidateRegex: boolean;
-  onCandidateRegexChange: (value: boolean) => void;
-  onAddAllCandidates: () => void;
-  visibleCandidateCount: number;
-  groupedCandidates: CandidateChannelGroup[];
-  expandedChannels: string[];
-  toggleChannel: (channelId: string) => void;
-  addCandidate: (candidate: ModelGroupCandidateItem) => void;
-  candidateIsError: boolean;
-  candidateListError: unknown;
+  candidates: GroupCandidates;
   memberStatusFilter: MemberStatusFilter;
   setMemberStatusFilter: Dispatch<SetStateAction<MemberStatusFilter>>;
 }
@@ -86,14 +61,8 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
     submit,
     form,
     setForm,
+    candidates,
   } = props;
-  const [candidateSheetOpen, setCandidateSheetOpen] = useState(false);
-  useEffect(() => {
-    if (!dialogOpen) setCandidateSheetOpen(false);
-  }, [dialogOpen]);
-  const existingItemKeys = new Set(
-    form.items.map((item) => modelGroupItemKey(item)),
-  );
 
   return (
     <>
@@ -120,13 +89,11 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
                 locale={locale}
                 form={form}
                 setForm={setForm}
-                changeName={props.changeName}
                 routeTargetOptions={props.routeTargetOptions}
-                changeRouteTarget={props.changeRouteTarget}
               />
               {!form.route_group_id ? (
                 <ModelGroupSelectedMembers
-                  onAddSources={() => setCandidateSheetOpen(true)}
+                  onAddSources={() => candidates.setSheetOpen(true)}
                   locale={locale}
                   strategy={form.strategy}
                   members={props.members}
@@ -253,7 +220,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
           </form>
         </SheetContent>
       </Sheet>
-      <Sheet open={candidateSheetOpen} onOpenChange={setCandidateSheetOpen}>
+      <Sheet open={candidates.sheetOpen} onOpenChange={candidates.setSheetOpen}>
         <SheetContent
           side="right"
           showOverlay={false}
@@ -270,31 +237,31 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
           >
             <ModelGroupCandidateToolbar
               locale={locale}
-              candidateSearch={props.candidateSearch}
-              changeCandidateSearch={props.changeCandidateSearch}
-              refetchCandidates={props.refetchCandidates}
-              isFetchingCandidates={props.isFetchingCandidates}
-              candidateRegex={props.candidateRegex}
-              onCandidateRegexChange={props.onCandidateRegexChange}
-              onAddAllCandidates={props.onAddAllCandidates}
-              visibleCandidateCount={props.visibleCandidateCount}
+              candidateSearch={candidates.candidateSearch}
+              changeCandidateSearch={candidates.setCandidateSearch}
+              refetchCandidates={candidates.refetch}
+              isFetchingCandidates={candidates.isFetching}
+              candidateRegex={candidates.candidateRegex}
+              onCandidateRegexChange={candidates.setCandidateRegex}
+              onAddAllCandidates={candidates.addAllVisibleCandidates}
+              visibleCandidateCount={candidates.visibleCandidateCount}
             />
             <ModelGroupCandidateList
               locale={locale}
-              groupedCandidates={props.groupedCandidates}
-              expandedChannels={props.expandedChannels}
-              existingItemKeys={existingItemKeys}
-              toggleChannel={props.toggleChannel}
-              addCandidate={props.addCandidate}
-              candidateIsError={props.candidateIsError}
-              candidateListError={props.candidateListError}
+              groupedCandidates={candidates.groupedCandidates}
+              expandedChannels={candidates.expandedChannels}
+              existingItemKeys={candidates.existingItemKeys}
+              toggleChannel={candidates.toggleChannel}
+              addCandidate={candidates.addCandidate}
+              candidateIsError={candidates.isError}
+              candidateListError={candidates.error}
             />
           </section>
           <SheetFooter className="shrink-0 px-5 py-4">
             <Button
               type="button"
               size="sm"
-              onClick={() => setCandidateSheetOpen(false)}
+              onClick={() => candidates.setSheetOpen(false)}
             >
               {locale === "zh-CN" ? "完成" : "Done"}
             </Button>

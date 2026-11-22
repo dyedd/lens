@@ -5,11 +5,13 @@ from time import monotonic
 
 from ...core.cooldown_rules import CompiledCooldownDetectionRule
 from ...models.channels import ChannelConfig
+from ...models.protocols import ProtocolKind
 from ...models.routing import ChannelCredentialHealth, ChannelHealth, ModelHealth
 from .cooldown import (
     ClaimDecision,
     CooldownLedger,
     CooldownPolicy,
+    CooldownScope,
     CooldownState,
     CredentialKey,
     ErrorCategory,
@@ -18,6 +20,7 @@ from .cooldown import (
     model_key,
     remaining_seconds,
 )
+from .failover import RetryAction
 from .health_scores import HealthScores
 from .targets import RouteTarget
 
@@ -110,7 +113,7 @@ class HealthTracker:
         *,
         credential_id: str | None,
         model_name: str | None,
-        fault_protocol: str,
+        fault_protocol: ProtocolKind | str,
         started_revision: int | None,
     ) -> None:
         model = model_key(channel_id, model_name, fault_protocol)
@@ -130,11 +133,11 @@ class HealthTracker:
         category: ErrorCategory,
         credential_id: str | None,
         model_name: str | None,
-        fault_protocol: str,
-        scope: str,
+        fault_protocol: ProtocolKind | str,
+        scope: CooldownScope,
         cooldown_seconds: float | None,
         was_probe: bool = False,
-        retry_action: str | None = None,
+        retry_action: RetryAction | None = None,
     ) -> None:
         if category == ErrorCategory.AUTH or scope == "key":
             self._cooldowns.record_credential_failure(
@@ -146,7 +149,7 @@ class HealthTracker:
             )
             if (
                 scope == "key"
-                and retry_action in (None, "retry_key")
+                and retry_action in (None, RetryAction.RETRY_KEY)
                 and category == ErrorCategory.RATE_LIMIT
             ):
                 self._escalate_throttled_model(

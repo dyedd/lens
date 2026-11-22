@@ -90,7 +90,7 @@ type Props = {
   onClear: () => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: (typeof PAGE_SIZE_OPTIONS)[number]) => void;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, trigger: HTMLButtonElement | null) => void;
   onCancel: (id: number) => void;
   cancellingId?: number;
 };

@@ -1,58 +1,85 @@
-import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { apiRequest } from "@/lib/api/client";
 import type {
-  MatchRegexOperator,
   ModelGroupCandidateItem,
+  ModelGroupCandidatesPayload,
   ModelGroupCandidatesResponse,
 } from "@/lib/api/groups";
 import type { FormState } from "./groupTypes";
 import { candidatePayloadToFormItems, groupModelCandidates } from "./groupView";
 import { modelFoldKey, modelGroupItemKey } from "./modelGroupFormatting";
-import {
-  compileRegexRulePattern,
-  matchesModelGroup,
-} from "./modelGroupMatching";
+import { compileRegexRulePattern } from "./modelGroupMatching";
 
 type GroupCandidateOptions = {
-  candidateResponse?: ModelGroupCandidatesResponse;
-  candidateSearch: string;
-  expandedChannels: string[];
-  /** Local regex combined with the group's name match. */
-  matchRegex: string;
-  matchRegexOperator: MatchRegexOperator;
+  dialogOpen: boolean;
+  editingId: string | null;
+  form: FormState;
   locale: "zh-CN" | "en-US";
-  setExpandedChannels: Dispatch<SetStateAction<string[]>>;
   setForm: Dispatch<SetStateAction<FormState>>;
 };
 
-/** Derive candidate groups and add the sources an admin picks. */
 export function useGroupCandidates({
-  candidateResponse,
-  candidateSearch,
-  expandedChannels,
-  matchRegex,
-  matchRegexOperator,
+  dialogOpen,
+  editingId,
+  form,
   locale,
-  setExpandedChannels,
   setForm,
 }: GroupCandidateOptions) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [candidateSearch, setCandidateSearch] = useState("");
   const [candidateRegex, setCandidateRegex] = useState(false);
-  const joinPattern = useMemo(
-    () => compileRegexRulePattern(matchRegex),
-    [matchRegex],
-  );
-  const candidates = candidateResponse?.candidates;
-  function changeName(name: string) {
-    setForm((current) => ({ ...current, name }));
-  }
+  const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
 
-  function changeRouteTarget(routeGroupId: string) {
-    setForm((current) => ({
-      ...current,
-      route_group_id: routeGroupId,
-      fallback_group_ids: routeGroupId ? [] : current.fallback_group_ids,
-    }));
+  useEffect(() => {
+    if (!dialogOpen) {
+      setSheetOpen(false);
+      setCandidateSearch("");
+    }
     setExpandedChannels([]);
-  }
+  }, [dialogOpen]);
+
+  useEffect(() => {
+    if (form.route_group_id) setExpandedChannels([]);
+  }, [form.route_group_id]);
+
+  const payload: ModelGroupCandidatesPayload = useMemo(
+    () => ({
+      items: form.items
+        .map((item) => ({
+          channel_id: item.channel_id,
+          credential_id: item.credential_id,
+          model_name: item.model_name,
+          enabled: item.enabled,
+        }))
+        .sort((left, right) =>
+          modelGroupItemKey(left).localeCompare(modelGroupItemKey(right)),
+        ),
+    }),
+    [form.items],
+  );
+  const { data, error, isError, isFetching, refetch } = useQuery({
+    queryKey: ["group-candidates", editingId, payload],
+    queryFn: () =>
+      apiRequest<ModelGroupCandidatesResponse>(
+        "/admin/model-group-candidates",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      ),
+    enabled: dialogOpen && !form.route_group_id,
+    // Keep the list visible while edits to the same group are re-evaluated.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === editingId ? previous : undefined,
+  });
+  const candidates = data?.candidates;
 
   const filteredCandidates = useMemo(() => {
     const keyword = candidateSearch.trim();
@@ -128,27 +155,26 @@ export function useGroupCandidates({
     for (const candidate of filteredCandidates) addCandidate(candidate);
   }
 
-  /** Whether saving would join this model back by the group's rules or name. */
-  function isAutoJoined(current: FormState, modelName: string) {
-    return matchesModelGroup(
-      current.name.trim(),
-      modelName,
-      joinPattern,
-      matchRegexOperator,
-    );
-  }
-
   return {
     addAllVisibleCandidates,
     addCandidate,
     candidateRegex,
-    changeName,
-    changeRouteTarget,
+    candidateSearch,
+    error,
+    evaluatedItems: data?.evaluated_items ?? [],
     expandedChannels: visibleExpandedChannels,
+    existingItemKeys: new Set(form.items.map(modelGroupItemKey)),
     groupedCandidates,
-    isAutoJoined,
+    isError,
+    isFetching,
+    refetch,
     setCandidateRegex,
-    visibleCandidateCount: new Set(filteredCandidates.map(modelFoldKey)).size,
+    setCandidateSearch,
+    setSheetOpen,
+    sheetOpen,
     toggleChannel,
+    visibleCandidateCount: new Set(filteredCandidates.map(modelFoldKey)).size,
   };
 }
+
+export type GroupCandidates = ReturnType<typeof useGroupCandidates>;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from time import monotonic
 
@@ -58,8 +59,6 @@ from ..editable_settings import effective_editable_setting_items
 
 class SettingsRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        import asyncio
-
         self._session_factory = session_factory
         self._settings_cache: list[SettingItem] | None = None
         self._settings_cache_at = 0.0

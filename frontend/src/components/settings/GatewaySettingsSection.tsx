@@ -1,10 +1,10 @@
+import { SettingsSectionSeparator } from "@/components/ui/SettingsLayout";
 import { TabsContent } from "@/components/ui/Tabs";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { GatewayGeneralSettings } from "./gateway-settings/GatewayGeneralSettings";
 import { ParamOverrideSettings } from "./gateway-settings/ParamOverrideSettings";
 import { UpstreamHeaderSettings } from "./gateway-settings/UpstreamHeaderSettings";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { SettingsSectionSeparator } from "./settingsLayout";
 import type { useSettingsDraft } from "./useSettingsDraft";
 
 type SettingsDraftController = ReturnType<typeof useSettingsDraft>;

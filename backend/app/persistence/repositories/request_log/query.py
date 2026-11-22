@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -54,6 +55,7 @@ from .types import (
 )
 
 _ATTEMPTS = TypeAdapter(list[dict[str, Any]])
+_HEALTH_SUMMARY_BUCKET_COUNT = 60
 
 REQUEST_LOG_STATS_COLUMNS = (
     RequestLogEntity.created_at,
@@ -585,7 +587,7 @@ class RequestLogQueries:
         offset: int = 0,
     ) -> HealthSummary:
         """Return a paged request-health summary grouped by model or site."""
-        bucket_count = 60
+        bucket_count = _HEALTH_SUMMARY_BUCKET_COUNT
         bucket_seconds = hours * 3600 // bucket_count
         ended_at = datetime.now(UTC)
         started_at = ended_at - timedelta(hours=hours)
@@ -750,38 +752,34 @@ class RequestLogQueries:
         time_zone = load_time_zone(
             (await self.settings_repo.get_runtime_settings())["time_zone"]
         )
+        apply_shared_filters = partial(
+            apply_request_log_filters,
+            days=days,
+            time_zone=time_zone,
+            upstream_model=upstream_model,
+            agent=agent,
+            status_filter=status_filter,
+            protocol=protocol,
+            keyword=keyword,
+        )
         async with self.session_factory() as session:
             items_stmt = select(RequestLogEntity).options(
                 defer(RequestLogEntity.response_content, raiseload=True)
             )
-            items_stmt = apply_request_log_filters(
+            items_stmt = apply_shared_filters(
                 items_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             items_stmt = apply_request_log_sort(items_stmt, sort=sort)
             items_stmt = items_stmt.offset(max(offset, 0)).limit(max(limit, 0))
             total_stmt = select(func.count()).select_from(RequestLogEntity)
-            total_stmt = apply_request_log_filters(
+            total_stmt = apply_shared_filters(
                 total_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             channel_label_expr = func.coalesce(
                 func.nullif(func.trim(RequestLogEntity.channel_name), ""),
@@ -793,34 +791,20 @@ class RequestLogQueries:
                 .select_from(RequestLogEntity)
                 .distinct()
             )
-            channel_stmt = apply_request_log_filters(
+            channel_stmt = apply_shared_filters(
                 channel_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
-                keyword=keyword,
             )
             gateway_key_stmt = (
                 select(RequestLogEntity.gateway_key_id)
                 .select_from(RequestLogEntity)
                 .distinct()
             )
-            gateway_key_stmt = apply_request_log_filters(
+            gateway_key_stmt = apply_shared_filters(
                 gateway_key_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             model_name_stmt = (
                 select(
@@ -831,17 +815,10 @@ class RequestLogQueries:
                 .select_from(RequestLogEntity)
                 .distinct()
             )
-            model_name_stmt = apply_request_log_filters(
+            model_name_stmt = apply_shared_filters(
                 model_name_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             items_result = await session.execute(items_stmt)
             total = await session.scalar(total_stmt)

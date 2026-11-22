@@ -26,6 +26,7 @@ from ...router.cooldown import (
     classify_error,
     parse_cooldown_seconds,
 )
+from ...router.failover import RetryAction
 from ...upstream_request import (
     UpstreamRequest,
     build_upstream_request,
@@ -38,6 +39,11 @@ from ..payload_serialization import (
     decode_log_content_bytes,
     dump_log_json,
     json_body_bytes,
+)
+from ..request_support import (
+    elapsed_ms,
+    gateway_timeout_scope,
+    request_body_too_large_message,
 )
 from ..runtime_types import (
     GatewayTimeoutError,
@@ -60,11 +66,6 @@ from ..upstream_support import (
     passthrough_headers,
     resolve_http_client,
     summarize_html_error_detail,
-)
-from .routing_plan import (
-    _request_body_too_large_message,
-    elapsed_ms,
-    gateway_timeout_scope,
 )
 
 _NDJSON_MEDIA_TYPES = {"application/x-ndjson", "application/ndjson"}
@@ -99,7 +100,7 @@ def _image_count(body: dict[str, Any], payload: Any) -> int:
     value = body.get("n", 1)
     try:
         count = int(value)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return 1
     return count if count > 0 else 1
 
@@ -517,7 +518,7 @@ def prepare_upstream_request(
     else:
         body_bytes = json_body_bytes(upstream.json_body)
     request_content = dump_log_json(upstream.json_body) if log_body_enabled else None
-    too_large_message = _request_body_too_large_message(
+    too_large_message = request_body_too_large_message(
         len(body_bytes), max_request_body_bytes
     )
     if too_large_message is not None:
@@ -642,11 +643,14 @@ async def execute_upstream_request(
         response = exc.response
         status_code = response.status_code
         detail = f"HTTP {status_code}"
+        body_read_detail = ""
         if not response.is_stream_consumed:
             try:
                 await _read_response_body(response, context.deadline)
-            except (httpx.HTTPError, GatewayTimeoutError):
-                pass
+            except (httpx.HTTPError, GatewayTimeoutError) as read_error:
+                body_read_detail = (
+                    f" (response body read failed: {type(read_error).__name__})"
+                )
             else:
                 detail = format_http_response_error(response)
         else:
@@ -668,11 +672,15 @@ async def execute_upstream_request(
         )
         raise UpstreamRequestError(
             status_code=status_code,
-            detail=detail,
+            detail=f"{detail}{body_read_detail}",
             router_status_code=status_code,
             router_error_category=classification.category if classification else None,
             router_error_scope=classification.scope if classification else "model",
-            router_retry_action=classification.action if classification else None,
+            router_retry_action=(
+                RetryAction(classification.action)
+                if classification is not None and classification.action is not None
+                else None
+            ),
             router_cooldown_seconds=(
                 retry_after_seconds
                 if retry_after_seconds is not None

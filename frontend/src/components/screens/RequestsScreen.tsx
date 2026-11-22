@@ -1,4 +1,5 @@
 import { ArrowUp } from "lucide-react";
+import { useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import {
   Tooltip,
@@ -14,6 +15,7 @@ import { useRequestsScreen } from "./requests/useRequestsScreen";
 /** Render searchable request logs and request details. */
 export function RequestsScreen() {
   const screen = useRequestsScreen();
+  const detailTrigger = useRef<HTMLButtonElement | null>(null);
   const agentLabels: Record<string, string> = {
     codex: "Codex",
     claude_code: "Claude Code",
@@ -99,7 +101,10 @@ export function RequestsScreen() {
         onClear={() => void screen.clearRequestLogs()}
         onPageChange={screen.setPage}
         onPageSizeChange={screen.changePageSize}
-        onOpenDetail={screen.setDetailId}
+        onOpenDetail={(id, trigger) => {
+          detailTrigger.current = trigger;
+          screen.setDetailId(id);
+        }}
         onCancel={(id) => screen.cancelRequest.mutate(id)}
         cancellingId={
           screen.cancelRequest.isPending
@@ -116,6 +121,11 @@ export function RequestsScreen() {
         timeZone={screen.timeZone}
         relayLogBodyEnabled={screen.relayLogBodyEnabled}
         onClose={() => screen.setDetailId(null)}
+        onCloseAutoFocus={(event) => {
+          if (!detailTrigger.current?.isConnected) return;
+          event.preventDefault();
+          detailTrigger.current.focus({ preventScroll: true });
+        }}
         onCancel={(id) => screen.cancelRequest.mutate(id)}
         isCancelling={
           screen.cancelRequest.isPending &&
@@ -126,11 +136,17 @@ export function RequestsScreen() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              id="requests-back-to-top"
               type="button"
               variant="outline"
               size="icon-lg"
+              aria-label={titleForLocale(
+                screen.locale,
+                "返回顶部",
+                "Back to top",
+              )}
               className="fixed right-4 bottom-4 z-40 rounded-full sm:right-6 sm:bottom-6"
-              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              onClick={screen.scrollBackToTop}
             >
               <ArrowUp />
             </Button>

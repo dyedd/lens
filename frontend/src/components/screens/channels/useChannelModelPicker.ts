@@ -288,6 +288,19 @@ export function useChannelModelPicker({
     );
     setForm((current) => {
       const configs = rebuildProtocolConfigs(current);
+      const enabledByCredential = new Map<string, Map<string, boolean>>();
+      for (const { models } of configs) {
+        for (const model of models) {
+          let enabledByModel = enabledByCredential.get(model.credential_id);
+          if (!enabledByModel) {
+            enabledByModel = new Map();
+            enabledByCredential.set(model.credential_id, enabledByModel);
+          }
+          if (!enabledByModel.has(model.model_name)) {
+            enabledByModel.set(model.model_name, model.enabled);
+          }
+        }
+      }
       return {
         ...current,
         protocolConfigs: configs.map((config) => {
@@ -312,17 +325,13 @@ export function useChannelModelPicker({
                 };
               continue;
             }
-            const member = configs
-              .flatMap((entry) => entry.models)
-              .find(
-                (model) =>
-                  model.credential_id === item.credential_id &&
-                  model.model_name === item.model_name,
-              );
             const model = {
               credential_id: item.credential_id,
               model_name: item.model_name,
-              enabled: member?.enabled ?? true,
+              enabled:
+                enabledByCredential
+                  .get(item.credential_id)
+                  ?.get(item.model_name) ?? true,
               protocols: [item.protocol],
               modelIdsByProtocol: {},
               context_window: item.context_window,

@@ -1,13 +1,12 @@
 import { Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-
+import { Button } from "@/components/ui/Button";
 import {
   SettingsFieldList,
   SettingsFieldRow,
   SettingsSection,
-} from "@/components/settings/settingsLayout";
-import { Button } from "@/components/ui/Button";
+} from "@/components/ui/SettingsLayout";
 import { Spinner } from "@/components/ui/Spinner";
 import { Switch } from "@/components/ui/Switch";
 import { downloadConfigBackup } from "@/lib/api/backups";

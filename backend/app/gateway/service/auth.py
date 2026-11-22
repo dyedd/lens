@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections import OrderedDict, deque
+from collections import deque
 from datetime import UTC, datetime
 from math import ceil
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore
 from time import monotonic
 
 from fastapi import Depends, HTTPException, Request, Response, status
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.concurrency import run_in_threadpool
 
 from ...core.auth import create_access_token, decode_access_token
@@ -23,14 +23,13 @@ from ...models.auth import (
 from ...models.gateway_keys import GatewayApiKey
 from ...persistence.entities import AdminUserEntity
 from .app_state import app_state
-from .lifecycle import auth_scheme
+
+auth_scheme = HTTPBearer(auto_error=False)
 
 _LOGIN_FAILURE_LIMIT = 5
 _LOGIN_FAILURE_WINDOW_SECONDS = 60
 _LOGIN_TRACKED_CLIENTS_MAX = 10_000
 _LOGIN_CONCURRENT_VERIFICATIONS = 4
-_login_attempts_by_client: OrderedDict[str, deque[float]] = OrderedDict()
-_login_attempts_lock = Lock()
 _login_verification_slots = BoundedSemaphore(_LOGIN_CONCURRENT_VERIFICATIONS)
 
 
@@ -40,15 +39,16 @@ def _login_client_key(request: Request) -> str:
 
 def _reserve_login_attempt(client_key: str) -> int:
     now = monotonic()
-    with _login_attempts_lock:
-        attempts = _login_attempts_by_client.get(client_key)
+    with app_state.login_attempts_lock:
+        attempts_by_client = app_state.login_attempts_by_client
+        attempts = attempts_by_client.get(client_key)
         if attempts is None:
-            if len(_login_attempts_by_client) >= _LOGIN_TRACKED_CLIENTS_MAX:
-                _login_attempts_by_client.popitem(last=False)
+            if len(attempts_by_client) >= _LOGIN_TRACKED_CLIENTS_MAX:
+                attempts_by_client.popitem(last=False)
             attempts = deque()
-            _login_attempts_by_client[client_key] = attempts
+            attempts_by_client[client_key] = attempts
         else:
-            _login_attempts_by_client.move_to_end(client_key)
+            attempts_by_client.move_to_end(client_key)
             while attempts and now - attempts[0] >= _LOGIN_FAILURE_WINDOW_SECONDS:
                 attempts.popleft()
         if len(attempts) >= _LOGIN_FAILURE_LIMIT:
@@ -61,8 +61,8 @@ def _reserve_login_attempt(client_key: str) -> int:
 
 
 def _clear_login_attempts(client_key: str) -> None:
-    with _login_attempts_lock:
-        _login_attempts_by_client.pop(client_key, None)
+    with app_state.login_attempts_lock:
+        app_state.login_attempts_by_client.pop(client_key, None)
 
 
 async def get_current_admin(

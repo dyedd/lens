@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
+import {
+  SettingsFieldList,
+  SettingsFieldRow,
+} from "@/components/ui/SettingsLayout";
 import { titleForLocale, useI18n } from "@/lib/I18nContext";
-import { SettingsFieldList, SettingsFieldRow } from "./settingsLayout";
 
 interface AccountSettingsProps {
   username: string;

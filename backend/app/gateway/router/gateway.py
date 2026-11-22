@@ -8,7 +8,8 @@ from ...core.cooldown_rules import CompiledCooldownDetectionRule
 from ...models.channels import ChannelConfig
 from ...models.protocols import ProtocolKind, RoutingStrategy
 from ...models.routing import RouterSnapshot
-from .cooldown import ClaimDecision, CooldownPolicy, ErrorCategory
+from .cooldown import ClaimDecision, CooldownPolicy, CooldownScope, ErrorCategory
+from .failover import RetryAction
 from .health import HealthTracker
 from .routing import RoutePlanner, RouteSelection
 from .targets import RouteTarget, TargetKey, target_key
@@ -65,6 +66,7 @@ class GatewayRouter:
         self,
         channels: list[ChannelConfig],
         protocol: ProtocolKind,
+        *,
         requested_model: str | None = None,
         strategy: RoutingStrategy = RoutingStrategy.FAILOVER,
         allowed_channel_ids: set[str] | None = None,
@@ -79,13 +81,13 @@ class GatewayRouter:
             return self._routes.select(
                 channels,
                 protocol,
-                requested_model,
-                strategy,
-                allowed_channel_ids,
-                use_model_matching,
-                route_targets,
-                cursor_key,
-                required_context_tokens,
+                requested_model=requested_model,
+                strategy=strategy,
+                allowed_channel_ids=allowed_channel_ids,
+                use_model_matching=use_model_matching,
+                route_targets=route_targets,
+                cursor_key=cursor_key,
+                required_context_tokens=required_context_tokens,
             )
 
     def snapshot(self, channels: list[ChannelConfig]) -> RouterSnapshot:
@@ -109,7 +111,7 @@ class GatewayRouter:
         *,
         credential_id: str | None = None,
         model_name: str | None = None,
-        fault_protocol: str = "",
+        fault_protocol: ProtocolKind | str = "",
         started_revision: int | None = None,
     ) -> None:
         """Record success for exactly one executed route target."""
@@ -141,11 +143,11 @@ class GatewayRouter:
         category: ErrorCategory,
         credential_id: str | None = None,
         model_name: str | None = None,
-        fault_protocol: str = "",
-        scope: str = "model",
+        fault_protocol: ProtocolKind | str = "",
+        scope: CooldownScope = "model",
         cooldown_seconds: float | None = None,
         was_probe: bool = False,
-        retry_action: str | None = None,
+        retry_action: RetryAction | None = None,
     ) -> None:
         """Record failure for its target or credential fault domain."""
         with self._lock:

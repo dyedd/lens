@@ -3,36 +3,23 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type {
-  ModelGroupCandidatesPayload,
-  ModelGroupCandidatesResponse,
-  RoutingStrategy,
-  UnplacedModelsResponse,
-} from "@/lib/api/groups";
+import type { RoutingStrategy, UnplacedModelsResponse } from "@/lib/api/groups";
 import { getModelFamilyKey } from "@/lib/ModelIcons";
 import {
   buildModelPrefixOptions,
   resolveEffectiveModelPrefix,
   type SelectedModelPrefix,
 } from "@/lib/modelPrefix";
-import type { FormState, GroupRow, GroupSort } from "./groupTypes";
+import type { GroupRow, GroupSort } from "./groupTypes";
 import { buildGroupRows } from "./groupView";
-import { modelGroupItemKey } from "./modelGroupFormatting";
 
 type GroupsQueryOptions = {
-  dialogOpen: boolean;
   editingId: string | null;
-  form: FormState;
   locale: "zh-CN" | "en-US";
 };
 
 /** Load model group data and derive query-backed display metadata. */
-export function useGroupsQueries({
-  dialogOpen,
-  editingId,
-  form,
-  locale,
-}: GroupsQueryOptions) {
+export function useGroupsQueries({ editingId, locale }: GroupsQueryOptions) {
   const queryClient = useQueryClient();
   const groupsQuery = useModelGroupsQuery();
   // Nested under "groups" so every groups invalidation refreshes it too.
@@ -40,39 +27,6 @@ export function useGroupsQueries({
     queryKey: ["groups", "unplaced-models"],
     queryFn: () => apiRequest<UnplacedModelsResponse>("/admin/unplaced-models"),
     staleTime: 2 * 60_000,
-  });
-  // Every member is evaluated; candidates then offer only models outside the
-  // group, which is what adding a source can bring in.
-  const candidatePayload: ModelGroupCandidatesPayload = useMemo(
-    () => ({
-      items: form.items
-        .map((item) => ({
-          channel_id: item.channel_id,
-          credential_id: item.credential_id,
-          model_name: item.model_name,
-          enabled: item.enabled,
-        }))
-        .sort((left, right) =>
-          modelGroupItemKey(left).localeCompare(modelGroupItemKey(right)),
-        ),
-    }),
-    [form.items],
-  );
-  const candidateQuery = useQuery({
-    queryKey: ["group-candidates", editingId, candidatePayload],
-    queryFn: () =>
-      apiRequest<ModelGroupCandidatesResponse>(
-        "/admin/model-group-candidates",
-        {
-          method: "POST",
-          body: JSON.stringify(candidatePayload),
-        },
-      ),
-    enabled: dialogOpen && !form.route_group_id,
-    // Keep the list on screen while an edit in the same editor is
-    // re-evaluated; another group never borrows this one's candidates.
-    placeholderData: (previous, previousQuery) =>
-      previousQuery?.queryKey[1] === editingId ? previous : undefined,
   });
   const groupRows = useMemo(
     () => buildGroupRows(groupsQuery.data ?? []),
@@ -126,8 +80,6 @@ export function useGroupsQueries({
   }
 
   return {
-    candidateQuery,
-    evaluatedItems: candidateQuery.data?.evaluated_items ?? [],
     groupRows,
     groups: groupsQuery.data,
     unplacedModels: unplacedQuery.data?.items ?? [],
@@ -183,7 +135,7 @@ export function useGroupFilters(
         .toLowerCase()
         .includes(keyword);
     });
-    return [...filtered].sort((left, right) => {
+    return filtered.sort((left, right) => {
       if (sortBy === "name-asc") {
         return left.name.localeCompare(right.name, locale);
       }

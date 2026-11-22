@@ -9,6 +9,7 @@ from datetime import (
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import InvalidInputError
 from app.core.time_zone import load_time_zone
 from app.models.backups import ConfigBackupCronjob, ConfigBackupGatewayApiKey
 from app.models.settings import SettingItem
@@ -98,7 +99,7 @@ async def replace_settings(session: AsyncSession, settings: list[SettingItem]) -
         if item.key not in EDITABLE_SETTING_KEYS:
             continue
         if item.key in setting_keys:
-            raise ValueError(f"Duplicate setting key in backup: {item.key}")
+            raise InvalidInputError(f"Duplicate setting key in backup: {item.key}")
         setting_keys.add(item.key)
         imported_settings.append(item)
     canonical_items = canonicalize_editable_settings(imported_settings)
@@ -122,7 +123,7 @@ async def replace_cronjobs(
         if not task_id:
             continue
         if task_id in task_ids:
-            raise ValueError(f"Duplicate cron job id in backup: {task_id}")
+            raise InvalidInputError(f"Duplicate cron job id in backup: {task_id}")
         task_ids.add(task_id)
         schedule = build_cronjob_schedule(
             schedule_type=item.schedule_type.value,
@@ -179,13 +180,13 @@ async def replace_gateway_api_keys(
         key_id = item.id.strip()
         api_key = item.api_key.strip()
         if not key_id:
-            raise ValueError("Gateway API key id is required")
+            raise InvalidInputError("Gateway API key id is required")
         if not api_key:
-            raise ValueError("Gateway API key secret is required")
+            raise InvalidInputError("Gateway API key secret is required")
         if key_id in seen_ids:
-            raise ValueError(f"Duplicate gateway API key id in backup: {key_id}")
+            raise InvalidInputError(f"Duplicate gateway API key id in backup: {key_id}")
         if api_key in seen_keys:
-            raise ValueError("Duplicate gateway API key secret in backup")
+            raise InvalidInputError("Duplicate gateway API key secret in backup")
         seen_ids.add(key_id)
         seen_keys.add(api_key)
 

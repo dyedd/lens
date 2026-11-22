@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
 
@@ -12,9 +13,9 @@ from starlette.types import Message, Receive, Scope, Send
 from ....core.errors import RequestCancelledError
 from ....models.protocols import ProtocolKind
 from ...router.cooldown import ErrorCategory
-from ..app_state import app_state, logger
+from ..app_state import app_state
 from ..error_responses import stream_error_frame
-from ..proxy.routing_plan import gateway_timeout_scope
+from ..request_support import gateway_timeout_scope
 from ..runtime_types import (
     GatewayTimeoutError,
     RequestDeadline,
@@ -28,6 +29,8 @@ from .events import (
     _capture_stream_event_chunk,
     _flush_stream_event_buffer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class FinalizingStreamingResponse(StreamingResponse):

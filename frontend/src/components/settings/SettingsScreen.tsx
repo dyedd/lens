@@ -1,4 +1,4 @@
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { ApiKeysScreen } from "@/components/screens/ApiKeysScreen";
@@ -26,31 +26,55 @@ type SettingsDraftController = ReturnType<typeof useSettingsDraft>;
 function SettingsHeaderActions({
   locale,
   settings,
+  showRefresh = true,
 }: {
   locale: Locale;
   settings: SettingsDraftController;
+  showRefresh?: boolean;
 }) {
   const refreshLabel = titleForLocale(locale, "刷新", "Refresh");
+  const retryLabel = titleForLocale(locale, "重试保存", "Retry saving");
 
   return (
     <DashboardHeaderActions>
       <div className="flex items-center justify-end gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              type="button"
-              aria-label={refreshLabel}
-              onClick={() => void settings.refresh()}
-            >
-              <RotateCcw data-icon="inline-start" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {refreshLabel}
-          </TooltipContent>
-        </Tooltip>
+        {settings.hasSaveError && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                aria-label={retryLabel}
+                disabled={settings.isSaving}
+                onClick={settings.retrySettings}
+              >
+                <RotateCw data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {retryLabel}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {showRefresh && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                aria-label={refreshLabel}
+                onClick={() => void settings.refresh()}
+              >
+                <RotateCcw data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {refreshLabel}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </DashboardHeaderActions>
   );
@@ -66,8 +90,12 @@ export function SettingsScreen() {
 
   return (
     <>
-      {activeTab !== "cronjobs" && (
-        <SettingsHeaderActions locale={locale} settings={settings} />
+      {(activeTab !== "cronjobs" || settings.hasSaveError) && (
+        <SettingsHeaderActions
+          locale={locale}
+          settings={settings}
+          showRefresh={activeTab !== "cronjobs"}
+        />
       )}
       <section className="mx-auto min-w-0 max-w-[1256px]">
         <h1 className="page-title mb-5 px-1">

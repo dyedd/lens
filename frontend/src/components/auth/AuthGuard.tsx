@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { Button } from "@/components/ui/Button";
 import { AppLoadingScreen } from "@/components/ui/LoadingState";
 import type { AdminProfile } from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
-import { getStoredToken, SESSION_CACHE_KEY, signOut } from "@/lib/auth";
+import {
+  getStoredToken,
+  SESSION_CACHE_KEY,
+  shouldRedirectAfterSessionCheckFailure,
+  signOut,
+} from "@/lib/auth";
+import { titleForLocale, useI18n } from "@/lib/I18nContext";
 
 const SESSION_CACHE_TTL_MS = 60_000;
 const SESSION_CACHE_VERSION = 1;
@@ -19,10 +26,10 @@ function withSessionStorageFallback<T>(action: () => T, fallback: T): T {
 /** Verifies the admin session before rendering protected content. */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const [state, setState] = useState<{
-    ready: boolean;
-    profile: AdminProfile | null;
-  }>({ ready: false, profile: null });
+  const { locale } = useI18n();
+  const [status, setStatus] = useState<"checking" | "ready" | "failed">(
+    "checking",
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -78,9 +85,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const cachedProfile = readCachedProfile();
-      if (cachedProfile) {
-        setState({ ready: true, profile: cachedProfile });
+      if (readCachedProfile()) {
+        setStatus("ready");
         return;
       }
 
@@ -88,28 +94,45 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         const profile = await apiRequest<AdminProfile>("/admin/session");
         if (!cancelled) {
           writeCachedProfile(profile);
-          setState({ ready: true, profile });
+          setStatus("ready");
         }
       } catch {
         if (cancelled) {
           return;
         }
-        navigate("/login", { replace: true });
+        if (shouldRedirectAfterSessionCheckFailure(getStoredToken())) {
+          navigate("/login", { replace: true });
+        } else {
+          setStatus("failed");
+        }
       }
     }
 
-    void verify();
+    if (status === "checking") void verify();
     window.addEventListener("storage", handleStorage);
 
     return () => {
       cancelled = true;
       window.removeEventListener("storage", handleStorage);
     };
-  }, [navigate]);
+  }, [navigate, status]);
 
-  if (!state.ready) {
-    return <AppLoadingScreen />;
+  if (status === "failed") {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background p-4 text-center">
+        <p role="alert" className="text-sm text-destructive">
+          {titleForLocale(
+            locale,
+            "无法验证登录状态",
+            "Could not verify session",
+          )}
+        </p>
+        <Button type="button" onClick={() => setStatus("checking")}>
+          {titleForLocale(locale, "重试", "Retry")}
+        </Button>
+      </main>
+    );
   }
 
-  return <>{children}</>;
+  return status === "ready" ? children : <AppLoadingScreen />;
 }

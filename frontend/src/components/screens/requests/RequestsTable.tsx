@@ -21,6 +21,7 @@ import type { Locale } from "@/lib/I18nContext";
 import { titleForLocale } from "@/lib/I18nContext";
 import { protocolLabel } from "@/lib/protocols";
 import { RequestOutcomeBadge } from "./RequestSummaryFields";
+import { formatUserAgentDisplay } from "./requestUserAgent";
 import {
   formatCacheHitRate,
   formatChannelCredentialLabel,
@@ -28,7 +29,6 @@ import {
   formatMaybeCount,
   formatMaybeMoney,
   formatMs,
-  formatUserAgentDisplay,
   getResolvedGroupName,
   getSecondaryModelName,
 } from "./requestView";
@@ -39,7 +39,7 @@ type Props = {
   loading: boolean;
   emptyLabel: string;
   timeZone: string;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, trigger: HTMLButtonElement | null) => void;
   onCancel: (id: number) => void;
   cancellingId?: number;
 };
@@ -340,10 +340,35 @@ export function RequestsTable({
             <TableRow
               key={item.id}
               className="cursor-pointer"
-              onClick={() => onOpenDetail(item.id)}
+              onClick={(event) =>
+                onOpenDetail(
+                  item.id,
+                  event.currentTarget.querySelector<HTMLButtonElement>(
+                    "[data-request-detail]",
+                  ),
+                )
+              }
             >
-              <TableCell className="font-mono text-xs text-foreground">
-                {item.id}
+              <TableCell className="py-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  data-request-detail
+                  className="-mx-1.5 font-mono font-normal text-foreground"
+                  aria-haspopup="dialog"
+                  aria-label={titleForLocale(
+                    locale,
+                    `查看请求日志 ${item.id}`,
+                    `View request log ${item.id}`,
+                  )}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenDetail(item.id, event.currentTarget);
+                  }}
+                >
+                  {item.id}
+                </Button>
               </TableCell>
               <TableCell className="w-[13rem] max-w-[13rem]">
                 <ModelCell item={item} locale={locale} />

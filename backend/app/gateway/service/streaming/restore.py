@@ -7,7 +7,12 @@ from typing import Any
 
 from ....models.protocols import ProtocolKind
 from ..payload_serialization import dump_log_json
-from .types import OPENAI_RESPONSES_TERMINAL_EVENTS, parse_sse_payloads
+from .types import (
+    OPENAI_RESPONSES_TERMINAL_EVENTS,
+    iter_gemini_candidates,
+    iter_gemini_content_parts,
+    parse_sse_payloads,
+)
 
 
 def distill_stream_response_content(
@@ -51,14 +56,12 @@ def _restore_gemini_stream(payloads: list[dict[str, Any]]) -> dict[str, Any] | N
     candidates: dict[int, dict[str, Any]] = {}
     for payload in payloads:
         for key, value in payload.items():
-            if key != "candidates":
-                if key == "usageMetadata" and isinstance(value, Mapping):
+            if key == "usageMetadata":
+                if isinstance(value, Mapping):
                     response.setdefault(key, {}).update(value)
-                else:
-                    response[key] = deepcopy(value)
-        for candidate in payload.get("candidates", []):
-            if not isinstance(candidate, Mapping):
-                continue
+            elif key != "candidates":
+                response[key] = deepcopy(value)
+        for candidate in iter_gemini_candidates(payload):
             index = candidate.get("index", 0)
             if isinstance(index, bool) or not isinstance(index, int):
                 continue
@@ -69,7 +72,9 @@ def _restore_gemini_stream(payloads: list[dict[str, Any]]) -> dict[str, Any] | N
             content = candidate.get("content")
             if isinstance(content, Mapping):
                 merged = target.setdefault("content", {"role": "model", "parts": []})
-                merged["parts"].extend(deepcopy(content.get("parts", [])))
+                merged["parts"].extend(
+                    deepcopy(list(iter_gemini_content_parts(content)))
+                )
     if candidates:
         response["candidates"] = [candidates[index] for index in sorted(candidates)]
     return response or None
@@ -79,6 +84,7 @@ def _restore_anthropic_stream_message(
     payloads: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     message: dict[str, Any] | None = None
+    content_blocks: dict[int, Any] = {}
     input_buffers: dict[int, str] = {}
 
     for payload in payloads:
@@ -89,36 +95,30 @@ def _restore_anthropic_stream_message(
             if not isinstance(start_message, dict):
                 continue
             message = deepcopy(start_message)
-            content = message.get("content")
-            message["content"] = deepcopy(content) if isinstance(content, list) else []
+            content = message.pop("content", None)
+            content_blocks = (
+                dict(enumerate(content)) if isinstance(content, list) else {}
+            )
+            input_buffers.clear()
             continue
 
         if message is None:
             continue
 
         if payload_type == "content_block_start":
-            index = _coerce_openai_output_index(payload.get("index"))
+            index = _coerce_nonnegative_index(payload.get("index"))
             block = payload.get("content_block")
             if index is None or not isinstance(block, dict):
                 continue
-            content = message.setdefault("content", [])
-            if not isinstance(content, list):
-                content = []
-                message["content"] = content
-            while len(content) <= index:
-                content.append(None)
-            content[index] = deepcopy(block)
+            content_blocks[index] = deepcopy(block)
             continue
 
         if payload_type == "content_block_delta":
-            index = _coerce_openai_output_index(payload.get("index"))
+            index = _coerce_nonnegative_index(payload.get("index"))
             delta = payload.get("delta")
             if index is None or not isinstance(delta, dict):
                 continue
-            content = message.get("content")
-            if not isinstance(content, list) or index >= len(content):
-                continue
-            block = content[index]
+            block = content_blocks.get(index)
             if not isinstance(block, dict):
                 continue
             delta_type = str(delta.get("type") or "")
@@ -139,10 +139,11 @@ def _restore_anthropic_stream_message(
             continue
 
         if payload_type == "content_block_stop":
-            index = _coerce_openai_output_index(payload.get("index"))
-            if index is None:
-                continue
-            _finalize_anthropic_tool_use_input(message, index, input_buffers)
+            index = _coerce_nonnegative_index(payload.get("index"))
+            if index is not None:
+                _finalize_anthropic_tool_use_input(
+                    content_blocks.get(index), input_buffers.pop(index, "")
+                )
             continue
 
         if payload_type == "message_delta":
@@ -156,35 +157,19 @@ def _restore_anthropic_stream_message(
                 merged_usage.update(usage)
                 message["usage"] = merged_usage
 
-    for index in list(input_buffers):
-        _finalize_anthropic_tool_use_input(message, index, input_buffers)
-
     if message is None:
         return None
 
-    content = message.get("content")
-    if isinstance(content, list):
-        message["content"] = [item for item in content if item is not None]
+    for index, buffer in input_buffers.items():
+        _finalize_anthropic_tool_use_input(content_blocks.get(index), buffer)
+    message["content"] = _ordered_stream_parts(content_blocks)
     return message
 
 
-def _finalize_anthropic_tool_use_input(
-    message: dict[str, Any] | None,
-    index: int,
-    input_buffers: dict[int, str],
-) -> None:
-    if message is None:
-        return
-    content = message.get("content")
-    if not isinstance(content, list) or index >= len(content):
-        input_buffers.pop(index, None)
-        return
-    block = content[index]
+def _finalize_anthropic_tool_use_input(block: object, buffer: str) -> None:
     if not isinstance(block, dict) or block.get("type") != "tool_use":
-        input_buffers.pop(index, None)
         return
 
-    buffer = input_buffers.pop(index, "")
     if not buffer:
         current_input = block.get("input")
         if isinstance(current_input, dict):
@@ -220,6 +205,12 @@ def _compact_openai_response_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _ordered_stream_parts(parts_by_index: dict[int, Any]) -> list[dict[str, Any]]:
+    return [
+        part for _, part in sorted(parts_by_index.items()) if isinstance(part, dict)
+    ]
+
+
 def _restore_openai_response_output(
     response_payload: dict[str, Any],
     payloads: list[dict[str, Any]],
@@ -241,155 +232,91 @@ def _rebuild_openai_response_output(
     payloads: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     items_by_index: dict[int, dict[str, Any]] = {}
+    parts_by_output_index: dict[int, dict[int, Any]] = {}
     for payload in payloads:
-        payload_type = str(payload.get("type") or "")
+        payload_type = payload.get("type")
+        if not isinstance(payload_type, str):
+            continue
+        is_text_event = payload_type in {
+            "response.output_text.delta",
+            "response.output_text.done",
+        }
+        output_index = _coerce_nonnegative_index(
+            payload.get("output_index"), default=0 if is_text_event else None
+        )
+        if output_index is None:
+            continue
         if payload_type in {"response.output_item.added", "response.output_item.done"}:
-            output_index = _coerce_openai_output_index(payload.get("output_index"))
             item = payload.get("item")
-            if output_index is None or not isinstance(item, dict):
+            if not isinstance(item, dict):
                 continue
-            items_by_index[output_index] = _merge_openai_output_item(
-                items_by_index.get(output_index), item
-            )
+            stored_item = items_by_index.setdefault(output_index, {})
+            for key, value in item.items():
+                if key == "content" and isinstance(value, list):
+                    parts_by_output_index[output_index] = dict(
+                        enumerate(deepcopy(value))
+                    )
+                else:
+                    stored_item[key] = value
+                    if key == "content":
+                        parts_by_output_index.pop(output_index, None)
+            if stored_item.get("type") == "message":
+                parts_by_output_index.setdefault(output_index, {})
             continue
 
-        if payload_type in {
+        is_content_event = payload_type in {
             "response.content_part.added",
             "response.content_part.done",
-        }:
-            output_index = _coerce_openai_output_index(payload.get("output_index"))
-            content_index = _coerce_openai_output_index(payload.get("content_index"))
+        }
+        if not is_content_event and not is_text_event:
+            continue
+        content_index = _coerce_nonnegative_index(
+            payload.get("content_index"), default=0 if is_text_event else None
+        )
+        if content_index is None:
+            continue
+        if is_content_event:
             part = payload.get("part")
-            if (
-                output_index is None
-                or content_index is None
-                or not isinstance(part, dict)
-            ):
+            if not isinstance(part, dict):
                 continue
-            item = _ensure_openai_output_message(
-                items_by_index, output_index, payload.get("item_id")
-            )
-            _upsert_openai_content_part(item, content_index, part)
-            continue
-
-        if payload_type == "response.output_text.delta":
-            delta = payload.get("delta")
-            if not isinstance(delta, str) or not delta:
+            parts = parts_by_output_index.setdefault(output_index, {})
+            parts[content_index] = deepcopy(part)
+        else:
+            is_delta = payload_type == "response.output_text.delta"
+            text = payload.get("delta" if is_delta else "text")
+            if not isinstance(text, str) or (is_delta and not text):
                 continue
-            output_index = _coerce_openai_output_index(
-                payload.get("output_index"), default=0
-            )
-            content_index = _coerce_openai_output_index(
-                payload.get("content_index"), default=0
-            )
-            item = _ensure_openai_output_message(
-                items_by_index, output_index, payload.get("item_id")
-            )
-            _append_openai_output_text(item, content_index, delta)
-            continue
+            parts = parts_by_output_index.setdefault(output_index, {})
+            part = parts.get(content_index)
+            if not isinstance(part, dict):
+                part = {"type": "output_text", "annotations": []}
+                parts[content_index] = part
+            if part.get("type") == "output_text":
+                part["text"] = f"{part.get('text') or ''}{text}" if is_delta else text
+                part.setdefault("annotations", [])
+        item = items_by_index.setdefault(
+            output_index, {"type": "message", "role": "assistant"}
+        )
+        item_id = payload.get("item_id")
+        if item_id and item.get("id") is None:
+            item["id"] = str(item_id)
 
-        if payload_type == "response.output_text.done":
-            text = payload.get("text")
-            if not isinstance(text, str):
-                continue
-            output_index = _coerce_openai_output_index(
-                payload.get("output_index"), default=0
-            )
-            content_index = _coerce_openai_output_index(
-                payload.get("content_index"), default=0
-            )
-            item = _ensure_openai_output_message(
-                items_by_index, output_index, payload.get("item_id")
-            )
-            _set_openai_output_text(item, content_index, text)
-
+    for index, parts in parts_by_output_index.items():
+        items_by_index[index]["content"] = _ordered_stream_parts(parts)
     return [items_by_index[index] for index in sorted(items_by_index)]
 
 
-def _merge_openai_output_item(
-    existing: dict[str, Any] | None, incoming: dict[str, Any]
-) -> dict[str, Any]:
-    merged = deepcopy(existing) if existing is not None else {}
-    for key, value in incoming.items():
-        if key == "content" and isinstance(value, list):
-            merged[key] = deepcopy(value)
-            continue
-        merged[key] = value
-    if merged.get("type") == "message" and not isinstance(merged.get("content"), list):
-        merged["content"] = []
-    return merged
-
-
-def _ensure_openai_output_message(
-    items_by_index: dict[int, dict[str, Any]],
-    output_index: int,
-    item_id: Any,
-) -> dict[str, Any]:
-    item = items_by_index.get(output_index)
-    if item is None:
-        item = {"type": "message", "role": "assistant", "content": []}
-        items_by_index[output_index] = item
-    if item_id and item.get("id") is None:
-        item["id"] = str(item_id)
-    if item.get("type") == "message" and not isinstance(item.get("content"), list):
-        item["content"] = []
-    return item
-
-
-def _upsert_openai_content_part(
-    item: dict[str, Any], content_index: int, part: dict[str, Any]
-) -> None:
-    content = item.setdefault("content", [])
-    if not isinstance(content, list):
-        content = []
-        item["content"] = content
-    while len(content) <= content_index:
-        content.append(None)
-    content[content_index] = deepcopy(part)
-
-
-def _append_openai_output_text(
-    item: dict[str, Any], content_index: int, delta: str
-) -> None:
-    content = item.setdefault("content", [])
-    if not isinstance(content, list):
-        content = []
-        item["content"] = content
-    while len(content) <= content_index:
-        content.append(None)
-    part = content[content_index]
-    if not isinstance(part, dict):
-        part = {"type": "output_text", "text": "", "annotations": []}
-        content[content_index] = part
-    elif part.get("type") != "output_text":
-        return
-    part["text"] = f"{part.get('text') or ''}{delta}"
-    part.setdefault("annotations", [])
-
-
-def _set_openai_output_text(
-    item: dict[str, Any], content_index: int, text: str
-) -> None:
-    content = item.setdefault("content", [])
-    if not isinstance(content, list):
-        content = []
-        item["content"] = content
-    while len(content) <= content_index:
-        content.append(None)
-    part = content[content_index]
-    if not isinstance(part, dict):
-        part = {"type": "output_text", "annotations": []}
-        content[content_index] = part
-    if part.get("type") != "output_text":
-        return
-    part["text"] = text
-    part.setdefault("annotations", [])
-
-
-def _coerce_openai_output_index(value: Any, default: int | None = None) -> int | None:
-    try:
-        if value is None:
-            return default
-        return int(value)
-    except (TypeError, ValueError):
+def _coerce_nonnegative_index(
+    value: object, *, default: int | None = None
+) -> int | None:
+    if value is None:
         return default
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    if isinstance(value, float) and not value.is_integer():
+        return None
+    try:
+        index = int(value)
+    except ValueError:
+        return None
+    return index if index >= 0 else None

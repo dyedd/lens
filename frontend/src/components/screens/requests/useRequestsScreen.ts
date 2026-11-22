@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  skipToken,
   useMutation,
   useQuery,
   useQueryClient,
@@ -9,10 +10,11 @@ import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
-import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
+import { apiFetch, getApiErrorMessage } from "@/lib/api/client";
+import { OVERVIEW_DAILY_QUERY_KEY } from "@/lib/api/overview";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import type { RequestLogDetail, RequestLogPage } from "@/lib/api/requests";
-import type { SettingItem } from "@/lib/api/settings";
+import { requestLogDetail, requestLogPage } from "@/lib/api/requests";
+import { requestSettings } from "@/lib/api/settings";
 import { titleForLocale, useI18n } from "@/lib/I18nContext";
 import {
   buildModelPrefixOptions,
@@ -87,7 +89,7 @@ export function useRequestsScreen() {
     if (period !== "0") params.set("days", period);
     if (model !== null) params.set("upstream_model", model);
     if (agent !== null) params.set("agent", agent);
-    return `/admin/request-logs/page?${params.toString()}`;
+    return params;
   }, [
     channel,
     deferredKeyword,
@@ -118,7 +120,7 @@ export function useRequestsScreen() {
       model,
       agent,
     ],
-    queryFn: () => apiRequest<RequestLogPage>(requestLogsQuery),
+    queryFn: () => requestLogPage(requestLogsQuery),
     placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       page === 0 ||
@@ -132,15 +134,13 @@ export function useRequestsScreen() {
   });
   const settingsQuery = useQuery({
     queryKey: ["settings"],
-    queryFn: () => apiRequest<SettingItem[]>("/admin/settings"),
+    queryFn: () => requestSettings(),
     staleTime: 60_000,
   });
   const relayLogBodyEnabled = parseRelayLogBodyEnabled(settingsQuery.data);
   const detailQuery = useQuery({
     queryKey: ["request-log-detail", detailId],
-    queryFn: () =>
-      apiRequest<RequestLogDetail>(`/admin/request-logs/${detailId}`),
-    enabled: detailId !== null,
+    queryFn: detailId === null ? skipToken : () => requestLogDetail(detailId),
     staleTime: 60_000,
     gcTime: REQUEST_LOG_DETAIL_GC_TIME,
     refetchInterval: (query) =>
@@ -236,12 +236,24 @@ export function useRequestsScreen() {
     );
   }, [locale, logsQuery.error, logsQuery.isError]);
   useEffect(() => {
+    const scroller = document.getElementById("dashboard-content");
+    if (!(scroller instanceof HTMLElement)) return;
+    const scrollContainer: HTMLElement = scroller;
+
     function handleScroll() {
-      setShowBackToTop(window.scrollY > 320);
+      const showButton = scrollContainer.scrollTop > 320;
+      setShowBackToTop(showButton);
+      if (
+        !showButton &&
+        document.activeElement ===
+          document.getElementById("requests-back-to-top")
+      ) {
+        scrollContainer.focus({ preventScroll: true });
+      }
     }
     handleScroll();
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+    return () => scrollContainer.removeEventListener("scroll", handleScroll);
   }, []);
   function updateFilter(callback: () => void) {
     callback();
@@ -269,6 +281,16 @@ export function useRequestsScreen() {
       detailId !== null ? detailQuery.refetch() : Promise.resolve(),
     ]);
   }
+  function scrollBackToTop() {
+    const scroller = document.getElementById("dashboard-content");
+    if (!(scroller instanceof HTMLElement)) return;
+    scroller.scrollTo({
+      top: 0,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
+  }
   async function clearRequestLogs() {
     setClearingLogs(true);
     try {
@@ -279,9 +301,8 @@ export function useRequestsScreen() {
         [
           ["request-logs"],
           ["overview-summary"],
-          ["overview-daily"],
+          OVERVIEW_DAILY_QUERY_KEY,
           ["overview-attribution"],
-          ["overview-activity"],
           ["gateway-api-keys"],
         ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       );
@@ -340,6 +361,7 @@ export function useRequestsScreen() {
     setSortMode,
     setStatusFilter,
     showBackToTop,
+    scrollBackToTop,
     sortMode,
     statusFilter,
     timeZone,

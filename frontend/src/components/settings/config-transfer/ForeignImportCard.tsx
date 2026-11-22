@@ -1,15 +1,14 @@
 import { CircleAlert, FileInput, FileUp, RotateCcw } from "lucide-react";
 import { type DragEvent, useRef, useState } from "react";
-
-import { SettingsSection } from "@/components/settings/settingsLayout";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { SettingsSection } from "@/components/ui/SettingsLayout";
 import { Spinner } from "@/components/ui/Spinner";
+import { useForeignImport } from "@/hooks/useForeignImport";
 import type { ForeignSiteFormat } from "@/lib/api/foreignImports";
 import type { SiteBatchImportResult } from "@/lib/api/sites";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
-import { useForeignImport } from "./useForeignImport";
 
 const FORMAT_LABELS: Record<ForeignSiteFormat, [string, string]> = {
   lens: ["Lens 备份", "Lens backup"],

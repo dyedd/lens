@@ -1,13 +1,12 @@
 import { useState } from "react";
-
-import {
-  SettingsFieldList,
-  SettingsFieldRow,
-} from "@/components/settings/settingsLayout";
 import { Button } from "@/components/ui/Button";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import { Field, FieldLabel } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import {
+  SettingsFieldList,
+  SettingsFieldRow,
+} from "@/components/ui/SettingsLayout";
 import { Switch } from "@/components/ui/Switch";
 import type { CronjobItem } from "@/lib/api/cronjobs";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";

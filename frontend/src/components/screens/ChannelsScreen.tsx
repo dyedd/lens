@@ -59,7 +59,6 @@ export function ChannelsScreen() {
   });
   const transfer = useChannelTransfer({
     locale,
-    queryClient: queries.queryClient,
     invalidateChannelData: queries.invalidateChannelData,
   });
   const picker = useChannelModelPicker({

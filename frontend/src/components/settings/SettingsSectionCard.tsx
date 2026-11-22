@@ -2,12 +2,12 @@ import { Info } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { SettingsSection } from "@/components/ui/SettingsLayout";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
-import { SettingsSection } from "./settingsLayout";
 
 export function SettingsHint({ description }: { description: string }) {
   return (

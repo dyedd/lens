@@ -11,7 +11,11 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import ResourceConflictError, ResourceNotFoundError
+from app.core.errors import (
+    InvalidInputError,
+    ResourceConflictError,
+    ResourceNotFoundError,
+)
 from app.core.model_group_matching import (
     combine_model_group_patterns,
     compile_model_group_pattern,
@@ -221,7 +225,7 @@ class ModelGroupRepository:
                 inbound_route_group_result.scalar_one_or_none() is not None
             )
             if next_route_group_id and has_inbound_route_group:
-                raise ValueError(
+                raise InvalidInputError(
                     "Execution groups referenced by route groups cannot become route groups"
                 )
             replaces_items = (
@@ -349,7 +353,9 @@ class ModelGroupRepository:
                 .limit(1)
             )
             if inbound_route_group.scalar_one_or_none() is not None:
-                raise ValueError("Model group is still referenced by route groups")
+                raise InvalidInputError(
+                    "Model group is still referenced by route groups"
+                )
             fallback_rows = (
                 await session.execute(
                     select(
@@ -467,9 +473,12 @@ class ModelGroupRepository:
             target_pattern = target.match_regex.strip()
             source_pattern = source.match_regex.strip()
             if target_pattern and source_pattern:
-                target.match_regex = combine_model_group_patterns(
-                    [target_pattern, source_pattern]
-                )
+                try:
+                    target.match_regex = combine_model_group_patterns(
+                        [target_pattern, source_pattern]
+                    )
+                except ValueError as exc:
+                    raise InvalidInputError(str(exc)) from exc
                 target.match_regex_operator = "or"
                 target.match_rule_ids_json = dump_rule_ids([])
             elif source_pattern:
@@ -571,13 +580,13 @@ class ModelGroupRepository:
         """Save the given names as members of an existing execution group."""
         names = [name.strip() for name in model_names if name.strip()]
         if not names:
-            raise ValueError("At least one model name is required")
+            raise InvalidInputError("At least one model name is required")
         async with self._session_factory() as session:
             entity = await session.get(ModelGroupEntity, group_id)
             if entity is None:
                 raise ResourceNotFoundError(group_id)
             if entity.route_group_id.strip():
-                raise ValueError("Route groups cannot receive members directly")
+                raise InvalidInputError("Route groups cannot receive members directly")
         report = await self.reconcile_group_members(
             placement_names=set(names), into_group_id=group_id
         )
@@ -594,7 +603,7 @@ class ModelGroupRepository:
         names = set(model_names)
         unplaced_names = {view.model_name for view in await self.list_unplaced_models()}
         if covered := sorted(names - unplaced_names):
-            raise ValueError(
+            raise InvalidInputError(
                 "Models are still placed in model groups or not offered: "
                 + ", ".join(covered)
             )

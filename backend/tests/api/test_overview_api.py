@@ -5,8 +5,22 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from conftest import run_async, seed_request_log, valid_site_payload
+from fastapi.testclient import TestClient
 
 from app.persistence.entities import RequestLogEntity
+
+
+def test_overview_rejects_days_below_supported_range(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    for endpoint in ("summary", "daily", "models", "attribution"):
+        response = client.get(
+            f"/api/admin/overview-{endpoint}",
+            params={"days": -2},
+            headers=admin_headers,
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"]["type"] == "validation_error"
 
 
 def test_overview_attribution_groups_agents_and_keeps_history(

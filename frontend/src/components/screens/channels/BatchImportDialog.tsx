@@ -1,6 +1,5 @@
 import { CircleAlert, Download, FileUp, RotateCcw, Upload } from "lucide-react";
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
-import { useForeignImport } from "@/components/settings/config-transfer/useForeignImport";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -22,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/Table";
 import { Textarea } from "@/components/ui/Textarea";
+import { useForeignImport } from "@/hooks/useForeignImport";
 import type { ForeignSiteFormat } from "@/lib/api/foreignImports";
 import type { SiteBatchImportResult } from "@/lib/api/sites";
 import { importReasonLabel, importStatusLabel } from "./channelBatchImport";

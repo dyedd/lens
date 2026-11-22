@@ -29,7 +29,7 @@ from ...upstream_request import (
     resolve_channel_model_list_url,
     resolve_upstream_proxy_url,
 )
-from ..app_state import app_state
+from ..app_context import app_state
 from ..upstream_support import (
     default_lens_user_agent,
     format_http_response_error,

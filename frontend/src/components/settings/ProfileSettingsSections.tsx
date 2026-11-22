@@ -1,9 +1,9 @@
 import { AccountSettings } from "@/components/settings/AccountSettings";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { SettingsSectionSeparator } from "@/components/ui/SettingsLayout";
 import { TabsContent } from "@/components/ui/Tabs";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { SettingsSectionCard } from "./SettingsSectionCard";
-import { SettingsSectionSeparator } from "./settingsLayout";
 import type { useAccountSettings } from "./useAccountSettings";
 import type { useSettingsDraft } from "./useSettingsDraft";
 

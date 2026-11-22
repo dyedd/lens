@@ -1,6 +1,19 @@
 from __future__ import annotations
 
 import httpx
+from fastapi.testclient import TestClient
+
+
+def test_invalid_time_zone_settings_return_bad_request(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    response = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": "time_zone", "value": "invalid/timezone"}]},
+    )
+
+    assert response.status_code == 400
 
 
 def test_branding_metadata_and_version_check_round_trip(
