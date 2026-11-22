@@ -4,7 +4,6 @@ import { useLocation } from "react-router";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster as SonnerToaster } from "@/components/ui/Sonner";
-import { TooltipProvider } from "@/components/ui/Tooltip";
 import { I18nProvider } from "@/lib/I18nContext";
 import { ThemeProvider } from "@/lib/ThemeContext";
 
@@ -23,7 +22,7 @@ function createQueryClient() {
   });
 }
 
-/** Provides shared query, localization, theme, tooltip, and error contexts. */
+/** Provides shared query, localization, theme, and error contexts. */
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const [queryClient] = useState(createQueryClient);
@@ -41,10 +40,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <ThemeProvider>
-          <TooltipProvider>
-            <ErrorBoundary>{children}</ErrorBoundary>
-            <SonnerToaster />
-          </TooltipProvider>
+          <ErrorBoundary>{children}</ErrorBoundary>
+          <SonnerToaster />
         </ThemeProvider>
       </I18nProvider>
     </QueryClientProvider>
