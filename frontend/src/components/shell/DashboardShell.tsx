@@ -1,5 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router";
 import { DashboardHeader } from "@/components/shell/DashboardHeader";
 import {
@@ -16,6 +20,7 @@ import {
 } from "@/components/shell/dashboardRoutes";
 import { SidebarProvider } from "@/components/ui/SidebarContext";
 import { SidebarInset } from "@/components/ui/SidebarLayout";
+import { TooltipProvider } from "@/components/ui/Tooltip";
 import type { AppInfo, VersionCheckResult } from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
 import { signOut } from "@/lib/auth";
@@ -30,8 +35,33 @@ import {
   SettingsIcon,
 } from "./SidebarNavIcons";
 
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60_000,
+        gcTime: 5 * 60_000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        refetchOnMount: false,
+        retry: 1,
+      },
+    },
+  });
+}
+
 /** Renders the authenticated dashboard navigation and content shell. */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(createQueryClient);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DashboardShellContent>{children}</DashboardShellContent>
+    </QueryClientProvider>
+  );
+}
+
+function DashboardShellContent({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { locale, setLocale, t } = useI18n();
   const { data: appInfo } = useQuery({
@@ -126,42 +156,44 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [activeLabel, siteName]);
 
   return (
-    <DashboardHeaderActionsContext.Provider value={headerActionsContext}>
-      <SidebarProvider className="h-dvh max-h-dvh overflow-hidden bg-background">
-        <DashboardSidebar
-          navItems={navItems}
-          activeView={activeView}
-          siteName={siteName}
-          logoUrl={logoUrl}
-          currentVersion={currentVersion}
-          hasUpdate={Boolean(versionCheck?.has_update)}
-          updateTitle={updateTitle}
-          updateReleaseUrl={versionCheck?.release_url}
-          locale={locale}
-          onSignOut={signOut}
-        />
-
-        <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-          <DashboardHeader
+    <TooltipProvider>
+      <DashboardHeaderActionsContext.Provider value={headerActionsContext}>
+        <SidebarProvider className="h-dvh max-h-dvh overflow-hidden bg-background">
+          <DashboardSidebar
+            navItems={navItems}
+            activeView={activeView}
+            siteName={siteName}
+            logoUrl={logoUrl}
+            currentVersion={currentVersion}
+            hasUpdate={Boolean(versionCheck?.has_update)}
+            updateTitle={updateTitle}
+            updateReleaseUrl={versionCheck?.release_url}
             locale={locale}
-            labels={{ activeView: activeLabel }}
-            headerActions={headerActions}
-            language={{
-              label: languageActionLabel,
-              onClick: () => setLocale(nextLocale),
-            }}
+            onSignOut={signOut}
           />
 
-          <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-4 pb-10 sm:px-6 lg:px-8">
-            <div
-              key={pathname}
-              className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1256px] animate-[fadeIn_.16s_ease-out]"
-            >
-              {children}
+          <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+            <DashboardHeader
+              locale={locale}
+              labels={{ activeView: activeLabel }}
+              headerActions={headerActions}
+              language={{
+                label: languageActionLabel,
+                onClick: () => setLocale(nextLocale),
+              }}
+            />
+
+            <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-4 pb-10 sm:px-6 lg:px-8">
+              <div
+                key={pathname}
+                className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1256px] animate-[fadeIn_.16s_ease-out]"
+              >
+                {children}
+              </div>
             </div>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </DashboardHeaderActionsContext.Provider>
+          </SidebarInset>
+        </SidebarProvider>
+      </DashboardHeaderActionsContext.Provider>
+    </TooltipProvider>
   );
 }
