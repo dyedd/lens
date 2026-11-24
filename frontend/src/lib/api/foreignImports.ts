@@ -1,6 +1,4 @@
 import { ApiError, apiRequest, isRecord } from "./client";
-import { isProtocolKind, type ProtocolKind } from "./protocols";
-import type { SiteBatchImportPayload } from "./sites";
 
 const FOREIGN_SITE_FORMATS = [
   "lens",
@@ -20,14 +18,13 @@ export type ForeignSitePreview = {
   base_urls: string[];
   credential_count: number;
   model_count: number;
-  protocols: ProtocolKind[];
 };
 
 export type ForeignSiteImportPreview = {
   format: ForeignSiteFormat;
   sites: ForeignSitePreview[];
   warnings: string[];
-  payload: SiteBatchImportPayload | null;
+  payload: { sites: unknown[] } | null;
 };
 
 /** Uploads a foreign backup file and previews the sites it would import. */
@@ -69,19 +66,24 @@ function isForeignSiteImportPreview(
         typeof site.enabled === "boolean" &&
         isStringArray(site.tags) &&
         isStringArray(site.base_urls) &&
-        typeof site.credential_count === "number" &&
-        typeof site.model_count === "number" &&
-        Array.isArray(site.protocols) &&
-        site.protocols.every(isProtocolKind),
+        isCount(site.credential_count) &&
+        isCount(site.model_count),
     )
   ) {
     return false;
   }
-  return (
-    value.payload === null ||
-    (isRecord(value.payload) &&
-      Array.isArray(value.payload.sites) &&
-      value.payload.sites.length === value.sites.length &&
-      value.payload.sites.every(isRecord))
-  );
+  const { sites, payload } = value;
+  return payload === null
+    ? sites.length === 0
+    : isRecord(payload) &&
+        Array.isArray(payload.sites) &&
+        payload.sites.length > 0 &&
+        payload.sites.length === sites.length &&
+        payload.sites.every(
+          (site, index) => isRecord(site) && site.name === sites[index].name,
+        );
+}
+
+function isCount(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }

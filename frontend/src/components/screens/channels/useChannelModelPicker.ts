@@ -430,6 +430,12 @@ export function useChannelModelPicker({
     const rule = { credentialId, pattern: trimmed };
     const catalog = await discoverRemoteCatalog(signal, rule);
     if (!catalog || signal.aborted) return false;
+    if (!catalog.items.length) {
+      toast.info(
+        locale === "zh-CN" ? "没有找到匹配的模型" : "No matching models found",
+      );
+      return false;
+    }
     importRemoteModels(catalog.items);
     return true;
   }

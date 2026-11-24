@@ -13,7 +13,6 @@ import {
 import type {
   CandidateChannelGroup,
   ChannelMemberGroup,
-  EvaluatedFormItem,
   FoldedMember,
   FormItem,
   FormState,
@@ -262,7 +261,7 @@ export function foldGroupMembers(
   for (const item of formItems) {
     const evaluation = evaluatedItemsByKey.get(modelGroupItemKey(item));
     const evaluationMatchesForm = evaluation?.enabled === item.enabled;
-    const evaluatedItem: EvaluatedFormItem = evaluation
+    const memberItem = evaluation
       ? {
           ...item,
           site_id: evaluation.site_id,
@@ -281,27 +280,27 @@ export function foldGroupMembers(
           reasons: evaluationMatchesForm ? evaluation.reasons : item.reasons,
         }
       : item;
-    const key = modelFoldKey(evaluatedItem);
+    const key = modelFoldKey(memberItem);
     let member = membersByKey.get(key);
     if (!member) {
       member = {
         key,
-        protocolConfigId: evaluatedItem.protocol_config_id,
-        siteId: evaluatedItem.site_id,
-        channel_id: evaluatedItem.channel_id,
-        channel_name: evaluatedItem.channel_name,
-        model_name: evaluatedItem.model_name,
-        credential_id: evaluatedItem.credential_id,
-        credential_name: evaluatedItem.credential_name,
-        credential_number: evaluatedItem.credential_number,
-        credential_mask: evaluatedItem.credential_mask,
-        base_url: evaluatedItem.base_url,
-        rate_multiplier: evaluatedItem.rate_multiplier,
-        rate_source: evaluatedItem.rate_source,
-        context_window: evaluatedItem.context_window,
-        context_window_source: evaluatedItem.context_window_source,
+        protocolConfigId: memberItem.protocol_config_id,
+        siteId: memberItem.site_id,
+        channel_id: memberItem.channel_id,
+        channel_name: memberItem.channel_name,
+        model_name: memberItem.model_name,
+        credential_id: memberItem.credential_id,
+        credential_name: memberItem.credential_name,
+        credential_number: memberItem.credential_number,
+        credential_mask: memberItem.credential_mask,
+        base_url: memberItem.base_url,
+        rate_multiplier: memberItem.rate_multiplier,
+        rate_source: memberItem.rate_source,
+        context_window: memberItem.context_window,
+        context_window_source: memberItem.context_window_source,
         subItems: [],
-        source: evaluatedItem.source,
+        source: memberItem.source,
         enabled_item_count: 0,
         disabled_item_count: 0,
         ready_item_count: 0,
@@ -311,20 +310,20 @@ export function foldGroupMembers(
       };
       membersByKey.set(key, member);
     }
-    member.subItems.push(evaluatedItem);
-    if (member.rate_multiplier !== evaluatedItem.rate_multiplier)
+    member.subItems.push(memberItem);
+    if (member.rate_multiplier !== memberItem.rate_multiplier)
       member.rate_multiplier = null;
-    if (member.context_window !== evaluatedItem.context_window)
+    if (member.context_window !== memberItem.context_window)
       member.context_window = null;
-    if (member.context_window_source !== evaluatedItem.context_window_source)
+    if (member.context_window_source !== memberItem.context_window_source)
       member.context_window_source = null;
-    if (member.source !== evaluatedItem.source) member.source = "manual";
-    if (evaluatedItem.enabled) member.enabled_item_count += 1;
+    if (member.source !== memberItem.source) member.source = "manual";
+    if (memberItem.enabled) member.enabled_item_count += 1;
     else member.disabled_item_count += 1;
-    if (evaluatedItem.state === null) member.pending_item_count += 1;
-    if (evaluatedItem.state === "ready") member.ready_item_count += 1;
-    if (evaluatedItem.state === "invalid") member.invalid_item_count += 1;
-    if (evaluatedItem.state === "unavailable") {
+    if (memberItem.state === null) member.pending_item_count += 1;
+    if (memberItem.state === "ready") member.ready_item_count += 1;
+    if (memberItem.state === "invalid") member.invalid_item_count += 1;
+    if (memberItem.state === "unavailable") {
       member.unavailable_item_count += 1;
     }
   }

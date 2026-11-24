@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { type ChangeEvent, useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import {
@@ -197,25 +197,32 @@ export function useChannelTransfer({
   const [batchImportResult, setBatchImportResult] =
     useState<SiteBatchImportResult | null>(null);
   const [batchImporting, setBatchImporting] = useState(false);
+  const importFileRequestId = useRef(0);
 
   function openBatchImport() {
+    importFileRequestId.current += 1;
     setBatchImportText("");
     setBatchImportError("");
     setBatchImportResult(null);
     setBatchImportOpen(true);
   }
   function updateBatchImportText(value: string) {
+    importFileRequestId.current += 1;
     setBatchImportText(value);
     setBatchImportError("");
     setBatchImportResult(null);
   }
   async function handleBatchImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const requestId = ++importFileRequestId.current;
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
     try {
-      updateBatchImportText(await file.text());
+      const text = await file.text();
+      if (requestId !== importFileRequestId.current) return;
+      updateBatchImportText(text);
     } catch {
+      if (requestId !== importFileRequestId.current) return;
       setBatchImportError(
         locale === "zh-CN" ? "读取文件失败" : "Failed to read file",
       );

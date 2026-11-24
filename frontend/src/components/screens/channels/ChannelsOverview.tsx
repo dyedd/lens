@@ -41,6 +41,7 @@ import { useClientPagination } from "@/hooks/useClientPagination";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { Site } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
+import { titleForLocale } from "@/lib/I18nContext";
 import { ChannelsTable } from "./ChannelsTable";
 import type {
   ChannelSort,
@@ -57,15 +58,15 @@ function channelSortOptions(
   return [
     {
       value: "name-asc",
-      label: locale === "zh-CN" ? "渠道名称升序" : "Name A-Z",
+      label: titleForLocale(locale, "渠道名称升序", "Name A-Z"),
     },
     {
       value: "name-desc",
-      label: locale === "zh-CN" ? "渠道名称降序" : "Name Z-A",
+      label: titleForLocale(locale, "渠道名称降序", "Name Z-A"),
     },
     {
       value: "models-desc",
-      label: locale === "zh-CN" ? "模型数量" : "Model count",
+      label: titleForLocale(locale, "模型数量", "Model count"),
     },
   ];
 }

@@ -160,8 +160,6 @@ export type ModelGroupReconcileReport = {
   removed: ModelGroupMemberChange[];
   created_groups: Array<{ id: string; name: string }>;
   pending: UnplacedModel[];
-  /** Legacy field kept for response compatibility; current syncs report removals. */
-  retired: ModelGroupMemberChange[];
 };
 export type UnplacedModelRemovalRequest = {
   model_names: string[];

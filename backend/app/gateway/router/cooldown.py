@@ -356,10 +356,13 @@ class CooldownLedger:
             if key[0] == channel_id
         ]
 
-    def evict(self, keys: set[ModelKey] | set[CredentialKey]) -> None:
-        for key in keys:
-            self._model_states.pop(key, None)  # type: ignore[arg-type]
-            self._credential_states.pop(key, None)  # type: ignore[arg-type]
+    def evict(
+        self, *, model_keys: set[ModelKey], credential_keys: set[CredentialKey]
+    ) -> None:
+        for key in model_keys:
+            self._model_states.pop(key, None)
+        for key in credential_keys:
+            self._credential_states.pop(key, None)
 
     def cooldown_reason(
         self,

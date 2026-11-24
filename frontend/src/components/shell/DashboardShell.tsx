@@ -21,7 +21,12 @@ import {
 import { SidebarProvider } from "@/components/ui/SidebarContext";
 import { SidebarInset } from "@/components/ui/SidebarLayout";
 import { TooltipProvider } from "@/components/ui/Tooltip";
-import type { AppInfo, VersionCheckResult } from "@/lib/api/app";
+import {
+  ADMIN_PROFILE_QUERY_KEY,
+  type AdminProfile,
+  type AppInfo,
+  type VersionCheckResult,
+} from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
 import { signOut } from "@/lib/auth";
 import { useI18n } from "@/lib/I18nContext";
@@ -35,8 +40,8 @@ import {
   SettingsIcon,
 } from "./SidebarNavIcons";
 
-function createQueryClient() {
-  return new QueryClient({
+function createQueryClient(profile: AdminProfile) {
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: 60_000,
@@ -48,11 +53,20 @@ function createQueryClient() {
       },
     },
   });
+  client.setQueryDefaults(ADMIN_PROFILE_QUERY_KEY, { gcTime: Infinity });
+  client.setQueryData(ADMIN_PROFILE_QUERY_KEY, profile);
+  return client;
 }
 
 /** Renders the authenticated dashboard navigation and content shell. */
-export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(createQueryClient);
+export function DashboardShell({
+  profile,
+  children,
+}: {
+  profile: AdminProfile;
+  children: React.ReactNode;
+}) {
+  const [queryClient] = useState(() => createQueryClient(profile));
 
   return (
     <QueryClientProvider client={queryClient}>

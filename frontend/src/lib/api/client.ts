@@ -38,6 +38,10 @@ function parseJsonResponse<T>(
   }
 }
 
+/**
+ * An admin HTTP 401 signs out the current token unless it came from login
+ * or an aborted request. Unsuccessful responses throw an ApiError.
+ */
 export async function apiFetch(
   path: string,
   init?: RequestInit,
@@ -46,14 +50,17 @@ export async function apiFetch(
   if (typeof init?.body === "string" && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
-  const token = getStoredToken();
+  const isAdminLogin =
+    path === "/admin/session" && init?.method?.toUpperCase() === "POST";
+  const requiresAdminSession = path.startsWith("/admin/") && !isAdminLogin;
+  const token = requiresAdminSession ? getStoredToken() : "";
   if (token) headers.set("authorization", `Bearer ${token}`);
 
   const response = await fetch(`/api${path}`, { ...init, headers });
   if (
     response.status === 401 &&
-    path.startsWith("/admin/") &&
-    !(path === "/admin/session" && init?.method === "POST") &&
+    requiresAdminSession &&
+    !init?.signal?.aborted &&
     token &&
     token === getStoredToken()
   ) {
@@ -61,7 +68,17 @@ export async function apiFetch(
   }
   if (!response.ok) {
     const contentType = response.headers.get("content-type") ?? "";
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (readError) {
+      if (init?.signal?.aborted) throw readError;
+      throw new ApiError(
+        `Request failed with status ${response.status}`,
+        response.status,
+        readError,
+      );
+    }
     let errorMessage = "";
     let errorType: string | undefined;
     if (contentType.includes("application/json") && text) {
@@ -105,14 +122,25 @@ export async function apiFetch(
   return response;
 }
 
-/** Sends an authenticated API request and parses its JSON response. */
+/** Parses JSON from apiFetch, including its admin 401 session handling. */
 export async function apiRequest<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
   const response = await apiFetch(path, init);
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (readError) {
+    if (init?.signal?.aborted) throw readError;
+    throw new ApiError(
+      "Failed to read response from API",
+      response.status,
+      readError,
+    );
+  }
   return parseJsonResponse<T>(
-    await response.text(),
+    text,
     response.status,
     "Invalid JSON response from API",
   );

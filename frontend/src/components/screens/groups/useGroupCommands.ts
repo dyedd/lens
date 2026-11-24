@@ -18,6 +18,7 @@ import {
   type UnplacedModelRemovalResponse,
 } from "@/lib/api/groups";
 import { parseContextWindowInput } from "@/lib/contextWindow";
+import { titleForLocale } from "@/lib/I18nContext";
 import {
   EMPTY_FORM,
   type FormState,
@@ -53,7 +54,11 @@ export function useGroupCommands({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelGroup | null>(null);
 
-  async function saveGroup(payload: FormState, groupId: string | null) {
+  async function saveGroup(
+    payload: FormState,
+    groupId: string | null,
+    refresh = true,
+  ) {
     const body = JSON.stringify(formToModelGroupPayload(payload));
     const id = groupId ?? (await createModelGroup(body));
     if (groupId !== null) {
@@ -62,7 +67,7 @@ export function useGroupCommands({
         body,
       });
     }
-    await invalidateGroupData();
+    if (refresh) await invalidateGroupData();
     return id;
   }
 
@@ -82,6 +87,67 @@ export function useGroupCommands({
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function runBulkCommand<T>(
+    items: T[],
+    failureMessage: string,
+    action: (item: T) => Promise<void>,
+    busyMarker = "bulk",
+  ) {
+    setBusyId(busyMarker);
+    let completed = 0;
+    let commandError: unknown;
+    let failed = false;
+    for (const item of items) {
+      try {
+        await action(item);
+        completed += 1;
+      } catch (error) {
+        commandError = error;
+        failed = true;
+        break;
+      }
+    }
+
+    try {
+      if (completed) await invalidateGroupData();
+    } catch (refreshError) {
+      const message =
+        completed === items.length
+          ? titleForLocale(
+              locale,
+              `已完成 ${completed} 项操作，但列表刷新失败`,
+              `Completed all ${completed} operations, but could not refresh the list`,
+            )
+          : titleForLocale(
+              locale,
+              `已完成 ${completed} / ${items.length} 项操作，后续操作未执行且列表刷新失败`,
+              `Completed ${completed} of ${items.length} operations. The remaining operations were not run and the list could not refresh`,
+            );
+      const errorMessages = [getApiErrorMessage(refreshError, failureMessage)];
+      if (failed) {
+        errorMessages.push(getApiErrorMessage(commandError, failureMessage));
+      }
+      toast.error(`${message}. ${errorMessages.join(". ")}`);
+      setBusyId(null);
+      return false;
+    }
+
+    setBusyId(null);
+    if (!failed) return true;
+
+    const message = getApiErrorMessage(commandError, failureMessage);
+    toast.error(
+      completed
+        ? `${titleForLocale(
+            locale,
+            `已完成 ${completed} / ${items.length} 项操作，后续操作未执行`,
+            `Completed ${completed} of ${items.length} operations. Remaining operations were not run`,
+          )}. ${message}`
+        : message,
+    );
+    return false;
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -192,15 +258,13 @@ export function useGroupCommands({
         isGroupEnabled(group) !== enabled,
     );
     if (!targets.length) return;
-    const updated = await runCommand(
-      "bulk",
+    const updated = await runBulkCommand(
+      targets,
       locale === "zh-CN" ? "批量更新模型组失败" : "Failed to update groups",
-      async () => {
-        for (const group of targets) {
-          const groupForm = modelGroupToForm(group);
-          const items = groupForm.items.map((item) => ({ ...item, enabled }));
-          await saveGroup({ ...groupForm, items }, group.id);
-        }
+      async (group) => {
+        const groupForm = modelGroupToForm(group);
+        const items = groupForm.items.map((item) => ({ ...item, enabled }));
+        await saveGroup({ ...groupForm, items }, group.id, false);
       },
     );
     if (!updated) return;
@@ -223,13 +287,15 @@ export function useGroupCommands({
       (group) => !group.is_route_group && group.strategy !== strategy,
     );
     if (!targets.length) return;
-    const updated = await runCommand(
-      "bulk",
+    const updated = await runBulkCommand(
+      targets,
       locale === "zh-CN" ? "批量更新模型组失败" : "Failed to update groups",
-      async () => {
-        for (const group of targets) {
-          await saveGroup({ ...modelGroupToForm(group), strategy }, group.id);
-        }
+      async (group) => {
+        await saveGroup(
+          { ...modelGroupToForm(group), strategy },
+          group.id,
+          false,
+        );
       },
     );
     if (!updated) return;
@@ -242,20 +308,17 @@ export function useGroupCommands({
 
   async function removeGroups(targetGroups: ModelGroup[]) {
     if (!targetGroups.length) return;
-    const removed = await runCommand(
-      "bulk",
+    const removed = await runBulkCommand(
+      targetGroups,
       locale === "zh-CN" ? "批量删除模型组失败" : "Failed to delete groups",
-      async () => {
-        for (const group of targetGroups) {
-          await apiFetch(`/admin/model-groups/${group.id}`, {
-            method: "DELETE",
-          });
-        }
-        setDeleteTarget(null);
+      async (group) => {
+        await apiFetch(`/admin/model-groups/${group.id}`, {
+          method: "DELETE",
+        });
       },
     );
-    await invalidateGroupData();
     if (!removed) return;
+    setDeleteTarget(null);
     toast.success(
       locale === "zh-CN"
         ? `已删除 ${targetGroups.length} 个模型组`
@@ -316,34 +379,25 @@ export function useGroupCommands({
       ...new Set(modelNames.map((name) => name.trim()).filter(Boolean)),
     ];
     if (!names.length) return false;
-    setBusyId("unplaced-own-groups");
-    let created = 0;
-    try {
-      for (const name of names) {
+    const failureMessage =
+      locale === "zh-CN" ? "创建模型组失败" : "Failed to create groups";
+    const created = await runBulkCommand(
+      names,
+      failureMessage,
+      async (name) => {
         await createModelGroup(
           JSON.stringify(formToModelGroupPayload({ ...EMPTY_FORM, name })),
         );
-        created += 1;
-      }
-      await invalidateGroupData();
-      toast.success(
-        locale === "zh-CN"
-          ? `已创建 ${created} 个模型组`
-          : `Created ${created} groups`,
-      );
-      return true;
-    } catch (error) {
-      if (created) await invalidateGroupData();
-      toast.error(
-        getApiErrorMessage(
-          error,
-          locale === "zh-CN" ? "创建模型组失败" : "Failed to create groups",
-        ),
-      );
-      return false;
-    } finally {
-      setBusyId(null);
-    }
+      },
+      "unplaced-own-groups",
+    );
+    if (!created) return false;
+    toast.success(
+      locale === "zh-CN"
+        ? `已创建 ${names.length} 个模型组`
+        : `Created ${names.length} groups`,
+    );
+    return true;
   }
 
   /** Create a group and save the given models as its members. */
@@ -398,7 +452,7 @@ export function useGroupCommands({
   }
 
   /** Remove unplaced model names from every channel offering them. */
-  async function removeUnplacedModels(modelNames: string[]) {
+  function removeUnplacedModels(modelNames: string[]) {
     const payload: UnplacedModelRemovalRequest = { model_names: modelNames };
     return runCommand(
       "unplaced-removal",

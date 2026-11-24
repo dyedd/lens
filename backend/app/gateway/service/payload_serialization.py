@@ -170,9 +170,7 @@ def _should_redact_base64_string(
         return True
     if key == "result" and parent_type == "image_generation_call":
         return True
-    if key == "data" and (parent_type == "base64" or parent_has_mime_key):
-        return True
-    return False
+    return key == "data" and (parent_type == "base64" or parent_has_mime_key)
 
 
 def _looks_like_base64(value: str) -> bool:

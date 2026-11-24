@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
+
+from app.gateway.service.app_state import TASK_VERSION_CHECK, AppState
 
 
 def test_invalid_time_zone_settings_return_bad_request(
@@ -14,6 +18,33 @@ def test_invalid_time_zone_settings_return_bad_request(
     )
 
     assert response.status_code == 400
+
+
+def test_cronjob_handler_error_survives_finalization_failure(
+    client: TestClient,
+    app_state: AppState,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_handler() -> None:
+        raise RuntimeError("task failed")
+
+    async def fail_finish(_task_id: str, **_kwargs: object) -> None:
+        raise OperationalError(
+            "finish cron job", {}, RuntimeError("database is locked")
+        )
+
+    monkeypatch.setitem(
+        app_state.cronjob_runner._handlers, TASK_VERSION_CHECK, fail_handler
+    )
+    monkeypatch.setattr(app_state.cronjob_store, "finish_cronjob", fail_finish)
+
+    response = client.post(
+        "/api/admin/cronjobs/version_check/runs", headers=admin_headers
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["message"] == "Internal server error"
 
 
 def test_branding_metadata_and_version_check_round_trip(

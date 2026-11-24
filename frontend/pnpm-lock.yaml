@@ -14,9 +14,6 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.2.11
         version: 5.3.0
-      '@fontsource-variable/noto-serif':
-        specifier: ^5.2.11
-        version: 5.3.0
       '@tanstack/react-query':
         specifier: ^5.97.0
         version: 5.97.0(react@19.2.4)
@@ -387,9 +384,6 @@ packages:
 
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
-
-  '@fontsource-variable/noto-serif@5.3.0':
-    resolution: {integrity: sha512-GxGAScLRifXH02gDoJGroO/NIX83It7m1TYPPp1bhNPaii6/+GBYKxl/uL5GabFe0PBfiUV92wA4MdMdEDUu6A==}
 
   '@hono/node-server@1.19.13':
     resolution: {integrity: sha512-TsQLe4i2gvoTtrHje625ngThGBySOgSK3Xo2XRYOdqGN1teR8+I7vchQC46uLJi8OF62YTYA3AhSpumtkhsaKQ==}
@@ -3620,8 +3614,6 @@ snapshots:
   '@fontsource-variable/geist-mono@5.3.0': {}
 
   '@fontsource-variable/geist@5.3.0': {}
-
-  '@fontsource-variable/noto-serif@5.3.0': {}
 
   '@hono/node-server@1.19.13(hono@4.12.12)':
     dependencies:

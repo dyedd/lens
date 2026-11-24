@@ -20,10 +20,24 @@ describe("foreign import response validation", () => {
           credential_count: 1,
           model_count: 1,
           protocols: ["openai_chat"],
+          display_hint: "compatible preview field",
         },
       ],
       warnings: [],
-      payload: { sites: [{ name: "Primary" }] },
+      payload: {
+        sites: [
+          {
+            name: "Primary",
+            enabled: true,
+            tags: [],
+            future_site_setting: true,
+            base_urls: [],
+            credentials: [{ api_key: "secret", future_key_setting: true }],
+            protocols: [],
+            future_import_setting: "accepted by API validation",
+          },
+        ],
+      },
     };
     const result = {
       committed: true,
@@ -55,13 +69,70 @@ describe("foreign import response validation", () => {
       ),
     ).resolves.toEqual(preview);
     await expect(
-      importSites({ sites: [{ name: "Primary" }] }),
+      importSites({
+        sites: [
+          {
+            name: "Primary",
+            enabled: true,
+            tags: [],
+            base_urls: [],
+            credentials: [],
+            protocols: [],
+          },
+        ],
+      }),
     ).resolves.toEqual(result);
+  });
+
+  it("rejects preview sites that do not match their import payload", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        Response.json({
+          format: "octopus",
+          sites: [
+            {
+              name: "Primary",
+              enabled: true,
+              tags: [],
+              base_urls: [],
+              credential_count: 0,
+              model_count: 0,
+            },
+          ],
+          warnings: [],
+          payload: { sites: [{ name: "Other" }] },
+        }),
+      ),
+    );
+
+    await expect(
+      previewForeignSiteImport(
+        new File(["{}"], "backup.json"),
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({
+      message: "Invalid channel import preview response from API",
+      status: 200,
+    } satisfies Partial<ApiError>);
   });
 
   it("rejects malformed preview and import results before consumers read them", async () => {
     const malformedResponses = [
-      { format: "octopus", sites: [], warnings: [], payload: { sites: null } },
+      {
+        format: "octopus",
+        sites: [
+          {
+            name: 1,
+            enabled: true,
+            tags: [],
+            base_urls: [],
+            credential_count: 0,
+            model_count: 0,
+          },
+        ],
+        warnings: [],
+        payload: { sites: [{ name: "Primary" }] },
+      },
       {
         committed: true,
         created_count: 2,
@@ -93,9 +164,7 @@ describe("foreign import response validation", () => {
       message: "Invalid channel import preview response from API",
       status: 200,
     } satisfies Partial<ApiError>);
-    await expect(
-      importSites({ sites: [{ name: "Primary" }] }),
-    ).rejects.toMatchObject({
+    await expect(importSites({ sites: [] })).rejects.toMatchObject({
       message: "Invalid channel import response from API",
       status: 200,
     } satisfies Partial<ApiError>);

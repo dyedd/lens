@@ -92,14 +92,14 @@ export function ModelHealthScreen() {
       ),
       {
         id: "model-health-load-error",
-        description:
-          healthQuery.error instanceof Error
-            ? healthQuery.error.message
-            : titleForLocale(
-                locale,
-                "无法读取健康状态数据",
-                "Unable to read health status data",
-              ),
+        description: getApiErrorMessage(
+          healthQuery.error,
+          titleForLocale(
+            locale,
+            "无法读取健康状态数据",
+            "Unable to read health status data",
+          ),
+        ),
       },
     );
   }, [healthQuery.error, healthQuery.isError, locale]);

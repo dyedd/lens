@@ -71,18 +71,13 @@ def target_key(target: RouteTarget) -> TargetKey:
     )
 
 
-def _matches_pattern(pattern: str, value: str) -> bool:
-    """Match one stored model name against a requested model."""
-    return matches_model_pattern(pattern, value)
-
-
 def _matches_model(channel: ChannelConfig, requested_model: str | None) -> bool:
     if not requested_model:
         return True
 
     if channel.model_patterns:
         return any(
-            _matches_pattern(pattern, requested_model)
+            matches_model_pattern(pattern, requested_model)
             for pattern in channel.model_patterns
         )
 
@@ -107,7 +102,7 @@ def _candidate_credentials(
     credential_ids = {
         item.credential_id
         for item in channel.models
-        if item.enabled and _matches_pattern(item.model_name, model_name)
+        if item.enabled and matches_model_pattern(item.model_name, model_name)
     }
     return [key for key in channel.keys if key.id in credential_ids]
 

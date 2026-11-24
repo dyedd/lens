@@ -152,11 +152,9 @@ async def stream_upstream_iterator(
             if not chunk:
                 continue
             text = chunk.decode("utf-8", errors="surrogateescape")
-            terminal_prefix_length: int | None = None
-            if text:
-                terminal_prefix_length = _capture_stream_event_chunk(
-                    protocol, capture, text, stream_started_at
-                )
+            terminal_prefix_length = _capture_stream_event_chunk(
+                protocol, capture, text, stream_started_at
+            )
             if terminal_prefix_length is None or terminal_prefix_length >= len(text):
                 forwarded_chunk = chunk
             else:

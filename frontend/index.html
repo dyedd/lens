@@ -44,24 +44,25 @@
           canonical.href = window.location.origin + window.location.pathname;
         }
 
+        const root = document.documentElement;
+        let stored;
         try {
-          const stored = localStorage.getItem("lens_theme");
-          const dark =
-            stored === "dark" ||
-            (stored !== "light" &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches);
-          const root = document.documentElement;
-          root.classList.toggle("dark", dark);
-          const colorScheme =
-            stored === "light" || stored === "dark" ? stored : "light dark";
-          root.style.colorScheme = colorScheme;
-          document.querySelector('meta[name="color-scheme"]').content =
-            colorScheme;
+          stored = localStorage.getItem("lens_theme");
           const locale = localStorage.getItem("lens_locale");
           if (locale === "zh-CN" || locale === "en-US") root.lang = locale;
         } catch {
-          // localStorage may throw on quota/private mode; default theme still applies
+          // Site data restrictions can block localStorage reads.
         }
+        const colorScheme =
+          stored === "light" || stored === "dark" ? stored : "light dark";
+        root.classList.toggle(
+          "dark",
+          colorScheme === "dark" ||
+            (colorScheme === "light dark" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches),
+        );
+        root.style.colorScheme = colorScheme;
+        document.querySelector('meta[name="color-scheme"]').content = colorScheme;
       })();
     </script>
   </head>

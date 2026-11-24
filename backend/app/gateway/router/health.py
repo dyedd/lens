@@ -359,7 +359,10 @@ class HealthTracker:
             or key[0] in changed_channels
             or (key[0] in configured_models and key[1] not in configured_models[key[0]])
         }
-        self._cooldowns.evict(evicted_credentials | evicted_models)
+        self._cooldowns.evict(
+            model_keys=evicted_models,
+            credential_keys=evicted_credentials,
+        )
         self._scores.evict(evicted_models)
         self._prune_stale_states(now=now)
         return changed_route_channels

@@ -20,10 +20,7 @@ import {
 } from "@/components/ui/Tooltip";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
-import {
-  formatContextWindow,
-  parseContextWindowInput,
-} from "@/lib/contextWindow";
+import { parseContextWindowInput } from "@/lib/contextWindow";
 import { CredentialBadges } from "./CredentialBadges";
 import { formatBaseUrlLabel } from "./channelDisplay";
 import type { AggregatedModel, Locale } from "./channelTypes";
@@ -294,9 +291,7 @@ function ContextWindowInput({
   onCommit: (contextWindow: number | null) => void;
 }) {
   const savedText =
-    model.contextWindow === null
-      ? ""
-      : formatContextWindow(model.contextWindow);
+    model.contextWindow === null ? "" : String(model.contextWindow);
   const [draft, setDraft] = useState(savedText);
   const isZh = locale === "zh-CN";
   const [detecting, setDetecting] = useState(false);
@@ -313,7 +308,7 @@ function ContextWindowInput({
       );
       const value = values[model.modelName] ?? null;
       onCommit(value);
-      setDraft(value === null ? "" : formatContextWindow(value));
+      setDraft(value === null ? "" : String(value));
     } catch (error) {
       toast.error(
         getApiErrorMessage(error, isZh ? "自动识别失败" : "Detection failed"),

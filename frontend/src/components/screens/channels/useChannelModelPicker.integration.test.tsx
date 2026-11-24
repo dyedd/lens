@@ -327,6 +327,55 @@ describe("channel model discovery workflow", () => {
       "model-from-primary:false,model-from-primary:false",
     );
   });
+
+  it("drops selections removed by a refreshed upstream catalog", async () => {
+    let requestCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL) => {
+        requestCount += 1;
+        const items = requestCount === 1 ? createModelResult() : [];
+        return Response.json(items);
+      }),
+    );
+    const onImport = await renderWorkflow();
+
+    await clickButton("Fetch model list");
+    await waitFor(() => Boolean(findButton("model-from-primary")));
+    await clickButton("model-from-primary");
+    await clickButton("Reload");
+    await waitFor(() => Boolean(findButton("Add selected 0")));
+
+    expect(findButton("Add selected 0")?.disabled).toBe(true);
+    expect(onImport).not.toHaveBeenCalled();
+  });
+
+  it("keeps the model rule open when no catalog entries match", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json([])),
+    );
+    const onImport = await renderWorkflow();
+
+    await clickButton("Model rule");
+    const input = document.querySelector<HTMLTextAreaElement>(
+      "#channel-model-pattern",
+    );
+    expect(input).not.toBeNull();
+    await act(async () => {
+      if (!input) return;
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      setValue?.call(input, "^missing-model$");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await clickButton("Apply to list");
+
+    expect(document.querySelector("#channel-model-pattern")).not.toBeNull();
+    expect(onImport).not.toHaveBeenCalled();
+  });
 });
 
 function screenText(testId: string) {

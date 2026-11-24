@@ -43,7 +43,7 @@ describe("parseBackupPreview", () => {
     });
   });
 
-  it("rejects a non-object backup payload", () => {
-    expect(() => parseBackupPreview("[]")).toThrow("Invalid backup file");
+  it.each(["[]", "{"])("rejects invalid backup text %s", (text) => {
+    expect(() => parseBackupPreview(text)).toThrow("Invalid backup file");
   });
 });

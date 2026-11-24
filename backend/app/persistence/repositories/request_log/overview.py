@@ -42,6 +42,17 @@ class ImportedPeriodTotals(TypedDict):
     covered_dates: dict[str, datetime]
 
 
+def _accumulate_model_metrics(
+    values: dict[str, float | str],
+    requests: float,
+    total_tokens: float,
+    total_cost_usd: float,
+) -> None:
+    values["requests"] = float(values["requests"]) + requests
+    values["total_tokens"] = float(values["total_tokens"]) + total_tokens
+    values["total_cost_usd"] = float(values["total_cost_usd"]) + total_cost_usd
+
+
 class RequestLogOverview:
     def __init__(
         self,
@@ -274,22 +285,21 @@ class RequestLogOverview:
             if not model:
                 continue
             key = (str(date_value), str(model))
-            current = merged_rows.get(key)
-            if current is None:
-                merged_rows[key] = {
+            current = merged_rows.setdefault(
+                key,
+                {
                     "date": str(date_value),
                     "model": str(model),
-                    "requests": float(requests),
-                    "total_tokens": float(total_tokens),
-                    "total_cost_usd": float(total_cost),
-                }
-                continue
-            current["requests"] = float(current["requests"]) + float(requests)
-            current["total_tokens"] = float(current["total_tokens"]) + float(
-                total_tokens
+                    "requests": 0.0,
+                    "total_tokens": 0.0,
+                    "total_cost_usd": 0.0,
+                },
             )
-            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(
-                total_cost
+            _accumulate_model_metrics(
+                current,
+                float(requests),
+                float(total_tokens),
+                float(total_cost),
             )
         trend_rows = sorted(
             merged_rows.values(),
@@ -298,21 +308,20 @@ class RequestLogOverview:
         model_rows: dict[str, dict[str, float | str]] = {}
         for item in merged_rows.values():
             model_key = str(item["model"])
-            current = model_rows.get(model_key)
-            if current is None:
-                model_rows[model_key] = {
+            current = model_rows.setdefault(
+                model_key,
+                {
                     "model": model_key,
-                    "requests": float(item["requests"]),
-                    "total_tokens": float(item["total_tokens"]),
-                    "total_cost_usd": float(item["total_cost_usd"]),
-                }
-                continue
-            current["requests"] = float(current["requests"]) + float(item["requests"])
-            current["total_tokens"] = float(current["total_tokens"]) + float(
-                item["total_tokens"]
+                    "requests": 0.0,
+                    "total_tokens": 0.0,
+                    "total_cost_usd": 0.0,
+                },
             )
-            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(
-                item["total_cost_usd"]
+            _accumulate_model_metrics(
+                current,
+                float(item["requests"]),
+                float(item["total_tokens"]),
+                float(item["total_cost_usd"]),
             )
 
         def metric_value(item: dict[str, float | str]) -> float:

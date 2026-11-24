@@ -43,11 +43,13 @@ const router = createBrowserRouter([
       {
         element: (
           <AuthGuard>
-            <Suspense fallback={<AppLoadingScreen />}>
-              <DashboardShell>
-                <Outlet />
-              </DashboardShell>
-            </Suspense>
+            {(profile) => (
+              <Suspense fallback={<AppLoadingScreen />}>
+                <DashboardShell profile={profile}>
+                  <Outlet />
+                </DashboardShell>
+              </Suspense>
+            )}
           </AuthGuard>
         ),
         children: [
@@ -117,7 +119,7 @@ const router = createBrowserRouter([
           {
             path: "settings",
             element: lazyScreen(
-              () => import("@/components/settings/SettingsScreen"),
+              () => import("@/components/screens/SettingsScreen"),
               (module) => module.SettingsScreen,
             ),
           },

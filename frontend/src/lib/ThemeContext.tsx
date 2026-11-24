@@ -18,12 +18,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const preference = window.matchMedia(SYSTEM_COLOR_SCHEME_QUERY);
     function syncTheme() {
+      let stored: string | null;
       try {
-        const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-        applyTheme(stored === "light" || stored === "dark" ? stored : null);
+        stored = window.localStorage.getItem(THEME_STORAGE_KEY);
       } catch {
-        return;
+        stored = document.documentElement.style.colorScheme;
       }
+      applyTheme(stored === "light" || stored === "dark" ? stored : null);
     }
     function handleThemeStorageChange(event: StorageEvent) {
       if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;

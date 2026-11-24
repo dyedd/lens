@@ -603,50 +603,41 @@ class RequestLogQueries:
         bounded_offset = max(offset, 0)
         async with self.session_factory() as session:
             if mode == "model":
+                item_name = ModelGroupEntity.name
+                log_key = RequestLogEntity.resolved_group_name
                 item_stmt = select(
                     ModelGroupEntity.id.label("id"),
-                    ModelGroupEntity.name.label("key"),
-                    ModelGroupEntity.name.label("name"),
+                    item_name.label("key"),
+                    item_name.label("name"),
                 ).where(ModelGroupEntity.route_group_id == "")
-                if trimmed_query:
-                    item_stmt = item_stmt.where(
-                        ModelGroupEntity.name.ilike(f"%{trimmed_query}%")
-                    )
-                item_stmt = item_stmt.order_by(
-                    func.lower(ModelGroupEntity.name), ModelGroupEntity.name
-                )
-                item_rows = await session.execute(
-                    item_stmt.offset(bounded_offset).limit(bounded_limit + 1)
-                )
                 request_logs_stmt = select(
-                    RequestLogEntity.resolved_group_name.label("key"),
+                    log_key.label("key"),
                     RequestLogEntity.lifecycle_status,
                     RequestLogEntity.created_at,
                 )
             else:
+                item_name = SiteEntity.name
+                log_key = SiteProtocolConfigEntity.site_id
                 item_stmt = select(
                     SiteEntity.id.label("id"),
                     SiteEntity.id.label("key"),
-                    SiteEntity.name.label("name"),
+                    item_name.label("name"),
                 ).where(SiteEntity.enabled == 1)
-                if trimmed_query:
-                    item_stmt = item_stmt.where(
-                        SiteEntity.name.ilike(f"%{trimmed_query}%")
-                    )
-                item_stmt = item_stmt.order_by(
-                    func.lower(SiteEntity.name), SiteEntity.name
-                )
-                item_rows = await session.execute(
-                    item_stmt.offset(bounded_offset).limit(bounded_limit + 1)
-                )
                 request_logs_stmt = select(
-                    SiteProtocolConfigEntity.site_id.label("key"),
+                    log_key.label("key"),
                     RequestLogEntity.lifecycle_status,
                     RequestLogEntity.created_at,
                 ).join(
                     SiteProtocolConfigEntity,
                     SiteProtocolConfigEntity.id == RequestLogEntity.protocol_config_id,
                 )
+            if trimmed_query:
+                item_stmt = item_stmt.where(item_name.ilike(f"%{trimmed_query}%"))
+            item_rows = await session.execute(
+                item_stmt.order_by(func.lower(item_name), item_name)
+                .offset(bounded_offset)
+                .limit(bounded_limit + 1)
+            )
             rows = item_rows.all()
             has_next_page = len(rows) > bounded_limit
             rows = rows[:bounded_limit]
@@ -667,15 +658,8 @@ class RequestLogQueries:
                     RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_HEALTH_STATUSES),
                     RequestLogEntity.created_at >= started_at.replace(tzinfo=None),
                     RequestLogEntity.created_at < ended_at.replace(tzinfo=None),
+                    log_key.in_(items_by_key),
                 )
-                if mode == "model":
-                    request_logs_stmt = request_logs_stmt.where(
-                        RequestLogEntity.resolved_group_name.in_(items_by_key)
-                    )
-                else:
-                    request_logs_stmt = request_logs_stmt.where(
-                        SiteProtocolConfigEntity.site_id.in_(items_by_key)
-                    )
                 request_rows = await session.execute(request_logs_stmt)
                 for row in request_rows.all():
                     key = str(row.key).strip()
@@ -850,23 +834,17 @@ class RequestLogQueries:
             gateway_has_multiple_keys = await self.hydrator.gateway_has_multiple_keys(
                 session
             )
+            gateway_key_labels = {
+                key_id: "n/a"
+                if key_id == "n/a"
+                else gateway_key_remarks.get(key_id) or key_id
+                for key_id in gateway_key_options_by_id
+            }
             gateway_keys = [
-                RequestLogFilterOption(
-                    id=key_id,
-                    label="n/a"
-                    if key_id == "n/a"
-                    else gateway_key_remarks.get(key_id, "") or key_id,
-                )
-                for key_id in sorted(
-                    gateway_key_options_by_id,
-                    key=lambda item: (
-                        (
-                            "n/a"
-                            if item == "n/a"
-                            else gateway_key_remarks.get(item, "") or item
-                        ).lower(),
-                        item,
-                    ),
+                RequestLogFilterOption(id=key_id, label=label)
+                for key_id, label in sorted(
+                    gateway_key_labels.items(),
+                    key=lambda item: (item[1].lower(), item[0]),
                 )
             ]
             model_name_values = set()

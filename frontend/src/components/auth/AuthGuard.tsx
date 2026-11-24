@@ -1,123 +1,112 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/Button";
 import { AppLoadingScreen } from "@/components/ui/LoadingState";
 import type { AdminProfile } from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
 import {
+  ADMIN_TOKEN_KEY,
+  AUTH_CHANGE_EVENT,
   getStoredToken,
-  SESSION_CACHE_KEY,
-  shouldRedirectAfterSessionCheckFailure,
-  signOut,
+  isAdminProfile,
 } from "@/lib/auth";
 import { titleForLocale, useI18n } from "@/lib/I18nContext";
 
-const SESSION_CACHE_TTL_MS = 60_000;
-const SESSION_CACHE_VERSION = 1;
-
-function withSessionStorageFallback<T>(action: () => T, fallback: T): T {
-  try {
-    return action();
-  } catch {
-    return fallback;
-  }
-}
-
-/** Verifies the admin session before rendering protected content. */
-export function AuthGuard({ children }: { children: React.ReactNode }) {
+export function AuthGuard({
+  children,
+}: {
+  children: (profile: AdminProfile) => React.ReactNode;
+}) {
   const navigate = useNavigate();
   const { locale } = useI18n();
-  const [status, setStatus] = useState<"checking" | "ready" | "failed">(
-    "checking",
-  );
+  const [attempt, setAttempt] = useState(0);
+  const [verification, setVerification] = useState<{
+    attempt: number;
+    profile: AdminProfile | null;
+  }>();
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    let token = getStoredToken();
+    let adminId: number | undefined;
 
-    function readCachedProfile() {
-      return withSessionStorageFallback<AdminProfile | null>(() => {
-        const raw = window.sessionStorage.getItem(SESSION_CACHE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw) as {
-          version: number;
-          profile: AdminProfile;
-          expiresAt: number;
-        };
-        if (
-          parsed.version !== SESSION_CACHE_VERSION ||
-          parsed.expiresAt < Date.now()
-        ) {
-          window.sessionStorage.removeItem(SESSION_CACHE_KEY);
-          return null;
-        }
-        return parsed.profile;
-      }, null);
-    }
-
-    function writeCachedProfile(profile: AdminProfile) {
-      withSessionStorageFallback(
-        () =>
-          window.sessionStorage.setItem(
-            SESSION_CACHE_KEY,
-            JSON.stringify({
-              version: SESSION_CACHE_VERSION,
-              profile,
-              expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
-            }),
-          ),
-        undefined,
-      );
+    function verifyNewToken() {
+      if (controller.signal.aborted || getStoredToken() === token) return;
+      controller.abort();
+      setAttempt((current) => current + 1);
     }
 
     function handleStorage(event: StorageEvent) {
       if (
         event.storageArea === window.localStorage &&
-        (event.key === "lens_token" || event.key === null) &&
-        !getStoredToken()
+        (event.key === ADMIN_TOKEN_KEY || event.key === null)
       ) {
-        signOut();
+        verifyNewToken();
       }
     }
 
+    function handleAuthChange(event: Event) {
+      const currentToken = getStoredToken();
+      if (
+        !controller.signal.aborted &&
+        currentToken &&
+        adminId !== undefined &&
+        event instanceof CustomEvent &&
+        event.detail === adminId
+      ) {
+        token = currentToken;
+        return;
+      }
+      verifyNewToken();
+    }
+
     async function verify() {
-      if (!getStoredToken()) {
+      if (controller.signal.aborted) return;
+      if (!token) {
         navigate("/login", { replace: true });
         return;
       }
 
-      if (readCachedProfile()) {
-        setStatus("ready");
-        return;
-      }
-
       try {
-        const profile = await apiRequest<AdminProfile>("/admin/session");
-        if (!cancelled) {
-          writeCachedProfile(profile);
-          setStatus("ready");
-        }
-      } catch {
-        if (cancelled) {
+        const profile = await apiRequest<unknown>("/admin/session", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (getStoredToken() !== token) {
+          verifyNewToken();
           return;
         }
-        if (shouldRedirectAfterSessionCheckFailure(getStoredToken())) {
+        const verifiedProfile = isAdminProfile(profile) ? profile : null;
+        adminId = verifiedProfile?.id;
+        setVerification({ attempt, profile: verifiedProfile });
+      } catch {
+        if (controller.signal.aborted) return;
+        const currentToken = getStoredToken();
+        if (!currentToken) {
           navigate("/login", { replace: true });
+        } else if (currentToken !== token) {
+          verifyNewToken();
         } else {
-          setStatus("failed");
+          setVerification({ attempt, profile: null });
         }
       }
     }
 
-    if (status === "checking") void verify();
     window.addEventListener("storage", handleStorage);
+    window.addEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
+    verifyNewToken();
+    void verify();
 
     return () => {
-      cancelled = true;
+      controller.abort();
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
     };
-  }, [navigate, status]);
+  }, [attempt, navigate]);
 
-  if (status === "failed") {
+  if (verification?.attempt !== attempt) return <AppLoadingScreen />;
+
+  if (!verification.profile) {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background p-4 text-center">
         <p role="alert" className="text-sm text-destructive">
@@ -127,12 +116,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             "Could not verify session",
           )}
         </p>
-        <Button type="button" onClick={() => setStatus("checking")}>
+        <Button
+          type="button"
+          onClick={() => setAttempt((current) => current + 1)}
+        >
           {titleForLocale(locale, "重试", "Retry")}
         </Button>
       </main>
     );
   }
 
-  return status === "ready" ? children : <AppLoadingScreen />;
+  return <Fragment key={attempt}>{children(verification.profile)}</Fragment>;
 }

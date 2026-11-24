@@ -160,8 +160,8 @@ export function filterOptionsWithSelected(
   return [{ id: selectedId, label: selectedId }, ...options];
 }
 
-/** Resolve the best available model group name for a request. */
-export function getResolvedGroupName(
+/** Resolve the model name displayed for a request. */
+export function getRequestModelDisplayName(
   item: Pick<
     RequestLogItem,
     "requested_group_name" | "resolved_group_name" | "upstream_model_name"
@@ -175,13 +175,13 @@ export function getResolvedGroupName(
   );
 }
 
-export function getSecondaryModelName(
+export function getDistinctUpstreamModelName(
   item: Pick<
     RequestLogItem,
     "requested_group_name" | "resolved_group_name" | "upstream_model_name"
   >,
 ) {
-  const primary = getResolvedGroupName(item).trim();
+  const primary = getRequestModelDisplayName(item).trim();
   const upstream = item.upstream_model_name?.trim();
   return upstream && upstream !== primary ? upstream : null;
 }

@@ -29,8 +29,8 @@ import {
   formatMaybeCount,
   formatMaybeMoney,
   formatMs,
-  getResolvedGroupName,
-  getSecondaryModelName,
+  getDistinctUpstreamModelName,
+  getRequestModelDisplayName,
 } from "./requestView";
 
 type Props = {
@@ -52,8 +52,8 @@ function isRunning(item: RequestLogItem) {
 }
 
 function ModelCell({ item, locale }: { item: RequestLogItem; locale: Locale }) {
-  const name = getResolvedGroupName(item);
-  const upstream = getSecondaryModelName(item);
+  const name = getRequestModelDisplayName(item);
+  const upstream = getDistinctUpstreamModelName(item);
   const display = item.reasoning_effort
     ? `${name} ${item.reasoning_effort}`
     : name;

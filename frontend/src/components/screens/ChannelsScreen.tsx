@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { getApiErrorMessage } from "@/lib/api/client";
 import type { Site } from "@/lib/api/sites";
 import { useI18n } from "@/lib/I18nContext";
 import { ChannelsDialogs } from "./channels/ChannelsDialogs";
@@ -76,12 +77,10 @@ export function ChannelsScreen() {
       locale === "zh-CN" ? "渠道加载失败" : "Failed to load channels",
       {
         id: "channels-load-error",
-        description:
-          queries.sitesError instanceof Error
-            ? queries.sitesError.message
-            : locale === "zh-CN"
-              ? "无法读取渠道"
-              : "Unable to read channels",
+        description: getApiErrorMessage(
+          queries.sitesError,
+          locale === "zh-CN" ? "无法读取渠道" : "Unable to read channels",
+        ),
       },
     );
   }, [locale, queries.sitesError, queries.sitesIsError]);

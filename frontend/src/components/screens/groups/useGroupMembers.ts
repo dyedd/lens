@@ -58,8 +58,7 @@ function groupFormItemsByChannel(items: FormItem[]) {
 }
 
 /**
- * Remove matching members; ones that rules or placement would add back become
- * exclusions so the removal sticks, the same way the backend saves them.
+ * Remove matching members and preserve exclusions for automatic matches.
  */
 function removeFormItems(
   form: FormState,

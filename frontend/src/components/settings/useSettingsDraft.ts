@@ -128,6 +128,7 @@ export function useSettingsDraft(locale: Locale) {
         body: JSON.stringify({ items: createSettingItems(draft) }),
       });
       savedDraftRef.current = JSON.stringify(draft);
+      submittedDraftRef.current = null;
       toast.success(titleForLocale(locale, "设置已保存", "Settings saved"));
       await refresh();
     } catch (requestError) {

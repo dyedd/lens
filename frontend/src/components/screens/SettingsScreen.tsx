@@ -1,9 +1,14 @@
 import { RotateCcw, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
-
-import { ApiKeysScreen } from "@/components/screens/ApiKeysScreen";
-import { BackupsScreen } from "@/components/screens/BackupsScreen";
-import { CronjobsScreen } from "@/components/screens/CronjobsScreen";
+import { CircuitBreakerSettingsSection } from "@/components/settings/CircuitBreakerSettingsSection";
+import { GatewaySettingsSection } from "@/components/settings/GatewaySettingsSection";
+import { GeneralSettingsSection } from "@/components/settings/ProfileSettingsSections";
+import {
+  createSettingsTabs,
+  SettingsNavigation,
+} from "@/components/settings/SettingsNavigation";
+import { useAccountSettings } from "@/components/settings/useAccountSettings";
+import { useSettingsDraft } from "@/components/settings/useSettingsDraft";
 import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
 import { Button } from "@/components/ui/Button";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
@@ -13,13 +18,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import { type Locale, titleForLocale, useI18n } from "@/lib/I18nContext";
-
-import { CircuitBreakerSettingsSection } from "./CircuitBreakerSettingsSection";
-import { GatewaySettingsSection } from "./GatewaySettingsSection";
-import { GeneralSettingsSection } from "./ProfileSettingsSections";
-import { createSettingsTabs, SettingsNavigation } from "./SettingsNavigation";
-import { useAccountSettings } from "./useAccountSettings";
-import { useSettingsDraft } from "./useSettingsDraft";
+import { ApiKeysScreen } from "./ApiKeysScreen";
+import { BackupsScreen } from "./BackupsScreen";
+import { CronjobsScreen } from "./CronjobsScreen";
 
 type SettingsDraftController = ReturnType<typeof useSettingsDraft>;
 

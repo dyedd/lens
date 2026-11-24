@@ -40,28 +40,27 @@ def test_main_requires_a_seed_admin_credential(
     )
 
 
+@pytest.mark.parametrize("use_custom_path", [False, True])
 def test_seed_admin_command_saves_a_working_generated_credential(
     app_state: AppState,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    use_custom_path: bool,
 ) -> None:
     run_async(_delete_existing_admins(app_state))
-    password_file = tmp_path / "private" / "initial-admin-password"
+    arguments = ["seed-admin", "--username", "first-admin", "--generate-password"]
+    if use_custom_path:
+        password_file = tmp_path / "private" / "initial-admin-password"
+        arguments.extend(["--password-file", str(password_file)])
+    else:
+        password_file = tmp_path / "admin-password"
 
-    cli.main(
-        [
-            "seed-admin",
-            "--username",
-            "first-admin",
-            "--generate-password",
-            "--password-file",
-            str(password_file),
-        ]
-    )
+    cli.main(arguments)
 
     saved_password = password_file.read_text(encoding="utf-8").strip()
     output = capsys.readouterr().out
     assert "seeded admin: first-admin" in output
+    assert str(password_file) in output
     assert saved_password and saved_password not in output
     admin = run_async(app_state.admin_repo.authenticate("first-admin", saved_password))
     assert admin is not None

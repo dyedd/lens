@@ -25,9 +25,6 @@ class FailurePolicy:
     action: RetryAction
 
 
-# A throttled or rejected key proves nothing about its siblings, so both advance
-# within the channel. Every other failure belongs to the channel's model
-# endpoint, so the loop skips that channel's remaining keys.
 _ACTIONS: dict[ErrorCategory, RetryAction] = {
     ErrorCategory.AUTH: RetryAction.RETRY_KEY,
     ErrorCategory.RATE_LIMIT: RetryAction.RETRY_KEY,

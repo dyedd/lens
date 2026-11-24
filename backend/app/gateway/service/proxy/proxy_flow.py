@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from math import ceil
@@ -46,6 +47,8 @@ from .proxy_attempt import (
     execute_target_attempt,
 )
 from .routing_plan import resolve_routing_plan
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -283,9 +286,7 @@ async def _run_route_attempts(
                     was_probe=is_probe,
                 )
             finally:
-                if is_probe and not (
-                    response is not None and bool(request.body.get("stream"))
-                ):
+                if is_probe and not isinstance(response, FinalizingStreamingResponse):
                     app_state.router.release_probe(target)
             if response is not None:
                 return response
@@ -624,6 +625,8 @@ async def proxy_protocol(
         if wait_seconds is not None:
             with log_ctx.cancellation.watch():
                 await asyncio.sleep(wait_seconds)
+            failures.cooled_waits.clear()
+            failures.retry_after_seconds = None
             retry_resolution = await _resolve_proxy_route(route_context)
             if isinstance(retry_resolution, JSONResponse):
                 return retry_resolution
@@ -650,13 +653,16 @@ async def proxy_protocol(
             message=str(exc),
         )
     except Exception as exc:
-        await _log_unexpected_proxy_error(
-            log_ctx=log_ctx,
-            plan=plan,
-            requested_model=requested_model,
-            is_stream_body=is_stream_body,
-            exc=exc,
-        )
+        try:
+            await _log_unexpected_proxy_error(
+                log_ctx=log_ctx,
+                plan=plan,
+                requested_model=requested_model,
+                is_stream_body=is_stream_body,
+                exc=exc,
+            )
+        except Exception:
+            logger.exception("Failed to persist the proxy failure")
         raise
     finally:
         if not is_streaming:

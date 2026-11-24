@@ -30,8 +30,8 @@ import {
   formatInternalCredentialLabel,
   formatMoney,
   formatMs,
-  getResolvedGroupName,
-  getSecondaryModelName,
+  getDistinctUpstreamModelName,
+  getRequestModelDisplayName,
 } from "./requestView";
 
 function generateCurl(
@@ -307,8 +307,8 @@ export function RequestLogDetailSheet({
   isCancelling: boolean;
 }) {
   const record = detail ?? item;
-  const modelName = record ? getResolvedGroupName(record) : "";
-  const upstream = record ? getSecondaryModelName(record) : null;
+  const modelName = record ? getRequestModelDisplayName(record) : "";
+  const upstream = record ? getDistinctUpstreamModelName(record) : null;
   const time = record
     ? formatLogDateTime(record.created_at, locale, timeZone)
     : "";

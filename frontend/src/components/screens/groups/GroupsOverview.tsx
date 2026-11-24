@@ -50,6 +50,7 @@ import type {
   UnplacedModel,
 } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
+import { titleForLocale } from "@/lib/I18nContext";
 import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
 import { GroupsTable } from "./GroupsTable";
 import type { GroupRow, GroupSort, SimilarGroupView } from "./groupTypes";
@@ -64,19 +65,19 @@ function groupSortOptions(
   return [
     {
       value: "members-desc",
-      label: locale === "zh-CN" ? "成员数量" : "Member count",
+      label: titleForLocale(locale, "成员数量", "Member count"),
     },
     {
       value: "enabled-desc",
-      label: locale === "zh-CN" ? "可用状态" : "Availability",
+      label: titleForLocale(locale, "可用状态", "Availability"),
     },
     {
       value: "name-asc",
-      label: locale === "zh-CN" ? "模型组名称升序" : "Group name A-Z",
+      label: titleForLocale(locale, "模型组名称升序", "Group name A-Z"),
     },
     {
       value: "name-desc",
-      label: locale === "zh-CN" ? "模型组名称降序" : "Group name Z-A",
+      label: titleForLocale(locale, "模型组名称降序", "Group name Z-A"),
     },
   ];
 }

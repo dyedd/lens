@@ -6,7 +6,7 @@ import zlib
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from time import sleep
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -15,7 +15,10 @@ from conftest import gateway_headers, json_response, valid_site_payload
 from fastapi.testclient import TestClient
 
 import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+from app.gateway.router import cooldown, gateway, routing
+from app.gateway.router import health as health_router
 from app.gateway.router.cooldown import parse_cooldown_seconds
+from app.gateway.service.proxy import proxy_flow
 from app.gateway.service.streaming.restore import distill_stream_response_content
 from app.gateway.service.streaming.types import parse_sse_payloads
 from app.gateway.upstream_request import UpstreamRequest
@@ -526,12 +529,49 @@ def test_nonfinite_retry_after_preserves_gateway_error(
     assert "retry-after" not in response.headers
 
 
+def test_proxy_log_failure_preserves_unexpected_proxy_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    create_site_group_and_key: Callable[
+        [], tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+    ],
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    _, _, key = create_site_group_and_key()
+
+    async def fail_route(_context, fallback_group_id=None):
+        raise RuntimeError("upstream preparation failed")
+
+    async def fail_log(self, **_kwargs):
+        raise OperationalError(
+            "update request log", {}, RuntimeError("database is locked")
+        )
+
+    monkeypatch.setattr(proxy_flow, "_resolve_proxy_route", fail_route)
+    monkeypatch.setattr(
+        "app.gateway.service.request_logger.RequestLogger.record_failure", fail_log
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["message"] == "Internal server error"
+
+
 def test_upstream_retry_after_and_single_recovery_probe(
     client, admin_headers, monkeypatch, create_site_group_and_key
 ) -> None:
     import app.gateway.service.proxy.proxy_upstream as proxy_upstream
 
     _, _, key = create_site_group_and_key()
+    clock = 1_000.0
+    for module in (cooldown, gateway, health_router, routing):
+        monkeypatch.setattr(module, "monotonic", lambda: clock)
     probe_started = Event()
     release_probe = Event()
     calls = 0
@@ -568,7 +608,7 @@ def test_upstream_retry_after_and_single_recovery_probe(
     assert int(waiting.headers["Retry-After"]) > 0
     assert calls == 1
 
-    sleep(1.05)
+    clock += 1.05
     with ThreadPoolExecutor(max_workers=1) as executor:
         probe = executor.submit(
             client.post, "/v1/chat/completions", headers=headers, json=body
@@ -589,6 +629,55 @@ def test_upstream_retry_after_and_single_recovery_probe(
     recovered = client.post("/v1/chat/completions", headers=headers, json=body)
     assert recovered.status_code == 200, recovered.text
     assert calls == 3
+
+
+def test_cooldown_retry_uses_the_new_upstream_wait(
+    client, admin_headers, monkeypatch, create_site_group_and_key
+) -> None:
+    _, _, key = create_site_group_and_key()
+    clock = 1_000.0
+    for module in (cooldown, gateway, health_router, routing):
+        monkeypatch.setattr(module, "monotonic", lambda: clock)
+    calls = 0
+    waits: list[float] = []
+
+    async def advance_clock(seconds: float) -> None:
+        nonlocal clock
+        waits.append(seconds)
+        clock += seconds
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            503,
+            headers={"Retry-After": "1" if calls == 1 else "60"},
+            json={"error": {"message": "upstream maintenance"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    monkeypatch.setattr(
+        proxy_flow,
+        "asyncio",
+        SimpleNamespace(gather=asyncio.gather, sleep=advance_clock),
+    )
+    body = {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}
+    first = client.post("/v1/chat/completions", headers=gateway_headers(key), json=body)
+    assert first.status_code == 503, first.text
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": "failover_cooled_wait_seconds", "value": "1"}]},
+    )
+    assert settings.status_code == 200, settings.text
+
+    retry = client.post("/v1/chat/completions", headers=gateway_headers(key), json=body)
+
+    assert retry.status_code == 503, retry.text
+    assert calls == 2
+    assert waits == [1.0]
+    assert retry.headers["Retry-After"] == "60"
 
 
 def test_chat_stream_accepts_empty_tool_deltas(
