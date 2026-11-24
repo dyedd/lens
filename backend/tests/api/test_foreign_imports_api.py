@@ -159,3 +159,47 @@ def test_foreign_export_preview_imports_a_site(
     assert {model["credential_id"] for model in models} <= {
         site["credentials"][0]["id"]
     }
+
+
+def test_foreign_export_preview_reports_skipped_profiles_and_dashboard_accounts(
+    client,
+    admin_headers,
+) -> None:
+    response = client.post(
+        "/api/admin/sites/import/preview",
+        headers=admin_headers,
+        files={
+            "file": (
+                "export.json",
+                json.dumps(
+                    {
+                        "version": "2",
+                        "timestamp": 1,
+                        "apiCredentialProfiles": {
+                            "profiles": [
+                                {
+                                    "name": "usable",
+                                    "baseUrl": "https://provider.example/v1",
+                                    "apiKey": "import-secret",
+                                },
+                                {
+                                    "name": "missing-key",
+                                    "baseUrl": "https://provider.example/v1",
+                                },
+                            ]
+                        },
+                        "accounts": {"accounts": [{"siteId": "browser-session"}]},
+                    }
+                ),
+                "application/json",
+            )
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    preview = response.json()
+    assert [site["name"] for site in preview["sites"]] == ["usable"]
+    assert preview["warnings"] == [
+        "1 dashboard site accounts skipped (browser session credentials, no model API keys)",
+        "missing-key: missing API key",
+    ]

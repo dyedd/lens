@@ -43,6 +43,7 @@ from app.persistence.settings_keys import (
     SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG,
 )
 
+from ..core.errors import InvalidInputError
 from ..core.time_zone import validate_time_zone_name
 from ..models.cooldown_rules import serialize_cooldown_detection_rules_json
 from ..models.settings import SettingItem
@@ -160,7 +161,7 @@ def canonicalize_editable_settings(items: Iterable[SettingItem]) -> list[Setting
     seen: set[str] = set()
     for item in items:
         if item.key in seen:
-            raise ValueError(f"Duplicate setting key: {item.key}")
+            raise InvalidInputError(f"Duplicate setting key: {item.key}")
         seen.add(item.key)
         canonical_items.append(
             SettingItem(
@@ -183,7 +184,7 @@ def effective_editable_setting_items(items: Iterable[SettingItem]) -> list[Setti
 
 def canonicalize_editable_setting(key: str, raw_value: str) -> str:
     if key not in EDITABLE_SETTING_DEFAULTS:
-        raise ValueError(f"Unknown setting key: {key}")
+        raise InvalidInputError(f"Unknown setting key: {key}")
 
     value = raw_value.strip()
     if key in _BOOLEAN_SETTING_KEYS:
@@ -191,33 +192,47 @@ def canonicalize_editable_setting(key: str, raw_value: str) -> str:
     if key in _POSITIVE_INTEGER_SETTING_KEYS:
         parsed = _parse_integer(key, value)
         if parsed <= 0:
-            raise ValueError(f"Setting must be greater than zero: {key}")
+            raise InvalidInputError(f"Setting must be greater than zero: {key}")
         _validate_maximum(key, parsed, _INTEGER_SETTING_MAXIMUMS)
         return str(parsed)
     if key in _NONNEGATIVE_INTEGER_SETTING_KEYS:
         parsed = _parse_integer(key, value)
         if parsed < 0:
-            raise ValueError(f"Setting must not be negative: {key}")
+            raise InvalidInputError(f"Setting must not be negative: {key}")
         _validate_maximum(key, parsed, _INTEGER_SETTING_MAXIMUMS)
         return str(parsed)
     if key in _NONNEGATIVE_FLOAT_SETTING_KEYS:
         parsed = _parse_float(key, value)
         if parsed < 0:
-            raise ValueError(f"Setting must not be negative: {key}")
+            raise InvalidInputError(f"Setting must not be negative: {key}")
         if key == SETTING_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER and parsed < 1:
-            raise ValueError(f"Setting must be at least one: {key}")
+            raise InvalidInputError(f"Setting must be at least one: {key}")
         _validate_maximum(key, parsed, _FLOAT_SETTING_MAXIMUMS)
         return str(parsed)
     if key == SETTING_PROXY_URL:
         return validate_proxy_url(value)
     if key == SETTING_TIME_ZONE:
-        return validate_time_zone_name(value)
+        try:
+            return validate_time_zone_name(value)
+        except ValueError as exc:
+            raise InvalidInputError("Invalid IANA time zone") from exc
     if key == SETTING_UPSTREAM_HEADERS_CONFIG:
-        return serialize_upstream_headers_config_json(value)
+        try:
+            return serialize_upstream_headers_config_json(value)
+        except ValueError as exc:
+            raise InvalidInputError("Invalid upstream headers config") from exc
     if key == SETTING_UPSTREAM_PARAM_OVERRIDE_CONFIG:
-        return serialize_upstream_param_override_config_json(value)
+        try:
+            return serialize_upstream_param_override_config_json(value)
+        except ValueError as exc:
+            raise InvalidInputError(
+                "Invalid upstream parameter override config"
+            ) from exc
     if key == SETTING_COOLDOWN_DETECTION_RULES:
-        return serialize_cooldown_detection_rules_json(value)
+        try:
+            return serialize_cooldown_detection_rules_json(value)
+        except ValueError as exc:
+            raise InvalidInputError("Invalid cooldown detection rules") from exc
     if key == SETTING_SITE_NAME:
         return value or "Lens"
     if key == SETTING_CORS_ALLOW_ORIGINS:
@@ -231,23 +246,23 @@ def _parse_boolean(key: str, value: str) -> bool:
         return True
     if lower_value in {"0", "false", "no", "off"}:
         return False
-    raise ValueError(f"Invalid boolean setting: {key}")
+    raise InvalidInputError(f"Invalid boolean setting: {key}")
 
 
 def _parse_integer(key: str, value: str) -> int:
     try:
         return int(value)
     except ValueError as exc:
-        raise ValueError(f"Invalid integer setting: {key}") from exc
+        raise InvalidInputError(f"Invalid integer setting: {key}") from exc
 
 
 def _parse_float(key: str, value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as exc:
-        raise ValueError(f"Invalid numeric setting: {key}") from exc
+        raise InvalidInputError(f"Invalid numeric setting: {key}") from exc
     if not isfinite(parsed):
-        raise ValueError(f"Invalid numeric setting: {key}")
+        raise InvalidInputError(f"Invalid numeric setting: {key}")
     return parsed
 
 
@@ -258,7 +273,7 @@ def validate_proxy_url(value: str) -> str:
         parsed = urlsplit(value)
         port = parsed.port
     except ValueError as exc:
-        raise ValueError("Invalid HTTP proxy URL") from exc
+        raise InvalidInputError("Invalid HTTP proxy URL") from exc
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.hostname
@@ -267,7 +282,7 @@ def validate_proxy_url(value: str) -> str:
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("Invalid HTTP proxy URL")
+        raise InvalidInputError("Invalid HTTP proxy URL")
     return value
 
 
@@ -288,4 +303,4 @@ def _validate_maximum(
 ) -> None:
     maximum = maximums.get(key)
     if maximum is not None and value > maximum:
-        raise ValueError(f"Setting must not exceed {maximum:g}: {key}")
+        raise InvalidInputError(f"Setting must not exceed {maximum:g}: {key}")

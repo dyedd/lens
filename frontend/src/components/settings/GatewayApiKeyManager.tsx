@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/Alert";
 import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
+import { SettingsSection } from "@/components/ui/SettingsLayout";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { useRowSelection } from "@/hooks/useRowSelection";
@@ -15,7 +16,6 @@ import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
 import { GatewayApiKeyTable } from "./gateway-api-key-manager/GatewayApiKeyTable";
 import { buildGatewayModelGroupOptions } from "./gateway-api-key-manager/gatewayApiKeyModel";
-import { SettingsSection } from "./settingsLayout";
 
 const gatewayKeyId = (item: GatewayApiKey) => item.id;
 

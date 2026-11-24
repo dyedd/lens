@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from ...core.auth import PBKDF2_ITERATIONS, hash_password, verify_password
-from ...core.errors import ResourceNotFoundError
+from ...core.errors import InvalidInputError, ResourceNotFoundError
 from ..entities import AdminUserEntity
 
 _DUMMY_PASSWORD_HASH = (
@@ -104,7 +104,7 @@ class AdminRepository:
             if not await run_in_threadpool(
                 verify_password, current_password, original_password_hash
             ):
-                raise ValueError("Current password is incorrect")
+                raise InvalidInputError("Current password is incorrect")
             next_password_hash = await run_in_threadpool(hash_password, new_password)
             update_result = await session.execute(
                 update(AdminUserEntity)
@@ -123,7 +123,7 @@ class AdminRepository:
             )
             if update_result.rowcount != 1:
                 await session.rollback()
-                raise ValueError("Administrator account changed; retry")
+                raise InvalidInputError("Administrator account changed; retry")
             await session.commit()
 
     async def update_profile(
@@ -160,17 +160,17 @@ class AdminRepository:
                     .limit(1)
                 )
                 if duplicate.scalar_one_or_none() is not None:
-                    raise ValueError("Username already exists")
+                    raise InvalidInputError("Username already exists")
 
             password_changed = bool(new_password)
             next_password_hash = original_password_hash
             if password_changed:
                 if not current_password:
-                    raise ValueError("Current password is required")
+                    raise InvalidInputError("Current password is required")
                 if not await run_in_threadpool(
                     verify_password, current_password, original_password_hash
                 ):
-                    raise ValueError("Current password is incorrect")
+                    raise InvalidInputError("Current password is incorrect")
                 next_password_hash = await run_in_threadpool(
                     hash_password, new_password
                 )
@@ -197,12 +197,12 @@ class AdminRepository:
                 )
                 if update_result.rowcount != 1:
                     await session.rollback()
-                    raise ValueError("Administrator account changed; retry")
+                    raise InvalidInputError("Administrator account changed; retry")
                 await session.commit()
             except IntegrityError as exc:
                 await session.rollback()
                 if username_changed:
-                    raise ValueError("Username already exists") from exc
+                    raise InvalidInputError("Username already exists") from exc
                 raise
             await session.refresh(user)
             return user

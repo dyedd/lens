@@ -21,7 +21,12 @@ import {
 import { SidebarProvider } from "@/components/ui/SidebarContext";
 import { SidebarInset } from "@/components/ui/SidebarLayout";
 import { TooltipProvider } from "@/components/ui/Tooltip";
-import type { AppInfo, VersionCheckResult } from "@/lib/api/app";
+import {
+  ADMIN_PROFILE_QUERY_KEY,
+  type AdminProfile,
+  type AppInfo,
+  type VersionCheckResult,
+} from "@/lib/api/app";
 import { apiRequest } from "@/lib/api/client";
 import { signOut } from "@/lib/auth";
 import { useI18n } from "@/lib/I18nContext";
@@ -35,8 +40,8 @@ import {
   SettingsIcon,
 } from "./SidebarNavIcons";
 
-function createQueryClient() {
-  return new QueryClient({
+function createQueryClient(profile: AdminProfile) {
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: 60_000,
@@ -48,11 +53,20 @@ function createQueryClient() {
       },
     },
   });
+  client.setQueryDefaults(ADMIN_PROFILE_QUERY_KEY, { gcTime: Infinity });
+  client.setQueryData(ADMIN_PROFILE_QUERY_KEY, profile);
+  return client;
 }
 
 /** Renders the authenticated dashboard navigation and content shell. */
-export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(createQueryClient);
+export function DashboardShell({
+  profile,
+  children,
+}: {
+  profile: AdminProfile;
+  children: React.ReactNode;
+}) {
+  const [queryClient] = useState(() => createQueryClient(profile));
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -183,7 +197,11 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
               }}
             />
 
-            <div className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-4 pb-10 sm:px-6 lg:px-8">
+            <div
+              id="dashboard-content"
+              tabIndex={-1}
+              className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-4 pb-10 sm:px-6 lg:px-8"
+            >
               <div
                 key={pathname}
                 className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1256px] animate-[fadeIn_.16s_ease-out]"

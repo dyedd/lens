@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypedDict
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, func, select
@@ -35,6 +35,22 @@ from .query import (
 )
 from .statistics import RequestLogStatistics
 from .types import SettingsPort
+
+
+class ImportedPeriodTotals(TypedDict):
+    totals: dict[str, float]
+    covered_dates: dict[str, datetime]
+
+
+def _accumulate_model_metrics(
+    values: dict[str, float | str],
+    requests: float,
+    total_tokens: float,
+    total_cost_usd: float,
+) -> None:
+    values["requests"] = float(values["requests"]) + requests
+    values["total_tokens"] = float(values["total_tokens"]) + total_tokens
+    values["total_cost_usd"] = float(values["total_cost_usd"]) + total_cost_usd
 
 
 class RequestLogOverview:
@@ -269,22 +285,21 @@ class RequestLogOverview:
             if not model:
                 continue
             key = (str(date_value), str(model))
-            current = merged_rows.get(key)
-            if current is None:
-                merged_rows[key] = {
+            current = merged_rows.setdefault(
+                key,
+                {
                     "date": str(date_value),
                     "model": str(model),
-                    "requests": float(requests),
-                    "total_tokens": float(total_tokens),
-                    "total_cost_usd": float(total_cost),
-                }
-                continue
-            current["requests"] = float(current["requests"]) + float(requests)
-            current["total_tokens"] = float(current["total_tokens"]) + float(
-                total_tokens
+                    "requests": 0.0,
+                    "total_tokens": 0.0,
+                    "total_cost_usd": 0.0,
+                },
             )
-            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(
-                total_cost
+            _accumulate_model_metrics(
+                current,
+                float(requests),
+                float(total_tokens),
+                float(total_cost),
             )
         trend_rows = sorted(
             merged_rows.values(),
@@ -293,21 +308,20 @@ class RequestLogOverview:
         model_rows: dict[str, dict[str, float | str]] = {}
         for item in merged_rows.values():
             model_key = str(item["model"])
-            current = model_rows.get(model_key)
-            if current is None:
-                model_rows[model_key] = {
+            current = model_rows.setdefault(
+                model_key,
+                {
                     "model": model_key,
-                    "requests": float(item["requests"]),
-                    "total_tokens": float(item["total_tokens"]),
-                    "total_cost_usd": float(item["total_cost_usd"]),
-                }
-                continue
-            current["requests"] = float(current["requests"]) + float(item["requests"])
-            current["total_tokens"] = float(current["total_tokens"]) + float(
-                item["total_tokens"]
+                    "requests": 0.0,
+                    "total_tokens": 0.0,
+                    "total_cost_usd": 0.0,
+                },
             )
-            current["total_cost_usd"] = float(current["total_cost_usd"]) + float(
-                item["total_cost_usd"]
+            _accumulate_model_metrics(
+                current,
+                float(item["requests"]),
+                float(item["total_tokens"]),
+                float(item["total_cost_usd"]),
             )
 
         def metric_value(item: dict[str, float | str]) -> float:
@@ -517,7 +531,7 @@ class RequestLogOverview:
         days: int,
         time_zone: ZoneInfo,
         offset_days: int = 0,
-    ) -> dict[str, Any]:
+    ) -> ImportedPeriodTotals:
         if days == 0:
             imported_total = await session.get(ImportedStatsTotalEntity, 1)
             rows = [imported_total] if imported_total is not None else []
@@ -550,19 +564,21 @@ class RequestLogOverview:
             rows = list(daily_rows)
             covered_dates = {item.date: item.imported_at for item in daily_rows}
         return {
-            "request_count": float(
-                sum(item.request_success + item.request_failed for item in rows)
-            ),
-            "wait_time_ms": float(sum(item.wait_time for item in rows)),
-            "input_tokens": float(sum(item.input_token for item in rows)),
-            "cache_read_input_tokens": 0.0,
-            "cache_write_input_tokens": 0.0,
-            "output_tokens": float(sum(item.output_token for item in rows)),
-            "input_cost_usd": float(sum(item.input_cost for item in rows)),
-            "output_cost_usd": float(sum(item.output_cost for item in rows)),
-            "total_cost_usd": float(
-                sum(item.input_cost + item.output_cost for item in rows)
-            ),
+            "totals": {
+                "request_count": float(
+                    sum(item.request_success + item.request_failed for item in rows)
+                ),
+                "wait_time_ms": float(sum(item.wait_time for item in rows)),
+                "input_tokens": float(sum(item.input_token for item in rows)),
+                "cache_read_input_tokens": 0.0,
+                "cache_write_input_tokens": 0.0,
+                "output_tokens": float(sum(item.output_token for item in rows)),
+                "input_cost_usd": float(sum(item.input_cost for item in rows)),
+                "output_cost_usd": float(sum(item.output_cost for item in rows)),
+                "total_cost_usd": float(
+                    sum(item.input_cost + item.output_cost for item in rows)
+                ),
+            },
             "covered_dates": covered_dates,
         }
 
@@ -734,7 +750,7 @@ class RequestLogOverview:
         imported_totals = await self.imported_period_totals(
             session, days=days, offset_days=offset_days, time_zone=time_zone
         )
-        coverage: dict[str, datetime] = imported_totals["covered_dates"]
+        coverage = imported_totals["covered_dates"]
         archived_totals = await self.archived_period_totals(
             session,
             days=days,
@@ -749,9 +765,6 @@ class RequestLogOverview:
             coverage=coverage,
             time_zone=time_zone,
         )
-        parts = (imported_totals, archived_totals, request_log_totals)
-        return {
-            key: sum(part[key] for part in parts)
-            for key in imported_totals
-            if key != "covered_dates"
-        }
+        imported_metrics = imported_totals["totals"]
+        parts = (imported_metrics, archived_totals, request_log_totals)
+        return {key: sum(part[key] for part in parts) for key in imported_metrics}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from math import ceil
@@ -18,7 +19,7 @@ from ....models.channels import ChannelConfig
 from ....models.gateway_keys import GatewayApiKey
 from ....models.protocols import ProtocolKind
 from ....models.settings import RuntimeSettings
-from ...router import RouteSelection, RouteTarget, TargetKey, target_key
+from ...router import RouteTarget, TargetKey, target_key
 from ...router.failover import RetryAction, next_candidate
 from ..app_state import app_state
 from ..auth import gateway_key_allows_model
@@ -45,16 +46,15 @@ from .proxy_attempt import (
     LogFailure,
     execute_target_attempt,
 )
-from .routing_plan import (
-    resolve_routing_plan,
-)
+from .routing_plan import resolve_routing_plan
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
 class _ProxyRouteContext:
     request: AttemptRequest
     channels: list[ChannelConfig]
-    requested_model: str
     parsed_model: ParsedModelName
     requested_group_name: str
     log_ctx: RequestLogger
@@ -102,57 +102,62 @@ async def _create_pending_proxy_log_context(
 
 
 async def _resolve_proxy_route(
+    context: _ProxyRouteContext,
     *,
-    channels: list[ChannelConfig],
-    protocol: ProtocolKind,
-    requested_model: str,
-    log_ctx: RequestLogger,
-    is_stream_body: bool,
-    parsed_model: ParsedModelName | None = None,
-    group_id: str | None = None,
-    requested_group_name: str | None = None,
-    failures: FailureLedger | None = None,
-    required_context_tokens: int | None = None,
-) -> RouteResolution:
+    fallback_group_id: str | None = None,
+) -> RouteResolution | JSONResponse:
+    request = context.request
+    requested_model = context.parsed_model.base_model
+    is_stream_body = bool(request.body.get("stream"))
     plan: RoutingPlan | None = None
     try:
         plan = await resolve_routing_plan(
-            protocol,
+            request.protocol,
             requested_model,
-            channels,
-            parsed_model=parsed_model,
-            group_id=group_id,
-            requested_group_name=requested_group_name,
+            context.channels,
+            group_repo=app_state.group_repo,
+            parsed_model=context.parsed_model,
+            group_id=fallback_group_id,
+            requested_group_name=context.requested_group_name,
         )
         selection = app_state.router.select(
-            channels,
-            protocol,
-            plan.resolved_group_name,
+            context.channels,
+            request.protocol,
+            requested_model=plan.resolved_group_name,
             strategy=plan.strategy,
             route_targets=plan.route_targets,
             use_model_matching=plan.use_model_matching,
             cursor_key=plan.cursor_key,
-            required_context_tokens=required_context_tokens,
+            required_context_tokens=context.required_context_tokens,
         )
-        log_ctx.plan_route(
+        context.log_ctx.plan_route(
             requested_group_name=plan.requested_group_name,
             resolved_group_name=plan.resolved_group_name,
         )
-        await log_ctx.record_connecting(is_stream=is_stream_body)
-        return RouteResolution(plan=plan, selection=selection, error=None)
+        await context.log_ctx.record_connecting(is_stream=is_stream_body)
+        return RouteResolution(plan=plan, selection=selection)
     except RoutingError as exc:
-        return RouteResolution(
-            plan=plan,
-            selection=None,
-            error=await _routing_error_response(
-                plan=plan,
-                protocol=protocol,
-                requested_model=requested_model,
-                log_ctx=log_ctx,
-                is_stream_body=is_stream_body,
-                exc=exc,
-                failures=failures,
-            ),
+        error_msg = str(exc).strip()
+        if error_msg:
+            message = f"Gateway routing failed: {error_msg}"
+        else:
+            message = f"Gateway routing failed for model '{requested_model}'"
+        failure = LogFailure(
+            requested_group_name=plan.requested_group_name if plan else requested_model,
+            resolved_group_name=plan.resolved_group_name if plan else None,
+            status_code=503,
+            error_message=error_msg or message,
+            is_stream=is_stream_body,
+        )
+        if fallback_group_id is None:
+            await failure.write(context.log_ctx)
+        else:
+            context.failures.last_log_failure = failure
+        return protocol_error_response(
+            protocol=request.protocol,
+            status_code=503,
+            error_type="routing_error",
+            message=message,
         )
 
 
@@ -187,53 +192,16 @@ def _record_cooled_candidates(
         )
 
 
-async def _routing_error_response(
-    *,
-    plan: RoutingPlan | None,
-    protocol: ProtocolKind,
-    requested_model: str,
-    log_ctx: RequestLogger,
-    is_stream_body: bool,
-    exc: Exception,
-    failures: FailureLedger | None = None,
-) -> JSONResponse:
-    error_msg = str(exc).strip()
-    if error_msg:
-        message = f"Gateway routing failed: {error_msg}"
-    else:
-        message = f"Gateway routing failed for model '{requested_model}'"
-
-    failure = LogFailure(
-        requested_group_name=plan.requested_group_name if plan else requested_model,
-        resolved_group_name=plan.resolved_group_name if plan else None,
-        status_code=503,
-        error_message=error_msg or message,
-        is_stream=is_stream_body,
-    )
-    if failures is None:
-        await failure.write(log_ctx)
-    else:
-        failures.last_log_failure = failure
-    return protocol_error_response(
-        protocol=protocol,
-        status_code=503,
-        error_type="routing_error",
-        message=message,
-    )
-
-
 async def _iter_route_plans(
-    *,
-    context: _ProxyRouteContext,
-    initial_plan: RoutingPlan,
-    initial_selection: RouteSelection,
-) -> AsyncIterator[tuple[RoutingPlan, RouteSelection]]:
+    context: _ProxyRouteContext, initial_route: RouteResolution
+) -> AsyncIterator[RouteResolution]:
     """Resolve fallback groups only after the current group's attempts fail."""
     request = context.request
-    yield initial_plan, initial_selection
+    yield initial_route
     if not body_has_multimodal_content(request.body, request.protocol):
         return
 
+    initial_plan = initial_route.plan
     seen_group_ids = {
         initial_plan.resolved_group.id if initial_plan.resolved_group else ""
     }
@@ -242,33 +210,19 @@ async def _iter_route_plans(
             continue
         seen_group_ids.add(fallback_group_id)
         fallback_resolution = await _resolve_proxy_route(
-            channels=context.channels,
-            protocol=request.protocol,
-            requested_model=context.requested_model,
-            log_ctx=context.log_ctx,
-            is_stream_body=bool(request.body.get("stream")),
-            parsed_model=context.parsed_model,
-            group_id=fallback_group_id,
-            requested_group_name=context.requested_group_name,
-            failures=context.failures,
-            required_context_tokens=context.required_context_tokens,
+            context, fallback_group_id=fallback_group_id
         )
-        if fallback_resolution.error is not None:
+        if isinstance(fallback_resolution, JSONResponse):
             context.failures.record(
-                fallback_resolution.error.body.decode(errors="replace"),
-                fallback_resolution.error.status_code,
+                fallback_resolution.body.decode(errors="replace"),
+                fallback_resolution.status_code,
             )
-        elif (
-            fallback_resolution.plan is not None
-            and fallback_resolution.selection is not None
-        ):
-            yield fallback_resolution.plan, fallback_resolution.selection
+        else:
+            yield fallback_resolution
 
 
 async def _run_route_attempts(
-    *,
-    route_plans: AsyncIterator[tuple[RoutingPlan, RouteSelection]],
-    context: _ProxyRouteContext,
+    context: _ProxyRouteContext, initial_route: RouteResolution
 ) -> Response | None:
     """Try each available target, returning the first successful response."""
     request = context.request
@@ -276,8 +230,9 @@ async def _run_route_attempts(
     log_ctx = context.log_ctx
     failures = context.failures
     is_stream_body = bool(request.body.get("stream"))
-    async for current_plan, current_selection in route_plans:
-        ordered = current_selection.ordered()
+    async for route in _iter_route_plans(context, initial_route):
+        current_plan = route.plan
+        ordered = route.selection.ordered()
         tried: set[TargetKey] = set()
         failed: RouteTarget | None = None
         action = RetryAction.RETRY_CHANNEL
@@ -331,9 +286,7 @@ async def _run_route_attempts(
                     was_probe=is_probe,
                 )
             finally:
-                if is_probe and not (
-                    response is not None and bool(request.body.get("stream"))
-                ):
+                if is_probe and not isinstance(response, FinalizingStreamingResponse):
                     app_state.router.release_probe(target)
             if response is not None:
                 return response
@@ -636,24 +589,6 @@ async def proxy_protocol(
         )
         if access_error is not None:
             return access_error
-        required_context_tokens = estimate_request_context_tokens(body, protocol)
-        route_resolution = await _resolve_proxy_route(
-            channels=channels,
-            protocol=protocol,
-            requested_model=requested_model,
-            log_ctx=log_ctx,
-            is_stream_body=is_stream_body,
-            parsed_model=parsed_model,
-            requested_group_name=original_requested_model,
-            required_context_tokens=required_context_tokens,
-        )
-        if route_resolution.error is not None:
-            return route_resolution.error
-        plan = route_resolution.plan
-        selection = route_resolution.selection
-        if plan is None or selection is None:
-            raise RuntimeError("Routing plan was not resolved")
-
         failures = FailureLedger()
         request = AttemptRequest(
             protocol=protocol,
@@ -667,28 +602,18 @@ async def proxy_protocol(
         route_context = _ProxyRouteContext(
             request=request,
             channels=channels,
-            requested_model=requested_model,
             parsed_model=parsed_model,
             requested_group_name=original_requested_model,
             log_ctx=log_ctx,
             failures=failures,
-            required_context_tokens=required_context_tokens,
+            required_context_tokens=estimate_request_context_tokens(body, protocol),
             deadline=deadline,
         )
-
-        async def attempt(
-            current_plan: RoutingPlan, current_selection: RouteSelection
-        ) -> Response | None:
-            return await _run_route_attempts(
-                route_plans=_iter_route_plans(
-                    context=route_context,
-                    initial_plan=current_plan,
-                    initial_selection=current_selection,
-                ),
-                context=route_context,
-            )
-
-        response = await attempt(plan, selection)
+        route_resolution = await _resolve_proxy_route(route_context)
+        if isinstance(route_resolution, JSONResponse):
+            return route_resolution
+        plan = route_resolution.plan
+        response = await _run_route_attempts(route_context, route_resolution)
         # 全部候选都在冷却时，先在首字预算内等最早恢复再重选一次路。
         wait_seconds = (
             None
@@ -700,28 +625,13 @@ async def proxy_protocol(
         if wait_seconds is not None:
             with log_ctx.cancellation.watch():
                 await asyncio.sleep(wait_seconds)
-            retry_resolution = await _resolve_proxy_route(
-                channels=channels,
-                protocol=protocol,
-                requested_model=requested_model,
-                log_ctx=log_ctx,
-                is_stream_body=is_stream_body,
-                parsed_model=parsed_model,
-                requested_group_name=original_requested_model,
-                failures=failures,
-                required_context_tokens=required_context_tokens,
-            )
-            if retry_resolution.error is not None:
-                # 重选路失败只记进了失败账本，这里才是终态写入。
-                if failures.last_log_failure is not None:
-                    await failures.last_log_failure.write(log_ctx)
-                return retry_resolution.error
-            if (
-                retry_resolution.plan is not None
-                and retry_resolution.selection is not None
-            ):
-                plan = retry_resolution.plan
-                response = await attempt(plan, retry_resolution.selection)
+            failures.cooled_waits.clear()
+            failures.retry_after_seconds = None
+            retry_resolution = await _resolve_proxy_route(route_context)
+            if isinstance(retry_resolution, JSONResponse):
+                return retry_resolution
+            plan = retry_resolution.plan
+            response = await _run_route_attempts(route_context, retry_resolution)
         if response is not None:
             is_streaming = isinstance(response, FinalizingStreamingResponse)
             return response
@@ -743,13 +653,16 @@ async def proxy_protocol(
             message=str(exc),
         )
     except Exception as exc:
-        await _log_unexpected_proxy_error(
-            log_ctx=log_ctx,
-            plan=plan,
-            requested_model=requested_model,
-            is_stream_body=is_stream_body,
-            exc=exc,
-        )
+        try:
+            await _log_unexpected_proxy_error(
+                log_ctx=log_ctx,
+                plan=plan,
+                requested_model=requested_model,
+                is_stream_body=is_stream_body,
+                exc=exc,
+            )
+        except Exception:
+            logger.exception("Failed to persist the proxy failure")
         raise
     finally:
         if not is_streaming:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -54,6 +55,7 @@ from .types import (
 )
 
 _ATTEMPTS = TypeAdapter(list[dict[str, Any]])
+_HEALTH_SUMMARY_BUCKET_COUNT = 60
 
 REQUEST_LOG_STATS_COLUMNS = (
     RequestLogEntity.created_at,
@@ -585,7 +587,7 @@ class RequestLogQueries:
         offset: int = 0,
     ) -> HealthSummary:
         """Return a paged request-health summary grouped by model or site."""
-        bucket_count = 60
+        bucket_count = _HEALTH_SUMMARY_BUCKET_COUNT
         bucket_seconds = hours * 3600 // bucket_count
         ended_at = datetime.now(UTC)
         started_at = ended_at - timedelta(hours=hours)
@@ -601,50 +603,41 @@ class RequestLogQueries:
         bounded_offset = max(offset, 0)
         async with self.session_factory() as session:
             if mode == "model":
+                item_name = ModelGroupEntity.name
+                log_key = RequestLogEntity.resolved_group_name
                 item_stmt = select(
                     ModelGroupEntity.id.label("id"),
-                    ModelGroupEntity.name.label("key"),
-                    ModelGroupEntity.name.label("name"),
+                    item_name.label("key"),
+                    item_name.label("name"),
                 ).where(ModelGroupEntity.route_group_id == "")
-                if trimmed_query:
-                    item_stmt = item_stmt.where(
-                        ModelGroupEntity.name.ilike(f"%{trimmed_query}%")
-                    )
-                item_stmt = item_stmt.order_by(
-                    func.lower(ModelGroupEntity.name), ModelGroupEntity.name
-                )
-                item_rows = await session.execute(
-                    item_stmt.offset(bounded_offset).limit(bounded_limit + 1)
-                )
                 request_logs_stmt = select(
-                    RequestLogEntity.resolved_group_name.label("key"),
+                    log_key.label("key"),
                     RequestLogEntity.lifecycle_status,
                     RequestLogEntity.created_at,
                 )
             else:
+                item_name = SiteEntity.name
+                log_key = SiteProtocolConfigEntity.site_id
                 item_stmt = select(
                     SiteEntity.id.label("id"),
                     SiteEntity.id.label("key"),
-                    SiteEntity.name.label("name"),
+                    item_name.label("name"),
                 ).where(SiteEntity.enabled == 1)
-                if trimmed_query:
-                    item_stmt = item_stmt.where(
-                        SiteEntity.name.ilike(f"%{trimmed_query}%")
-                    )
-                item_stmt = item_stmt.order_by(
-                    func.lower(SiteEntity.name), SiteEntity.name
-                )
-                item_rows = await session.execute(
-                    item_stmt.offset(bounded_offset).limit(bounded_limit + 1)
-                )
                 request_logs_stmt = select(
-                    SiteProtocolConfigEntity.site_id.label("key"),
+                    log_key.label("key"),
                     RequestLogEntity.lifecycle_status,
                     RequestLogEntity.created_at,
                 ).join(
                     SiteProtocolConfigEntity,
                     SiteProtocolConfigEntity.id == RequestLogEntity.protocol_config_id,
                 )
+            if trimmed_query:
+                item_stmt = item_stmt.where(item_name.ilike(f"%{trimmed_query}%"))
+            item_rows = await session.execute(
+                item_stmt.order_by(func.lower(item_name), item_name)
+                .offset(bounded_offset)
+                .limit(bounded_limit + 1)
+            )
             rows = item_rows.all()
             has_next_page = len(rows) > bounded_limit
             rows = rows[:bounded_limit]
@@ -665,15 +658,8 @@ class RequestLogQueries:
                     RequestLogEntity.lifecycle_status.in_(REQUEST_LOG_HEALTH_STATUSES),
                     RequestLogEntity.created_at >= started_at.replace(tzinfo=None),
                     RequestLogEntity.created_at < ended_at.replace(tzinfo=None),
+                    log_key.in_(items_by_key),
                 )
-                if mode == "model":
-                    request_logs_stmt = request_logs_stmt.where(
-                        RequestLogEntity.resolved_group_name.in_(items_by_key)
-                    )
-                else:
-                    request_logs_stmt = request_logs_stmt.where(
-                        SiteProtocolConfigEntity.site_id.in_(items_by_key)
-                    )
                 request_rows = await session.execute(request_logs_stmt)
                 for row in request_rows.all():
                     key = str(row.key).strip()
@@ -750,38 +736,34 @@ class RequestLogQueries:
         time_zone = load_time_zone(
             (await self.settings_repo.get_runtime_settings())["time_zone"]
         )
+        apply_shared_filters = partial(
+            apply_request_log_filters,
+            days=days,
+            time_zone=time_zone,
+            upstream_model=upstream_model,
+            agent=agent,
+            status_filter=status_filter,
+            protocol=protocol,
+            keyword=keyword,
+        )
         async with self.session_factory() as session:
             items_stmt = select(RequestLogEntity).options(
                 defer(RequestLogEntity.response_content, raiseload=True)
             )
-            items_stmt = apply_request_log_filters(
+            items_stmt = apply_shared_filters(
                 items_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             items_stmt = apply_request_log_sort(items_stmt, sort=sort)
             items_stmt = items_stmt.offset(max(offset, 0)).limit(max(limit, 0))
             total_stmt = select(func.count()).select_from(RequestLogEntity)
-            total_stmt = apply_request_log_filters(
+            total_stmt = apply_shared_filters(
                 total_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             channel_label_expr = func.coalesce(
                 func.nullif(func.trim(RequestLogEntity.channel_name), ""),
@@ -793,34 +775,20 @@ class RequestLogQueries:
                 .select_from(RequestLogEntity)
                 .distinct()
             )
-            channel_stmt = apply_request_log_filters(
+            channel_stmt = apply_shared_filters(
                 channel_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
-                keyword=keyword,
             )
             gateway_key_stmt = (
                 select(RequestLogEntity.gateway_key_id)
                 .select_from(RequestLogEntity)
                 .distinct()
             )
-            gateway_key_stmt = apply_request_log_filters(
+            gateway_key_stmt = apply_shared_filters(
                 gateway_key_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 model_prefix=model_prefix,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             model_name_stmt = (
                 select(
@@ -831,17 +799,10 @@ class RequestLogQueries:
                 .select_from(RequestLogEntity)
                 .distinct()
             )
-            model_name_stmt = apply_request_log_filters(
+            model_name_stmt = apply_shared_filters(
                 model_name_stmt,
-                days=days,
-                time_zone=time_zone,
-                upstream_model=upstream_model,
-                agent=agent,
                 gateway_key_id=gateway_key_id,
-                status_filter=status_filter,
-                protocol=protocol,
                 channel=channel,
-                keyword=keyword,
             )
             items_result = await session.execute(items_stmt)
             total = await session.scalar(total_stmt)
@@ -873,23 +834,17 @@ class RequestLogQueries:
             gateway_has_multiple_keys = await self.hydrator.gateway_has_multiple_keys(
                 session
             )
+            gateway_key_labels = {
+                key_id: "n/a"
+                if key_id == "n/a"
+                else gateway_key_remarks.get(key_id) or key_id
+                for key_id in gateway_key_options_by_id
+            }
             gateway_keys = [
-                RequestLogFilterOption(
-                    id=key_id,
-                    label="n/a"
-                    if key_id == "n/a"
-                    else gateway_key_remarks.get(key_id, "") or key_id,
-                )
-                for key_id in sorted(
-                    gateway_key_options_by_id,
-                    key=lambda item: (
-                        (
-                            "n/a"
-                            if item == "n/a"
-                            else gateway_key_remarks.get(item, "") or item
-                        ).lower(),
-                        item,
-                    ),
+                RequestLogFilterOption(id=key_id, label=label)
+                for key_id, label in sorted(
+                    gateway_key_labels.items(),
+                    key=lambda item: (item[1].lower(), item[0]),
                 )
             ]
             model_name_values = set()

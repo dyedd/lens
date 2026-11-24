@@ -2,9 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FileJson, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { SettingsSection } from "@/components/settings/settingsLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { SettingsSection } from "@/components/ui/SettingsLayout";
 import { Spinner } from "@/components/ui/Spinner";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { type ConfigImportResult, importConfigBackup } from "@/lib/api/backups";
@@ -113,20 +113,35 @@ export function ConfigImportCard({ locale }: { locale: Locale }) {
       return;
     }
 
+    let rawValue: string;
     try {
-      const rawValue = await file.text();
-      if (requestId !== previewRequestId.current) return;
-      const nextPreview = parseBackupPreview(rawValue);
-      setPreview(nextPreview);
+      rawValue = await file.text();
     } catch {
       if (requestId === previewRequestId.current) {
         setPreviewError(
-          titleForLocale(locale, "备份文件格式无效", "Invalid backup file"),
+          titleForLocale(
+            locale,
+            "无法读取备份文件",
+            "Could not read backup file",
+          ),
         );
+        setIsPreviewPending(false);
       }
-    } finally {
-      if (requestId === previewRequestId.current) setIsPreviewPending(false);
+      return;
     }
+    if (requestId !== previewRequestId.current) return;
+    setIsPreviewPending(false);
+
+    let nextPreview: ConfigBackupPreview;
+    try {
+      nextPreview = parseBackupPreview(rawValue);
+    } catch {
+      setPreviewError(
+        titleForLocale(locale, "备份文件格式无效", "Invalid backup file"),
+      );
+      return;
+    }
+    setPreview(nextPreview);
   }
 
   async function handleImport() {

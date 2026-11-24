@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import ResourceNotFoundError
+from app.core.errors import InvalidInputError, ResourceNotFoundError
 from app.core.model_prices import PRICE_PAYLOAD_FIELDS, canonical_model_price_key
 from app.models.model_prices import (
     ModelPriceItem,
@@ -350,7 +350,7 @@ class ModelPriceRepository:
         """Create or update pricing for an existing model group."""
         model_key = canonical_model_price_key(model_key)
         if not model_key:
-            raise ValueError("Model key is required")
+            raise InvalidInputError("Model key is required")
 
         async with self._session_factory() as session:
             group_rows = (
@@ -381,7 +381,7 @@ class ModelPriceRepository:
                 if canonical_model_price_key(str(name)) == model_key
             ]
             if not matched_groups:
-                raise ValueError(
+                raise InvalidInputError(
                     "Model price can only be maintained for existing model groups"
                 )
 

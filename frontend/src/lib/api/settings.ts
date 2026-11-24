@@ -1,4 +1,28 @@
+import { ApiError, apiRequest } from "./client";
+
 export type SettingItem = { key: string; value: string };
+
+function isSettingItem(value: unknown): value is SettingItem {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "key" in value &&
+    typeof value.key === "string" &&
+    "value" in value &&
+    typeof value.value === "string"
+  );
+}
+
+export async function requestSettings(
+  init?: RequestInit,
+): Promise<SettingItem[]> {
+  const value = await apiRequest<unknown>("/admin/settings", init);
+  if (!Array.isArray(value) || !value.every(isSettingItem)) {
+    throw new ApiError("Invalid settings response from API", 200);
+  }
+  return value;
+}
 export type GatewayApiKey = {
   id: string;
   remark: string;

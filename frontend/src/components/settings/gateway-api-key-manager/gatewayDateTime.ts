@@ -40,6 +40,7 @@ export function getTimeZoneOffsetMs(date: Date, timeZone: string) {
     Number(value("hour")),
     Number(value("minute")),
     Number(value("second")),
+    date.getMilliseconds(),
   );
   return asUtc - date.getTime();
 }

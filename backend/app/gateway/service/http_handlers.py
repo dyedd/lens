@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 
 import jwt
@@ -12,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ...core.errors import LensError
 from ..cronjob_runner import CronjobAlreadyRunningError
-from .app_state import app_state, bind_app_state, logger, reset_app_state
+from .app_state import app_state, bind_app_state, reset_app_state
 from .error_responses import (
     build_database_error_response,
     build_error_response,
@@ -20,6 +21,8 @@ from .error_responses import (
     status_error_type,
     status_message,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -31,7 +34,6 @@ def register_exception_handlers(app: FastAPI) -> None:
         (jwt.InvalidTokenError, handle_invalid_token_error),
         (LensError, handle_lens_error),
         (CronjobAlreadyRunningError, handle_cronjob_already_running),
-        (ValueError, handle_value_error),
         (json.JSONDecodeError, handle_json_decode_error),
         (Exception, handle_unexpected_error),
     ]
@@ -108,16 +110,6 @@ async def handle_lens_error(request: Request, exc: LensError) -> JSONResponse:
     )
 
 
-async def handle_value_error(request: Request, exc: ValueError) -> JSONResponse:
-    """Return a bad-request response for invalid application values."""
-    return build_error_response(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        error_type="bad_request",
-        message=str(exc) or "Invalid request",
-        request=request,
-    )
-
-
 async def handle_json_decode_error(
     request: Request, __: json.JSONDecodeError
 ) -> JSONResponse:
@@ -171,9 +163,10 @@ async def dynamic_cors_middleware(
         origin = request.headers.get("origin", "")
         if allow_origins == ["*"]:
             response.headers["access-control-allow-origin"] = "*"
-        elif origin and origin in allow_origins:
-            response.headers["access-control-allow-origin"] = origin
-            response.headers["vary"] = "Origin"
+        else:
+            if origin and origin in allow_origins:
+                response.headers["access-control-allow-origin"] = origin
+            response.headers.add_vary_header("Origin")
         response.headers.setdefault("access-control-allow-credentials", "true")
         response.headers.setdefault("access-control-allow-methods", "*")
         response.headers.setdefault("access-control-allow-headers", "*")
@@ -193,10 +186,14 @@ async def _cors_preflight_response(request: Request) -> Response:
         "access-control-allow-headers": request.headers.get(
             "access-control-request-headers", "*"
         ),
+        "vary": (
+            "Access-Control-Request-Headers"
+            if allow_origins == ["*"]
+            else "Origin, Access-Control-Request-Headers"
+        ),
     }
     if allow_origins == ["*"]:
         headers["access-control-allow-origin"] = "*"
     elif origin and origin in allow_origins:
         headers["access-control-allow-origin"] = origin
-        headers["vary"] = "Origin"
     return Response(status_code=204, headers=headers)

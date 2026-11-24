@@ -230,6 +230,7 @@ function ChannelModelsBody({
             value={query}
             onChange={setQuery}
             onClear={() => setQuery("")}
+            clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
             placeholder={
               hasMultipleBaseUrls
                 ? locale === "zh-CN"

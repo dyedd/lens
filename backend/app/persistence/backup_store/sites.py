@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import InvalidInputError
 from app.core.model_endpoints import credential_ids_for_url
 from app.core.runtime_channel_ids import compose_runtime_channel_id
 from app.models.sites import SiteConfig, SiteCredentialInput
@@ -19,7 +20,7 @@ from app.persistence.entities import (
     SiteProtocolConfigEntity,
 )
 
-from ..site_loader import build_site_configs, fetch_site_rows
+from ..site_loader import build_site_configs, credential_pairs, fetch_site_rows
 from .serialize import parse_optional_datetime
 
 
@@ -47,9 +48,9 @@ async def replace_sites(
 
     for site in sites:
         if site.id in site_ids:
-            raise ValueError(f"Duplicate site id in backup: {site.id}")
+            raise InvalidInputError(f"Duplicate site id in backup: {site.id}")
         if site.name in site_names:
-            raise ValueError(f"Duplicate site name in backup: {site.name}")
+            raise InvalidInputError(f"Duplicate site name in backup: {site.name}")
         site_ids.add(site.id)
         site_names.add(site.name)
         session.add(
@@ -75,19 +76,20 @@ async def replace_sites(
         )
         site_base_url_ids: set[str] = set()
         site_base_url_kinds: set[str] = set()
-        site_credential_ids: set[str] = set()
         rate_configs: dict[str, SiteCredentialInput] = {}
 
         for base_url in site.base_urls:
             if base_url.id in base_url_ids:
-                raise ValueError(f"Duplicate base url id in backup: {base_url.id}")
+                raise InvalidInputError(
+                    f"Duplicate base url id in backup: {base_url.id}"
+                )
             base_url_ids.add(base_url.id)
             site_base_url_ids.add(base_url.id)
             if (
                 base_url.kind in {"default", "models"}
                 and base_url.kind in site_base_url_kinds
             ):
-                raise ValueError(
+                raise InvalidInputError(
                     f"Duplicate endpoint purpose in backup site {site.name}: {base_url.kind}"
                 )
             site_base_url_kinds.add(base_url.kind)
@@ -103,7 +105,9 @@ async def replace_sites(
 
         for credential in site.credentials:
             if credential.id in credential_ids:
-                raise ValueError(f"Duplicate credential id in backup: {credential.id}")
+                raise InvalidInputError(
+                    f"Duplicate credential id in backup: {credential.id}"
+                )
             rate_config = SiteCredentialInput.model_validate(
                 {
                     "id": credential.id,
@@ -120,12 +124,11 @@ async def replace_sites(
                 credential.base_url_ids is not None
                 and not set(credential.base_url_ids) <= site_base_url_ids
             ):
-                raise ValueError(
+                raise InvalidInputError(
                     "Credential base URL not found in backup site "
                     f"{site.name}: {credential.id}"
                 )
             credential_ids.add(credential.id)
-            site_credential_ids.add(credential.id)
             session.add(
                 SiteCredentialEntity(
                     id=credential.id,
@@ -142,29 +145,29 @@ async def replace_sites(
             )
 
         seen_url_ids: set[str] = set()
+        credential_bindings = credential_pairs(site.credentials)
+        bound_credential_ids_by_protocol: dict[str, set[str]] = {}
         for protocol_config in site.protocols:
             if protocol_config.id in protocol_config_ids:
-                raise ValueError(
+                raise InvalidInputError(
                     f"Duplicate protocol config id in backup: {protocol_config.id}"
                 )
             protocol_config_ids.add(protocol_config.id)
             if protocol_config.base_url_id not in site_base_url_ids:
-                raise ValueError(
+                raise InvalidInputError(
                     "Protocol config base URL not found in backup site "
                     f"{site.name}: {protocol_config.base_url_id}"
                 )
             if protocol_config.base_url_id in seen_url_ids:
-                raise ValueError(
+                raise InvalidInputError(
                     "Duplicate protocol config for backup base URL "
                     f"{protocol_config.base_url_id}"
                 )
             seen_url_ids.add(protocol_config.base_url_id)
             bound_credential_ids = set(
-                credential_ids_for_url(
-                    [(item.id, item.base_url_ids) for item in site.credentials],
-                    protocol_config.base_url_id,
-                )
+                credential_ids_for_url(credential_bindings, protocol_config.base_url_id)
             )
+            bound_credential_ids_by_protocol[protocol_config.id] = bound_credential_ids
             session.add(
                 SiteProtocolConfigEntity(
                     id=protocol_config.id,
@@ -179,7 +182,7 @@ async def replace_sites(
 
             for model in protocol_config.models:
                 if model.id in model_ids:
-                    raise ValueError(
+                    raise InvalidInputError(
                         f"Duplicate discovered model id in backup: {model.id}"
                     )
                 model_ids.add(model.id)
@@ -187,12 +190,12 @@ async def replace_sites(
                     not model.credential_id
                     or model.credential_id not in bound_credential_ids
                 ):
-                    raise ValueError(
+                    raise InvalidInputError(
                         "Discovered model credential not found in backup site "
                         f"{site.name}: {model.credential_id}"
                     )
                 if model.protocol is None:
-                    raise ValueError(
+                    raise InvalidInputError(
                         "Discovered model protocol not found in backup site "
                         f"{site.name}: {model.model_name}"
                     )
@@ -216,25 +219,15 @@ async def replace_sites(
                         upstream_context_window=model.upstream_context_window,
                     )
                 )
-        protocol_by_id = {protocol.id: protocol for protocol in site.protocols}
         for credential in site.credentials:
             rate_config = rate_configs[credential.id]
             if rate_config.rate_source == "none":
                 continue
-            protocol = protocol_by_id.get(rate_config.rate_protocol_config_id)
-            if protocol is None:
-                raise ValueError(
-                    "Credential rate protocol config not found in backup site "
-                    f"{site.name}: {rate_config.rate_protocol_config_id}"
-                )
-            bound_ids = set(
-                credential_ids_for_url(
-                    [(item.id, item.base_url_ids) for item in site.credentials],
-                    protocol.base_url_id,
-                )
+            bound_ids = bound_credential_ids_by_protocol.get(
+                rate_config.rate_protocol_config_id
             )
-            if credential.id not in bound_ids:
-                raise ValueError(
+            if bound_ids is None or credential.id not in bound_ids:
+                raise InvalidInputError(
                     "Credential rate protocol config not found in backup site "
                     f"{site.name}: {rate_config.rate_protocol_config_id}"
                 )

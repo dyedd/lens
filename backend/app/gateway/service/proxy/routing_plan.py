@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from time import perf_counter
-
 from ....core.errors import ResourceNotFoundError, RoutingError
 from ....core.model_name_parser import ParsedModelName
 from ....models.channels import ChannelConfig
 from ....models.model_groups import ModelGroupItemState
 from ....models.protocols import ProtocolKind
+from ....persistence.repositories.groups_repository import ModelGroupRepository
 from ...converters import can_reach_protocol
 from ...router import RouteTarget
-from ..app_state import app_state
-from ..runtime_types import GatewayTimeoutError, RoutingPlan
+from ..runtime_types import RoutingPlan
 
 
 async def resolve_routing_plan(
@@ -21,14 +16,15 @@ async def resolve_routing_plan(
     requested_model: str,
     channels: list[ChannelConfig],
     *,
+    group_repo: ModelGroupRepository,
     parsed_model: ParsedModelName | None = None,
     group_id: str | None = None,
     requested_group_name: str | None = None,
 ) -> RoutingPlan:
     matched_group = (
-        await app_state.group_repo.get_group(group_id, channels=channels)
+        await group_repo.get_group(group_id, channels=channels)
         if group_id is not None
-        else await app_state.group_repo.find_group_by_name(
+        else await group_repo.find_group_by_name(
             protocol.value, requested_model, channels=channels
         )
     )
@@ -38,7 +34,7 @@ async def resolve_routing_plan(
     resolved_group = matched_group
     if matched_group.route_group_id.strip():
         try:
-            resolved_group = await app_state.group_repo.get_group(
+            resolved_group = await group_repo.get_group(
                 matched_group.route_group_id, channels=channels
             )
         except ResourceNotFoundError as exc:
@@ -90,39 +86,4 @@ async def resolve_routing_plan(
         cursor_key=f"{protocol.value}:{resolved_group.id}",
         parsed_model=parsed_model,
         fallback_group_ids=list(resolved_group.fallback_group_ids),
-    )
-
-
-def elapsed_ms(started_at: float) -> int:
-    return max(int((perf_counter() - started_at) * 1000), 0)
-
-
-@asynccontextmanager
-async def gateway_timeout_scope(
-    wait: float | None, *, timeout_message: str
-) -> AsyncIterator[None]:
-    """Bound a critical section without rewriting unrelated TimeoutError values."""
-    if wait is None:
-        yield
-        return
-    if wait <= 0:
-        raise GatewayTimeoutError(timeout_message)
-    timeout_scope = asyncio.timeout(wait)
-    try:
-        async with timeout_scope:
-            yield
-    except TimeoutError as exc:
-        if not timeout_scope.expired():
-            raise
-        raise GatewayTimeoutError(timeout_message) from exc
-
-
-def _request_body_too_large_message(size: int, limit: int) -> str | None:
-    bounded_limit = max(int(limit), 0)
-    if bounded_limit <= 0 or size <= bounded_limit:
-        return None
-    return (
-        f"Request body is {size} bytes, exceeds Lens limit "
-        f"{bounded_limit} bytes. Split the context or increase "
-        "the maximum request body size in Settings."
     )

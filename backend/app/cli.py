@@ -326,14 +326,11 @@ def dev(_args: argparse.Namespace) -> None:
 
 def seed_admin(args: argparse.Namespace) -> None:
     """Create the initial administrator when none exists."""
-    password = secrets.token_urlsafe(24) if args.generate_password else args.password
-    assert isinstance(password, str)
-    seed_file = Path(args.password_file) if args.password_file is not None else None
-    created = _seed_initial_admin(args.username, password, password_file=seed_file)
+    created = _seed_initial_admin(
+        args.username, args.password, password_file=args.password_file
+    )
     if not created:
         print("admin user already exists; skipped seed")
-    elif args.generate_password and seed_file is None:
-        print(f"generated admin password: {password}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -431,7 +428,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     seed_admin_parser.add_argument(
         "--password-file",
-        help="Write a generated password to this file instead of standard output",
+        type=Path,
+        help="Write a generated password to this file (default: admin-password in the data directory)",
     )
     seed_admin_parser.set_defaults(func=seed_admin)
 

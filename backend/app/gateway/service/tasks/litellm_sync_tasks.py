@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -13,7 +13,9 @@ from ....core.model_prices import (
     build_litellm_price_index,
     canonical_model_price_key,
 )
-from ..app_state import AppState
+
+if TYPE_CHECKING:
+    from ..app_state import AppState
 
 
 class ModelPriceSyncError(Exception):

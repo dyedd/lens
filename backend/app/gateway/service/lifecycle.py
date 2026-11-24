@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.security import HTTPBearer
 
 from ...core.auth import validate_auth_secret_key
 from ...core.config import settings
@@ -51,6 +50,3 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             yield
     finally:
         reset_app_state(token)
-
-
-auth_scheme = HTTPBearer(auto_error=False)

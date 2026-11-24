@@ -1,6 +1,9 @@
 import type { HeaderRule, ParamOverrideRule } from "@/lib/upstreamRules";
-import type { ModelGroupReconcileReport } from "./groups";
+import { ApiError, apiRequest, isRecord } from "./client";
+import type { ModelGroupReconcileReport, ModelTestMode } from "./groups";
 import type { ProtocolKind } from "./protocols";
+
+export type { ModelTestMode } from "./groups";
 
 export type ChannelProxyMode = "inherit" | "direct" | "custom";
 export type SiteBaseUrlKind =
@@ -201,29 +204,13 @@ export type SiteBatchImportFieldError = {
   field: string;
   message: string;
 };
-type SiteBatchImportItemIdentity = { index: number; name: string };
-export type SiteBatchImportItemResult = SiteBatchImportItemIdentity &
-  (
-    | { status: "created"; reason: ""; site: Site; errors: [] }
-    | {
-        status: "skipped";
-        reason: "duplicate_name" | "duplicate_in_file";
-        site: null;
-        errors: [];
-      }
-    | {
-        status: "error";
-        reason: "";
-        site: null;
-        errors: SiteBatchImportFieldError[];
-      }
-    | {
-        status: "not_committed";
-        reason: "batch_validation_failed";
-        site: null;
-        errors: [];
-      }
-  );
+export type SiteBatchImportItemResult = {
+  index: number;
+  name: string;
+  status: "created" | "skipped" | "error" | "not_committed";
+  reason: string;
+  errors: SiteBatchImportFieldError[];
+};
 export type SiteBatchImportResult = {
   committed: boolean;
   created_count: number;
@@ -278,8 +265,6 @@ export type SiteModelProtocolDetectionResult = {
   model_name: string;
   protocols: ProtocolKind[];
 };
-export type ModelTestMode = "direct" | "codex" | "claude";
-
 export type SiteModelTestPayload = {
   protocol: ProtocolKind;
   base_url_id: string;
@@ -318,3 +303,59 @@ export type SiteModelTestResult = {
     };
   } | null;
 };
+
+export async function importSites<T>(payload: {
+  sites: T[];
+}): Promise<SiteBatchImportResult> {
+  const value = await apiRequest<unknown>("/admin/sites/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (!isSiteBatchImportResult(value, payload.sites.length)) {
+    throw new ApiError("Invalid channel import response from API", 200);
+  }
+  return value;
+}
+
+function isSiteBatchImportResult(
+  value: unknown,
+  expectedItems: number,
+): value is SiteBatchImportResult {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.items) ||
+    value.items.length !== expectedItems
+  ) {
+    return false;
+  }
+  const counts = { created: 0, skipped: 0, error: 0, not_committed: 0 };
+  for (const [index, item] of value.items.entries()) {
+    if (
+      !isRecord(item) ||
+      item.index !== index ||
+      typeof item.name !== "string" ||
+      typeof item.reason !== "string" ||
+      !Array.isArray(item.errors) ||
+      !item.errors.every(
+        (error) =>
+          isRecord(error) &&
+          typeof error.field === "string" &&
+          typeof error.message === "string",
+      ) ||
+      (item.status !== "created" &&
+        item.status !== "skipped" &&
+        item.status !== "error" &&
+        item.status !== "not_committed")
+    ) {
+      return false;
+    }
+    counts[item.status]++;
+  }
+  return (
+    value.committed === counts.created > 0 &&
+    value.created_count === counts.created &&
+    value.skipped_count === counts.skipped &&
+    value.error_count === counts.error &&
+    value.not_committed_count === counts.not_committed
+  );
+}

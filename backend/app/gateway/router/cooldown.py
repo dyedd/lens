@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from math import ceil
+from math import ceil, isfinite
 from time import monotonic
 from typing import NamedTuple
 
@@ -70,7 +70,7 @@ class CooldownPolicy:
 def parse_cooldown_seconds(value: object, *, absolute: bool = False) -> float | None:
     """Parse a relative duration or UTC timestamp into non-negative seconds."""
     seconds = _parse_duration_or_timestamp(value, absolute=absolute)
-    if seconds is None:
+    if seconds is None or not isfinite(seconds):
         return None
     return seconds if seconds >= 0 else 0.0
 
@@ -79,7 +79,10 @@ def _parse_duration_or_timestamp(value: object, *, absolute: bool) -> float | No
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
-        seconds = float(value)
+        try:
+            seconds = float(value)
+        except OverflowError:
+            return None
         return seconds - datetime.now(UTC).timestamp() if absolute else seconds
     if not isinstance(value, str):
         return None
@@ -353,10 +356,13 @@ class CooldownLedger:
             if key[0] == channel_id
         ]
 
-    def evict(self, keys: set[ModelKey] | set[CredentialKey]) -> None:
-        for key in keys:
-            self._model_states.pop(key, None)  # type: ignore[arg-type]
-            self._credential_states.pop(key, None)  # type: ignore[arg-type]
+    def evict(
+        self, *, model_keys: set[ModelKey], credential_keys: set[CredentialKey]
+    ) -> None:
+        for key in model_keys:
+            self._model_states.pop(key, None)
+        for key in credential_keys:
+            self._credential_states.pop(key, None)
 
     def cooldown_reason(
         self,

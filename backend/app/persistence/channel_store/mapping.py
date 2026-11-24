@@ -6,6 +6,7 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import InvalidInputError
 from app.models.channels import ChannelConfig, ChannelDiscoveredModel, ChannelKeyItem
 from app.models.protocols import ChannelStatus, ProtocolKind
 from app.models.sites import (
@@ -154,15 +155,15 @@ def build_credentials(
     for index, item in enumerate(items):
         name = item.name.strip()
         if not name:
-            raise ValueError("Credential name is required")
+            raise InvalidInputError("Credential name is required")
         name_key = name.lower()
         if name_key in seen_names:
-            raise ValueError(f"Duplicate credential name: {name}")
+            raise InvalidInputError(f"Duplicate credential name: {name}")
         seen_names.add(name_key)
         if item.base_url_ids is not None:
             missing = set(item.base_url_ids) - base_url_ids
             if missing:
-                raise ValueError(
+                raise InvalidInputError(
                     f"Credential base URL not found: {', '.join(sorted(missing))}"
                 )
         built_credentials.append(
@@ -178,7 +179,7 @@ def build_credentials(
             )
         )
     if not built_credentials:
-        raise ValueError("At least one credential is required")
+        raise InvalidInputError("At least one credential is required")
     return built_credentials
 
 
@@ -188,9 +189,9 @@ def build_base_urls(items: list[SiteBaseUrlInput]) -> list[SiteBaseUrl]:
     for index, item in enumerate(items):
         url_str = str(item.url).strip()
         if not url_str:
-            raise ValueError("Base URL is required")
+            raise InvalidInputError("Base URL is required")
         if item.kind in {"default", "models"} and item.kind in seen_kinds:
-            raise ValueError(f"Duplicate endpoint purpose: {item.kind}")
+            raise InvalidInputError(f"Duplicate endpoint purpose: {item.kind}")
         seen_kinds.add(item.kind)
         built_base_urls.append(
             SiteBaseUrl(
@@ -212,7 +213,7 @@ async def ensure_site_name_unique(
     )
     row = result.scalar_one_or_none()
     if row is not None and row.id != exclude_site_id:
-        raise ValueError(f"Site already exists: {trimmed_name}")
+        raise InvalidInputError(f"Site already exists: {trimmed_name}")
 
 
 async def site_protocol_config_ids(session: AsyncSession, site_id: str) -> list[str]:

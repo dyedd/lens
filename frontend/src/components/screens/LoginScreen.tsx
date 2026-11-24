@@ -5,14 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import type { PublicBranding } from "@/lib/api/app";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import { setStoredToken } from "@/lib/auth";
+import { getLoginAccessToken, setStoredToken } from "@/lib/auth";
 import { titleForLocale, useI18n } from "@/lib/I18nContext";
-
-type LoginResponse = {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-};
 
 /** Render the administrator login screen. */
 export function LoginScreen() {
@@ -47,14 +41,21 @@ export function LoginScreen() {
     setSubmitting(true);
 
     try {
-      const data = await apiRequest<LoginResponse>("/admin/session", {
+      const response = await apiRequest<unknown>("/admin/session", {
         method: "POST",
         body: JSON.stringify({ username: username.trim(), password }),
       });
-      setStoredToken(data.access_token);
+      const accessToken = getLoginAccessToken(response);
+      if (!accessToken) throw new Error("Invalid login response");
+      setStoredToken(accessToken);
       navigate("/");
     } catch (requestError) {
-      toast.error(getApiErrorMessage(requestError, "Login failed"));
+      toast.error(
+        getApiErrorMessage(
+          requestError,
+          titleForLocale(locale, "登录失败", "Login failed"),
+        ),
+      );
     } finally {
       setSubmitting(false);
     }

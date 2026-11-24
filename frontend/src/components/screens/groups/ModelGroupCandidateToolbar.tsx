@@ -40,6 +40,7 @@ export function ModelGroupCandidateToolbar({
         value={candidateSearch}
         onChange={changeCandidateSearch}
         onClear={() => changeCandidateSearch("")}
+        clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
         placeholder={locale === "zh-CN" ? "搜索模型名称" : "Search models"}
       />
       <Tooltip>

@@ -8,6 +8,8 @@ same accumulator shape so an IR stream becomes a well-formed chat SSE stream.
 from __future__ import annotations
 
 import json
+import time
+import uuid
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
@@ -18,6 +20,7 @@ from .chat_response import (
     serialize_chat_usage,
 )
 from .chat_stream import ChatToolCall, ChatToolCalls, chat_choice_index
+from .sse import parse_sse_json_stream
 from .unified_stream import (
     BlockKind,
     BlockStart,
@@ -34,8 +37,6 @@ from .unified_stream import (
 
 async def parse_chat_stream(raw_iterator: AsyncIterator[bytes]) -> AsyncIterator[Any]:
     """Parse a chat SSE stream into unified stream events."""
-    from .sse import parse_sse_json_stream
-
     started = False
     text_index: int | None = None
     reasoning_index: int | None = None
@@ -52,7 +53,7 @@ async def parse_chat_stream(raw_iterator: AsyncIterator[bytes]) -> AsyncIterator
         next_index += 1
         return index
 
-    async for payload in parse_sse_json_stream(raw_iterator):
+    async for payload in parse_sse_json_stream(raw_iterator, require_done=True):
         if not started:
             started = True
             yield StreamStart(
@@ -134,9 +135,6 @@ async def serialize_chat_stream(
     events: AsyncIterator[Any], original_model: str
 ) -> AsyncIterator[bytes]:
     """Serialize unified stream events into a chat SSE stream."""
-    import time
-    import uuid
-
     stream_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
     model = original_model

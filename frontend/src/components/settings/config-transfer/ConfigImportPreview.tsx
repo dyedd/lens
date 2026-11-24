@@ -55,7 +55,10 @@ export function ConfigImportPreview({
   return (
     <>
       {previewError ? (
-        <p className="rounded-md bg-muted/35 px-3 py-2 text-xs leading-5 text-muted-foreground">
+        <p
+          role="alert"
+          className="rounded-md bg-muted/35 px-3 py-2 text-xs leading-5 text-muted-foreground"
+        >
           {previewError}
         </p>
       ) : null}

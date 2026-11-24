@@ -62,9 +62,7 @@ export function useChannelQueries(locale: Locale) {
         .toLowerCase()
         .includes(keyword);
     });
-    return [...filtered].sort((left, right) => {
-      if (sortBy === "name-asc")
-        return left.name.localeCompare(right.name, locale);
+    return filtered.sort((left, right) => {
       if (sortBy === "name-desc")
         return right.name.localeCompare(left.name, locale);
       if (sortBy === "models-desc")

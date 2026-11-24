@@ -15,7 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import ResourceNotFoundError
+from app.core.errors import InvalidInputError, ResourceNotFoundError
 from app.models.gateway_keys import (
     GatewayApiKey,
     GatewayApiKeyCreate,
@@ -75,7 +75,7 @@ class GatewayApiKeyRepository:
                 session
             )
             if payload.api_key and await self._gateway_api_key_exists(session, secret):
-                raise ValueError("Gateway API key already exists")
+                raise InvalidInputError("Gateway API key already exists")
             entity = GatewayApiKeyEntity(
                 id=uuid.uuid4().hex,
                 remark=payload.remark.strip(),
@@ -173,7 +173,7 @@ class GatewayApiKeyRepository:
         try:
             parsed = datetime.fromisoformat(text)
         except ValueError as exc:
-            raise ValueError("Invalid gateway API key expiration time") from exc
+            raise InvalidInputError("Invalid gateway API key expiration time") from exc
         if parsed.tzinfo is not None:
             parsed = parsed.astimezone(UTC).replace(tzinfo=None)
         return parsed

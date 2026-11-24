@@ -35,10 +35,6 @@ export function parseHeaderRows(value: unknown): HeaderItem[] {
   return headerRulesToDraft(value.filter(isHeaderRule));
 }
 
-export function headersToRules(headers: HeaderItem[]) {
-  return headerDraftToRules(headers);
-}
-
 function hasHeaderValueWithoutKey(headers: HeaderItem[]) {
   return headers.some((header) => header.value.trim() && !header.key.trim());
 }
@@ -58,7 +54,7 @@ export function parseUpstreamHeadersConfig(
 }
 
 export function serializeUpstreamHeadersConfig(config: UpstreamHeadersDraft) {
-  return JSON.stringify({ rules: headersToRules(config.rules) });
+  return JSON.stringify({ rules: headerDraftToRules(config.rules) });
 }
 
 export function validateUpstreamHeadersConfig(

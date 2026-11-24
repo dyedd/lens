@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import Depends, HTTPException, Request, Response
 from starlette.datastructures import UploadFile
 
+from ...core.errors import InvalidInputError
 from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind
 from .app_state import app_state
@@ -52,7 +53,7 @@ async def _proxy_json_request(
 def _promote_anthropic_system_messages(body: dict[str, Any]) -> dict[str, Any]:
     messages = body.get("messages")
     if not isinstance(messages, list):
-        raise ValueError("Anthropic request messages must be an array")
+        raise InvalidInputError("Anthropic request messages must be an array")
 
     system_blocks: list[Any] | None = None
     messages_without_system: list[Any] = []
@@ -69,14 +70,16 @@ def _promote_anthropic_system_messages(body: dict[str, Any]) -> dict[str, Any]:
             elif isinstance(system, list):
                 system_blocks = list(system)
             else:
-                raise ValueError("Anthropic system must be a string or array")
+                raise InvalidInputError("Anthropic system must be a string or array")
         content = message.get("content")
         if isinstance(content, str):
             system_blocks.append({"type": "text", "text": content})
         elif isinstance(content, list):
             system_blocks.extend(content)
         else:
-            raise ValueError("Anthropic message content must be a string or array")
+            raise InvalidInputError(
+                "Anthropic message content must be a string or array"
+            )
 
     if system_blocks is None:
         return body

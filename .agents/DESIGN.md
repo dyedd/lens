@@ -41,8 +41,6 @@ Destructive UI is a tint, not a billboard: `bg-destructive/10 text-destructive`.
 
 ### Geist Mono Variable — Identifiers only: model names, JSON, IDs, HTTP codes. Never body copy.
 
-### Noto Serif Variable — Mapped as `--font-heading`. Do not use it for dashboard chrome. The admin voice is sans.
-
 ### Type Scale
 
 | Role | Token | Weight | Size | Line Height | Where |

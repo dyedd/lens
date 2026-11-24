@@ -16,7 +16,7 @@ from .capture import (
 from .detect import (
     _mark_stream_first_chunk,
     _record_stream_completion,
-    _stream_payload_has_output,
+    stream_payload_has_output,
 )
 from .types import parse_sse_payloads, to_lf_line_endings
 from .usage import EMPTY_USAGE, extract_usage_from_payload
@@ -222,6 +222,10 @@ def _drain_ndjson_event_buffer(
             record_stream_parse_error(capture, f"invalid NDJSON: {exc.msg}")
             processed_length += line_length
             continue
+        except (RecursionError, ValueError):
+            record_stream_parse_error(capture, "invalid NDJSON value")
+            processed_length += line_length
+            continue
         if isinstance(payload, dict) and _record_stream_event_payload(
             protocol, capture, payload, stream_started_at
         ):
@@ -244,11 +248,11 @@ def _record_stream_event_payload(
     payload: dict[str, Any],
     stream_started_at: float,
 ) -> bool:
-    if not capture.has_seen_first_chunk and _stream_payload_has_output(
+    if not capture.has_seen_first_chunk and stream_payload_has_output(
         protocol, payload
     ):
         _mark_stream_first_chunk(capture, stream_started_at)
-    error_message = _stream_payload_error_message(protocol, payload)
+    error_message = stream_payload_error_message(protocol, payload)
     if error_message is not None:
         message, category, cooldown_seconds = error_message
         record_stream_error(
@@ -284,7 +288,7 @@ def _record_stream_event_payload(
     return is_terminal
 
 
-def _stream_payload_error_message(
+def stream_payload_error_message(
     protocol: ProtocolKind, payload: dict[str, Any]
 ) -> tuple[str, ErrorCategory, float | None] | None:
     event_type = payload.get("type")

@@ -41,6 +41,7 @@ import { useClientPagination } from "@/hooks/useClientPagination";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { Site } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
+import { titleForLocale } from "@/lib/I18nContext";
 import { ChannelsTable } from "./ChannelsTable";
 import type {
   ChannelSort,
@@ -57,15 +58,15 @@ function channelSortOptions(
   return [
     {
       value: "name-asc",
-      label: locale === "zh-CN" ? "渠道名称升序" : "Name A-Z",
+      label: titleForLocale(locale, "渠道名称升序", "Name A-Z"),
     },
     {
       value: "name-desc",
-      label: locale === "zh-CN" ? "渠道名称降序" : "Name Z-A",
+      label: titleForLocale(locale, "渠道名称降序", "Name Z-A"),
     },
     {
       value: "models-desc",
-      label: locale === "zh-CN" ? "模型数量" : "Model count",
+      label: titleForLocale(locale, "模型数量", "Model count"),
     },
   ];
 }
@@ -133,6 +134,10 @@ export function ChannelsOverview({
   const selectedSites = selection.selectedRows;
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const sortOptions = channelSortOptions(locale);
+  const searchPlaceholder =
+    locale === "zh-CN"
+      ? "搜索渠道名称或地址..."
+      : "Search channel name or URL...";
 
   return (
     <div className="space-y-5 pb-10">
@@ -148,11 +153,8 @@ export function ChannelsOverview({
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
-              placeholder={
-                locale === "zh-CN"
-                  ? "搜索渠道名称或地址..."
-                  : "Search channel name or URL..."
-              }
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
               onChange={(event) => {
                 onSearchChange(event.target.value);
                 resetPage();

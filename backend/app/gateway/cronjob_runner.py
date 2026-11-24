@@ -36,7 +36,6 @@ class CronjobRunner:
         self._time_zone_provider = time_zone_provider
         self._logger = logger
         self._poll_seconds = max(poll_seconds, 5)
-        self._owner = uuid.uuid4().hex
         self._task: asyncio.Task[None] | None = None
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
 
@@ -147,9 +146,10 @@ class CronjobRunner:
 
         record = await self._get_or_ensure_record(task_id)
 
+        lease_owner = uuid.uuid4().hex
         has_acquired_lease = await self._store.acquire_cronjob(
             task_id,
-            owner=self._owner,
+            owner=lease_owner,
             lease_seconds=record.interval_hours * 60 * 60,
             require_enabled=not manual,
             require_due=not manual,
@@ -170,13 +170,26 @@ class CronjobRunner:
             error = str(exc) or exc.__class__.__name__
             raise
         finally:
-            finished_record = await self._store.finish_cronjob(
-                task_id,
-                owner=self._owner,
-                success=success,
-                error=error,
-                time_zone=await self._time_zone_provider(),
-            )
+            try:
+                finished_record = await self._store.finish_cronjob(
+                    task_id,
+                    owner=lease_owner,
+                    success=success,
+                    error=error,
+                    time_zone=await self._time_zone_provider(),
+                )
+            except Exception:
+                if success:
+                    raise
+                self._logger.exception("Failed to finish cron job: %s", task_id)
+            except asyncio.CancelledError:
+                if success:
+                    raise
+                self._logger.warning(
+                    "Cron job finalization cancelled after handler failure: %s",
+                    task_id,
+                    exc_info=True,
+                )
 
         if finished_record is None:
             record = await self._get_or_ensure_record(task_id)

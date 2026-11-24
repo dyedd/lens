@@ -14,7 +14,9 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import InvalidInputError
 from app.core.model_endpoints import credential_ids_for_url
+from app.core.model_protocols import ENDPOINT_KIND_PROTOCOLS
 from app.models.sites import (
     SiteBaseUrl,
     SiteCreate,
@@ -74,22 +76,25 @@ async def _upsert_protocol_configs(
     credentials: list[SiteCredential],
     base_urls: list[SiteBaseUrl],
 ) -> set[str]:
-    base_url_ids = {url.id for url in base_urls}
     base_url_kinds = {url.id: url.kind for url in base_urls}
     protocol_config_ids: set[str] = set()
     configs_by_url: dict[str, str] = {}
     seen_base_url_ids: set[str] = set()
     for protocol_config in protocol_configs:
         protocol_config_id = protocol_config.id or str(uuid.uuid4())
+        if protocol_config_id in protocol_config_ids:
+            raise InvalidInputError(
+                f"Duplicate protocol config ID: {protocol_config_id}"
+            )
         protocol_config_ids.add(protocol_config_id)
         configs_by_url[protocol_config.base_url_id] = protocol_config_id
-        if protocol_config.base_url_id not in base_url_ids:
-            raise ValueError(
+        if protocol_config.base_url_id not in base_url_kinds:
+            raise InvalidInputError(
                 "Base URL not found for protocol config "
                 f"{protocol_config_id}: {protocol_config.base_url_id}"
             )
         if protocol_config.base_url_id in seen_base_url_ids:
-            raise ValueError(
+            raise InvalidInputError(
                 "Duplicate protocol config for "
                 f"base_url_id={protocol_config.base_url_id}"
             )
@@ -101,9 +106,12 @@ async def _upsert_protocol_configs(
         )
         entity = await session.get(SiteProtocolConfigEntity, protocol_config_id)
         if entity is None:
-            entity = SiteProtocolConfigEntity(id=protocol_config_id)
+            entity = SiteProtocolConfigEntity(id=protocol_config_id, site_id=site_id)
             session.add(entity)
-        entity.site_id = site_id
+        elif entity.site_id != site_id:
+            raise InvalidInputError(
+                f"Protocol config belongs to another site: {protocol_config_id}"
+            )
         entity.base_url_id = protocol_config.base_url_id
         configured_protocols = list(
             dict.fromkeys(
@@ -113,20 +121,12 @@ async def _upsert_protocol_configs(
                 ]
             )
         )
-        endpoint_kind = (base_url_kinds or {}).get(protocol_config.base_url_id)
-        allowed_protocols = {
-            "openai_chat": {"openai_chat"},
-            "openai_responses": {"openai_responses"},
-            "openai_embedding": {"openai_embedding"},
-            "openai_image": {"openai_image"},
-            "anthropic": {"anthropic"},
-            "gemini": {"gemini"},
-            "rerank": {"rerank"},
-        }.get(endpoint_kind)
-        if allowed_protocols is not None and any(
-            protocol.value not in allowed_protocols for protocol in configured_protocols
+        endpoint_kind = base_url_kinds[protocol_config.base_url_id]
+        allowed_protocol = ENDPOINT_KIND_PROTOCOLS.get(endpoint_kind or "")
+        if allowed_protocol is not None and any(
+            protocol != allowed_protocol for protocol in configured_protocols
         ):
-            raise ValueError(
+            raise InvalidInputError(
                 f"Endpoint purpose {endpoint_kind} does not support the configured protocol"
             )
         entity.protocols_json = json.dumps(
@@ -138,29 +138,27 @@ async def _upsert_protocol_configs(
         for model in protocol_config.models:
             model_name = model.model_name.strip()
             if not model_name:
-                raise ValueError(
+                raise InvalidInputError(
                     f"Model name is required in protocol config {protocol_config_id}"
                 )
             if model.credential_id not in selected_credential_ids:
-                raise ValueError(
+                raise InvalidInputError(
                     "Model credential not found in protocol config "
                     f"{protocol_config_id}: {model.credential_id}"
                 )
             model_key = (model.credential_id, model_name, model.protocol.value)
             if model_key in seen_models:
-                raise ValueError(
+                raise InvalidInputError(
                     f"Duplicate model in protocol config {protocol_config_id}: {model_name}"
                 )
             seen_models.add(model_key)
     required_base_url_ids = {
-        base_url_id
-        for base_url_id in base_url_ids
-        if (base_url_kinds or {}).get(base_url_id) != "models"
+        base_url_id for base_url_id, kind in base_url_kinds.items() if kind != "models"
     }
     missing_urls = required_base_url_ids - seen_base_url_ids
     if missing_urls:
         missing_label = ", ".join(sorted(missing_urls))
-        raise ValueError(
+        raise InvalidInputError(
             f"Each base URL must have exactly one protocol config: {missing_label}"
         )
     for config in protocol_configs:
@@ -168,11 +166,6 @@ async def _upsert_protocol_configs(
             session,
             configs_by_url[config.base_url_id],
             config,
-            set(
-                credential_ids_for_url(
-                    credential_pairs(credentials), config.base_url_id
-                )
-            ),
         )
     return protocol_config_ids
 
@@ -181,7 +174,6 @@ async def _upsert_protocol_config_models(
     session: AsyncSession,
     protocol_config_id: str,
     protocol_config: SiteProtocolConfigInput,
-    credential_ids: set[str],
 ) -> None:
     await session.execute(
         delete(SiteDiscoveredModelEntity).where(
@@ -197,29 +189,10 @@ async def _upsert_protocol_config_models(
             )
         ).scalars()
     )
-    seen_models: set[tuple[str, str, str]] = set()
     seen_row_ids: set[str] = set()
 
     for model_index, model in enumerate(protocol_config.models):
         model_name = model.model_name.strip()
-        if not model_name:
-            raise ValueError(
-                f"Model name is required in protocol config {protocol_config_id}"
-            )
-        if model.credential_id not in credential_ids:
-            raise ValueError(
-                "Model credential not found in protocol config "
-                f"{protocol_config_id}: {model.credential_id}"
-            )
-
-        protocol_value = model.protocol.value
-        model_key = (model.credential_id, model_name, protocol_value)
-        if model_key in seen_models:
-            raise ValueError(
-                f"Duplicate model in protocol config {protocol_config_id}: {model_name}"
-            )
-        seen_models.add(model_key)
-
         model_id = model.id
         if not model_id or model_id in seen_row_ids or model_id in used_model_ids:
             model_id = str(uuid.uuid4())
@@ -233,7 +206,7 @@ async def _upsert_protocol_config_models(
                 model_name=model_name,
                 enabled=int(model.enabled),
                 sort_order=model_index,
-                protocol=protocol_value,
+                protocol=model.protocol.value,
                 context_window=model.context_window,
                 upstream_context_window=model.upstream_context_window,
             )
@@ -249,9 +222,9 @@ async def upsert_site_payload(
 ) -> None:
     trimmed_name = payload.name.strip()
     if not trimmed_name:
-        raise ValueError("Site name is required")
+        raise InvalidInputError("Site name is required")
     if not payload.base_urls:
-        raise ValueError("At least one base URL is required")
+        raise InvalidInputError("At least one base URL is required")
 
     built_base_urls = build_base_urls(payload.base_urls)
     base_url_ids = {item.id for item in built_base_urls}
@@ -405,7 +378,7 @@ async def _upsert_credential_rates(
 
         protocol = protocol_by_id.get(credential.rate_protocol_config_id)
         if protocol is None:
-            raise ValueError(
+            raise InvalidInputError(
                 "Rate protocol config not found for credential "
                 f"{credential.id}: {credential.rate_protocol_config_id}"
             )
@@ -413,7 +386,7 @@ async def _upsert_credential_rates(
             credential_ids_for_url(credential_pairs(credentials), protocol.base_url_id)
         )
         if credential.id not in bound_ids:
-            raise ValueError(
+            raise InvalidInputError(
                 "Rate credential is not bound to protocol config "
                 f"{credential.rate_protocol_config_id}: {credential.id}"
             )

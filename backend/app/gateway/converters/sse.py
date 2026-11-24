@@ -2,13 +2,6 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-FINISH_REASON_CHAT_TO_RESPONSES: dict[str | None, str] = {
-    "stop": "completed",
-    "length": "incomplete",
-    "tool_calls": "completed",
-    "content_filter": "incomplete",
-}
-
 
 async def parse_sse_json_stream(
     raw_iterator: AsyncIterator[bytes],

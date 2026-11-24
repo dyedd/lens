@@ -1,4 +1,5 @@
 export const ADMIN_PASSWORD_MIN_LENGTH = 12;
+export const ADMIN_PROFILE_QUERY_KEY = ["admin-profile"] as const;
 export type PublicBranding = { site_name: string; logo_url: string };
 export type AppInfo = {
   system_version: string;

@@ -5,10 +5,9 @@ import { toast } from "sonner";
 import { getApiErrorMessage } from "@/lib/api/client";
 import {
   type ForeignSiteImportPreview,
-  importForeignSites,
   previewForeignSiteImport,
 } from "@/lib/api/foreignImports";
-import type { SiteBatchImportResult } from "@/lib/api/sites";
+import { importSites, type SiteBatchImportResult } from "@/lib/api/sites";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 /** Orchestrates the foreign backup file detection, selection, and import flow. */
@@ -97,7 +96,7 @@ export function useForeignImport(locale: Locale) {
       const payloadSites = preview.payload.sites.filter((_, index) =>
         selectedIndexes.has(index),
       );
-      const result = await importForeignSites({ sites: payloadSites });
+      const result = await importSites({ sites: payloadSites });
       setImportResult(result);
       if (result.error_count > 0) {
         toast.error(

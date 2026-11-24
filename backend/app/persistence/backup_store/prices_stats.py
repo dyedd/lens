@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import InvalidInputError
 from app.core.model_prices import canonical_model_price_key
 from app.models.backups import (
     ConfigBackupImportedStatsDaily,
@@ -186,7 +187,7 @@ async def replace_model_prices(
         if not model_key:
             continue
         if model_key in model_keys:
-            raise ValueError(f"Duplicate model price key in backup: {model_key}")
+            raise InvalidInputError(f"Duplicate model price key in backup: {model_key}")
         model_keys.add(model_key)
         session.add(
             ModelPriceEntity(
@@ -224,7 +225,7 @@ async def replace_stats(
     for item in stats.attribution_hourly:
         key = (item.hour_start, item.upstream_model, item.channel_id, item.agent)
         if key in attribution_keys:
-            raise ValueError(f"Duplicate attribution stats row in backup: {key}")
+            raise InvalidInputError(f"Duplicate attribution stats row in backup: {key}")
         attribution_keys.add(key)
         session.add(OverviewAttributionHourlyStatsEntity(**item.model_dump()))
     if stats.imported_total is not None:
@@ -245,7 +246,9 @@ async def replace_stats(
     imported_daily_dates: set[str] = set()
     for item in stats.imported_daily:
         if item.date in imported_daily_dates:
-            raise ValueError(f"Duplicate imported stats date in backup: {item.date}")
+            raise InvalidInputError(
+                f"Duplicate imported stats date in backup: {item.date}"
+            )
         imported_daily_dates.add(item.date)
         session.add(
             ImportedStatsDailyEntity(
@@ -264,7 +267,9 @@ async def replace_stats(
     request_daily_dates: set[str] = set()
     for item in stats.request_daily:
         if item.date in request_daily_dates:
-            raise ValueError(f"Duplicate request stats date in backup: {item.date}")
+            raise InvalidInputError(
+                f"Duplicate request stats date in backup: {item.date}"
+            )
         request_daily_dates.add(item.date)
         session.add(
             RequestLogDailyStatsEntity(
@@ -288,7 +293,7 @@ async def replace_stats(
     for item in stats.model_daily:
         key = (item.date, item.model)
         if key in model_daily_keys:
-            raise ValueError(
+            raise InvalidInputError(
                 f"Duplicate model stats row in backup: {item.date} {item.model}"
             )
         model_daily_keys.add(key)

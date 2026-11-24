@@ -1,8 +1,12 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { type ChangeEvent, useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch, apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import type { Site, SiteBatchImportResult } from "@/lib/api/sites";
+import {
+  importSites,
+  type Site,
+  type SiteBatchImportResult,
+} from "@/lib/api/sites";
 import {
   batchImportTemplateText,
   parseBatchImportPayload,
@@ -182,11 +186,9 @@ export function useChannelPersistence({
 /** Owns the batch channel import workflow. */
 export function useChannelTransfer({
   locale,
-  queryClient,
   invalidateChannelData,
 }: {
   locale: Locale;
-  queryClient: QueryClient;
   invalidateChannelData: () => Promise<void>;
 }) {
   const [batchImportOpen, setBatchImportOpen] = useState(false);
@@ -195,31 +197,34 @@ export function useChannelTransfer({
   const [batchImportResult, setBatchImportResult] =
     useState<SiteBatchImportResult | null>(null);
   const [batchImporting, setBatchImporting] = useState(false);
+  const importFileRequestId = useRef(0);
 
   function openBatchImport() {
+    importFileRequestId.current += 1;
     setBatchImportText("");
     setBatchImportError("");
     setBatchImportResult(null);
     setBatchImportOpen(true);
   }
   function updateBatchImportText(value: string) {
+    importFileRequestId.current += 1;
     setBatchImportText(value);
     setBatchImportError("");
     setBatchImportResult(null);
   }
   async function handleBatchImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const requestId = ++importFileRequestId.current;
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
     try {
-      updateBatchImportText(await file.text());
-    } catch (error) {
+      const text = await file.text();
+      if (requestId !== importFileRequestId.current) return;
+      updateBatchImportText(text);
+    } catch {
+      if (requestId !== importFileRequestId.current) return;
       setBatchImportError(
-        error instanceof Error
-          ? error.message
-          : locale === "zh-CN"
-            ? "读取文件失败"
-            : "Failed to read file",
+        locale === "zh-CN" ? "读取文件失败" : "Failed to read file",
       );
       setBatchImportResult(null);
     }
@@ -254,10 +259,7 @@ export function useChannelTransfer({
     setBatchImporting(true);
     setBatchImportError("");
     try {
-      const result = await apiRequest<SiteBatchImportResult>(
-        "/admin/sites/import",
-        { method: "POST", body: JSON.stringify(payload) },
-      );
+      const result = await importSites(payload);
       setBatchImportResult(result);
       if (result.error_count) {
         toast.error(
@@ -267,15 +269,7 @@ export function useChannelTransfer({
         );
         return;
       }
-      const createdSites = result.items.flatMap((item) =>
-        item.status === "created" ? [item.site] : [],
-      );
-      if (createdSites.length) {
-        queryClient.setQueryData<Site[]>(["sites"], (current) => {
-          const rows = current ?? [];
-          const ids = new Set(rows.map((site) => site.id));
-          return [...createdSites.filter((site) => !ids.has(site.id)), ...rows];
-        });
+      if (result.created_count > 0) {
         await invalidateChannelData();
         toast.success(
           locale === "zh-CN"

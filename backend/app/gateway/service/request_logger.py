@@ -8,8 +8,8 @@ from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from ...models.request_logs import RequestLogInput
 from .app_state import app_state
-from .proxy.routing_plan import elapsed_ms
 from .request_cancellation import RequestCancellation
+from .request_support import elapsed_ms
 from .runtime_types import (
     AttemptLog,
     UpstreamResult,

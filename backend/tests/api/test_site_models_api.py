@@ -9,7 +9,9 @@ from uuid import UUID
 import httpx
 import pytest
 from conftest import assert_error, run_async
+from fastapi.testclient import TestClient
 
+import app.gateway.service.tasks.site_model_probe as site_model_probe
 from app.gateway.service.tasks.litellm_sync_tasks import (
     _fetch_litellm_payload as _original_fetch_litellm_payload,
 )
@@ -796,6 +798,69 @@ def test_model_test_reports_failed_or_empty_stream(
     assert result["success"] is False
     assert result["status_code"] == 502
     assert error in result["error_message"]
+
+
+@pytest.mark.parametrize(
+    ("protocol", "events"),
+    [
+        (
+            ProtocolKind.ANTHROPIC,
+            [
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {},
+                },
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "pong"},
+                },
+            ],
+        ),
+        (
+            ProtocolKind.GEMINI,
+            [
+                {"candidates": [{"content": {"parts": None}}]},
+                {"candidates": [{"content": {"parts": [{"text": "pong"}]}}]},
+            ],
+        ),
+    ],
+)
+def test_model_test_keeps_output_after_incomplete_stream_items(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    protocol: ProtocolKind,
+    events: list[dict[str, Any]],
+) -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        content = (
+            "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+            + "data: [DONE]\n\n"
+        )
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=content,
+        )
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        site_model_probe, "resolve_http_client", lambda _proxy: upstream
+    )
+    try:
+        response = client.post(
+            "/api/admin/site-model-tests",
+            headers=admin_headers,
+            json=_model_test_payload(protocol),
+        )
+    finally:
+        run_async(upstream.aclose())
+
+    assert response.status_code == 200, response.text
+    assert response.json()["success"] is True
+    assert response.json()["output_text"] == "pong"
 
 
 @pytest.mark.parametrize(

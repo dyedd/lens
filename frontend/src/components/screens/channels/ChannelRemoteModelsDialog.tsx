@@ -72,7 +72,16 @@ export function ChannelRemoteModelsDialog({
     const controller = new AbortController();
     loadController.current = controller;
     const result = await onLoadRef.current(controller.signal);
-    if (!controller.signal.aborted && result) setCatalog(result);
+    if (!controller.signal.aborted && result) {
+      setCatalog(result);
+      const availableNames = new Set(
+        result.items.map((item) => item.model_name),
+      );
+      setSelected(
+        (current) =>
+          new Set([...current].filter((name) => availableNames.has(name))),
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -130,6 +139,7 @@ export function ChannelRemoteModelsDialog({
     selectableNames.length > 0 &&
     selectableNames.every((name) => selected.has(name));
   const someSelected = selectableNames.some((name) => selected.has(name));
+  const selectedCount = rows.filter((row) => selected.has(row.name)).length;
 
   function toggleName(name: string, checked: boolean) {
     setSelected((current) => {
@@ -141,14 +151,18 @@ export function ChannelRemoteModelsDialog({
   }
 
   function importSelected() {
+    const selectedNames = new Set(
+      rows.filter((row) => selected.has(row.name)).map((row) => row.name),
+    );
+    if (!selectedNames.size) return;
     const items = (catalog?.items ?? []).filter((item) =>
-      selected.has(item.model_name),
+      selectedNames.has(item.model_name),
     );
     onImport(items);
     toast.success(
       locale === "zh-CN"
-        ? `已加入 ${selected.size} 个模型，保存后生效。`
-        : `Added ${selected.size} models; save to apply.`,
+        ? `已加入 ${selectedNames.size} 个模型，保存后生效。`
+        : `Added ${selectedNames.size} models; save to apply.`,
     );
     onOpenChange(false);
   }
@@ -183,7 +197,7 @@ export function ChannelRemoteModelsDialog({
             <Button
               type="button"
               size="sm"
-              disabled={loading || importing || selected.size === 0}
+              disabled={loading || importing || selectedCount === 0}
               onClick={importSelected}
             >
               {importing ? (
@@ -196,8 +210,8 @@ export function ChannelRemoteModelsDialog({
                   ? "后台识别中..."
                   : "Detecting in background..."
                 : locale === "zh-CN"
-                  ? `加入所选 ${selected.size}`
-                  : `Add selected ${selected.size}`}
+                  ? `加入所选 ${selectedCount}`
+                  : `Add selected ${selectedCount}`}
             </Button>
           </>
         }
@@ -223,6 +237,7 @@ export function ChannelRemoteModelsDialog({
               value={query}
               onChange={setQuery}
               onClear={() => setQuery("")}
+              clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
               placeholder={
                 locale === "zh-CN" ? "搜索模型名称..." : "Search model names..."
               }

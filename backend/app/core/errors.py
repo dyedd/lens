@@ -21,6 +21,13 @@ class LensError(Exception):
         self.details = details
 
 
+class InvalidInputError(LensError, ValueError):
+    """An invalid user-supplied value rejected by an application boundary."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=400, error_type="bad_request")
+
+
 class ResourceNotFoundError(LensError):
     """An expected lookup failed at an API resource boundary."""
 

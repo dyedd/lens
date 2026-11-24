@@ -472,24 +472,34 @@ class CronjobStore:
             if entity is None or entity.lease_owner != owner:
                 return None
 
-            enabled = bool(entity.enabled)
-            entity.status = (
-                CronjobStatus.SUCCEEDED.value if success else CronjobStatus.FAILED.value
-            )
-            entity.last_finished_at = now
-            entity.last_error = error[:2000]
-            entity.next_run_at = (
+            next_run_at = (
                 next_cronjob_run_at(
                     _entity_schedule(entity),
                     now=now,
                     time_zone=time_zone,
                 )
-                if enabled
+                if entity.enabled
                 else None
             )
-            entity.lease_owner = ""
-            entity.lease_until = None
-            entity.updated_at = now
+            result = await session.execute(
+                update(CronjobEntity)
+                .where(CronjobEntity.id == task_id, CronjobEntity.lease_owner == owner)
+                .values(
+                    status=(
+                        CronjobStatus.SUCCEEDED.value
+                        if success
+                        else CronjobStatus.FAILED.value
+                    ),
+                    last_finished_at=now,
+                    last_error=error[:2000],
+                    next_run_at=next_run_at,
+                    lease_owner="",
+                    lease_until=None,
+                    updated_at=now,
+                )
+            )
+            if not result.rowcount:
+                return None
             await session.commit()
             await session.refresh(entity)
             return _to_record(entity)

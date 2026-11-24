@@ -1,15 +1,25 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
   ADMIN_PASSWORD_MIN_LENGTH,
+  ADMIN_PROFILE_QUERY_KEY,
   type AdminProfile,
   type AdminProfileUpdatePayload,
-  type AdminProfileUpdateResponse,
 } from "@/lib/api/app";
-import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
-import { setStoredToken } from "@/lib/auth";
+import {
+  ApiError,
+  apiRequest,
+  getApiErrorMessage,
+  isRecord,
+} from "@/lib/api/client";
+import {
+  getLoginAccessToken,
+  getStoredToken,
+  isAdminProfile,
+  setStoredToken,
+} from "@/lib/auth";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 
 interface AccountForm {
@@ -29,10 +39,9 @@ const EMPTY_ACCOUNT_FORM: AccountForm = {
 /** Manage the administrator profile form and update request. */
 export function useAccountSettings(locale: Locale) {
   const queryClient = useQueryClient();
-  const { data: profile } = useQuery({
-    queryKey: ["auth-me"],
-    queryFn: () => apiRequest<AdminProfile>("/admin/session"),
-    staleTime: 5 * 60_000,
+  const { data: profile } = useQuery<AdminProfile>({
+    queryKey: ADMIN_PROFILE_QUERY_KEY,
+    queryFn: skipToken,
   });
   const [accountForm, setAccountForm] =
     useState<AccountForm>(EMPTY_ACCOUNT_FORM);
@@ -59,11 +68,12 @@ export function useAccountSettings(locale: Locale) {
 
   const submitAccount = useCallback(
     async (currentPassword: string) => {
+      if (!profile) return false;
       const nextUsername = accountForm.username.trim();
       const wantsPasswordUpdate = Boolean(
         accountForm.newPassword || accountForm.confirmPassword,
       );
-      const usernameChanged = nextUsername !== (profile?.username || "admin");
+      const usernameChanged = nextUsername !== profile.username;
 
       if (!nextUsername) {
         toast.error(
@@ -127,19 +137,29 @@ export function useAccountSettings(locale: Locale) {
       };
       setIsUpdatingAccount(true);
       try {
-        const response = await apiRequest<AdminProfileUpdateResponse>(
-          "/admin/profile",
-          {
-            method: "PUT",
-            body: JSON.stringify(payload),
-          },
-        );
-        setStoredToken(response.access_token);
-        queryClient.setQueryData(["auth-me"], response.profile);
-        await queryClient.invalidateQueries({ queryKey: ["auth-me"] });
+        const token = getStoredToken();
+        const response = await apiRequest<unknown>("/admin/profile", {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        if (!token || getStoredToken() !== token) return false;
+        if (!isRecord(response)) {
+          throw new ApiError("Invalid admin profile response from API", 200);
+        }
+        const accessToken = getLoginAccessToken(response);
+        const updatedProfile = response.profile;
+        if (
+          !accessToken ||
+          !isAdminProfile(updatedProfile) ||
+          updatedProfile.id !== profile.id
+        ) {
+          throw new ApiError("Invalid admin profile response from API", 200);
+        }
+        setStoredToken(accessToken, updatedProfile.id);
+        queryClient.setQueryData(ADMIN_PROFILE_QUERY_KEY, updatedProfile);
         toast.success(titleForLocale(locale, "账号已更新", "Account updated"));
         setAccountForm({
-          username: response.profile.username,
+          username: updatedProfile.username,
           currentPassword: "",
           newPassword: "",
           confirmPassword: "",
@@ -156,7 +176,7 @@ export function useAccountSettings(locale: Locale) {
         setIsUpdatingAccount(false);
       }
     },
-    [accountForm, locale, profile?.username, queryClient],
+    [accountForm, locale, profile, queryClient],
   );
 
   return {

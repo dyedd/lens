@@ -1,9 +1,14 @@
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
-
-import { ApiKeysScreen } from "@/components/screens/ApiKeysScreen";
-import { BackupsScreen } from "@/components/screens/BackupsScreen";
-import { CronjobsScreen } from "@/components/screens/CronjobsScreen";
+import { CircuitBreakerSettingsSection } from "@/components/settings/CircuitBreakerSettingsSection";
+import { GatewaySettingsSection } from "@/components/settings/GatewaySettingsSection";
+import { GeneralSettingsSection } from "@/components/settings/ProfileSettingsSections";
+import {
+  createSettingsTabs,
+  SettingsNavigation,
+} from "@/components/settings/SettingsNavigation";
+import { useAccountSettings } from "@/components/settings/useAccountSettings";
+import { useSettingsDraft } from "@/components/settings/useSettingsDraft";
 import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
 import { Button } from "@/components/ui/Button";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
@@ -13,44 +18,64 @@ import {
   TooltipTrigger,
 } from "@/components/ui/Tooltip";
 import { type Locale, titleForLocale, useI18n } from "@/lib/I18nContext";
-
-import { CircuitBreakerSettingsSection } from "./CircuitBreakerSettingsSection";
-import { GatewaySettingsSection } from "./GatewaySettingsSection";
-import { GeneralSettingsSection } from "./ProfileSettingsSections";
-import { createSettingsTabs, SettingsNavigation } from "./SettingsNavigation";
-import { useAccountSettings } from "./useAccountSettings";
-import { useSettingsDraft } from "./useSettingsDraft";
+import { ApiKeysScreen } from "./ApiKeysScreen";
+import { BackupsScreen } from "./BackupsScreen";
+import { CronjobsScreen } from "./CronjobsScreen";
 
 type SettingsDraftController = ReturnType<typeof useSettingsDraft>;
 
 function SettingsHeaderActions({
   locale,
   settings,
+  showRefresh = true,
 }: {
   locale: Locale;
   settings: SettingsDraftController;
+  showRefresh?: boolean;
 }) {
   const refreshLabel = titleForLocale(locale, "刷新", "Refresh");
+  const retryLabel = titleForLocale(locale, "重试保存", "Retry saving");
 
   return (
     <DashboardHeaderActions>
       <div className="flex items-center justify-end gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              type="button"
-              aria-label={refreshLabel}
-              onClick={() => void settings.refresh()}
-            >
-              <RotateCcw data-icon="inline-start" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {refreshLabel}
-          </TooltipContent>
-        </Tooltip>
+        {settings.hasSaveError && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                aria-label={retryLabel}
+                disabled={settings.isSaving}
+                onClick={settings.retrySettings}
+              >
+                <RotateCw data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {retryLabel}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {showRefresh && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                aria-label={refreshLabel}
+                onClick={() => void settings.refresh()}
+              >
+                <RotateCcw data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {refreshLabel}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </DashboardHeaderActions>
   );
@@ -66,8 +91,12 @@ export function SettingsScreen() {
 
   return (
     <>
-      {activeTab !== "cronjobs" && (
-        <SettingsHeaderActions locale={locale} settings={settings} />
+      {(activeTab !== "cronjobs" || settings.hasSaveError) && (
+        <SettingsHeaderActions
+          locale={locale}
+          settings={settings}
+          showRefresh={activeTab !== "cronjobs"}
+        />
       )}
       <section className="mx-auto min-w-0 max-w-[1256px]">
         <h1 className="page-title mb-5 px-1">

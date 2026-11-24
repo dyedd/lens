@@ -50,6 +50,7 @@ import type {
   UnplacedModel,
 } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
+import { titleForLocale } from "@/lib/I18nContext";
 import type { ModelPrefixOption, SelectedModelPrefix } from "@/lib/modelPrefix";
 import { GroupsTable } from "./GroupsTable";
 import type { GroupRow, GroupSort, SimilarGroupView } from "./groupTypes";
@@ -64,19 +65,19 @@ function groupSortOptions(
   return [
     {
       value: "members-desc",
-      label: locale === "zh-CN" ? "成员数量" : "Member count",
+      label: titleForLocale(locale, "成员数量", "Member count"),
     },
     {
       value: "enabled-desc",
-      label: locale === "zh-CN" ? "可用状态" : "Availability",
+      label: titleForLocale(locale, "可用状态", "Availability"),
     },
     {
       value: "name-asc",
-      label: locale === "zh-CN" ? "模型组名称升序" : "Group name A-Z",
+      label: titleForLocale(locale, "模型组名称升序", "Group name A-Z"),
     },
     {
       value: "name-desc",
-      label: locale === "zh-CN" ? "模型组名称降序" : "Group name Z-A",
+      label: titleForLocale(locale, "模型组名称降序", "Group name Z-A"),
     },
   ];
 }
@@ -172,6 +173,10 @@ export function GroupsOverview({
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
   const sortOptions = groupSortOptions(locale);
+  const searchPlaceholder =
+    locale === "zh-CN"
+      ? "搜索模型组、渠道或模型..."
+      : "Search groups, channels, or models...";
 
   return (
     <div className="space-y-5 pb-10">
@@ -206,11 +211,8 @@ export function GroupsOverview({
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
-              placeholder={
-                locale === "zh-CN"
-                  ? "搜索模型组、渠道或模型..."
-                  : "Search groups, channels, or models..."
-              }
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
               onChange={(event) => {
                 onSearchChange(event.target.value);
                 resetPage();

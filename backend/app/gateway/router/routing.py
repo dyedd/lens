@@ -17,6 +17,8 @@ from .targets import (
     target_key,
 )
 
+_SWRR_WEIGHT_SCALE = 1_000
+
 
 @dataclass(slots=True)
 class RouteSelection:
@@ -110,21 +112,22 @@ class RoutePlanner:
         self,
         channels: list[ChannelConfig],
         protocol: ProtocolKind,
-        requested_model: str | None,
-        strategy: RoutingStrategy,
-        allowed_channel_ids: set[str] | None,
-        use_model_matching: bool,
-        route_targets: list[RouteTarget] | None,
-        cursor_key: str | None,
+        *,
+        requested_model: str | None = None,
+        strategy: RoutingStrategy = RoutingStrategy.FAILOVER,
+        allowed_channel_ids: set[str] | None = None,
+        use_model_matching: bool = True,
+        route_targets: list[RouteTarget] | None = None,
+        cursor_key: str | None = None,
         required_context_tokens: int | None = None,
     ) -> RouteSelection:
         pool = self._build_active_pool(
             channels,
             protocol,
             requested_model,
-            allowed_channel_ids,
-            use_model_matching,
-            route_targets,
+            allowed_channel_ids=allowed_channel_ids,
+            use_model_matching=use_model_matching,
+            route_targets=route_targets,
             required_context_tokens=required_context_tokens,
         )
         now = monotonic()
@@ -332,7 +335,9 @@ class RoutePlanner:
             node_keys.append(node_key)
             node = self._swrr_nodes.get(node_key)
             current_weight = node.current_weight if node is not None else 0
-            effective_weight = max(int(self._health.score(target) * 1000), 1)
+            effective_weight = max(
+                int(self._health.score(target) * _SWRR_WEIGHT_SCALE), 1
+            )
             next_weight = current_weight + effective_weight
             next_weights.append(next_weight)
             total_weight += effective_weight

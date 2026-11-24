@@ -1,22 +1,23 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import logging
 from typing import Any
 
-import httpx
 from fastapi import Depends
 from packaging import version
 
-from ...core.version import read_system_version
-from ...models.settings import SettingItem
+from app import __version__
+
 from ...models.system_info import AppInfo, PublicBranding, VersionCheckResult
 from ...persistence.settings_keys import (
     SETTING_LATEST_VERSION,
     SETTING_LATEST_VERSION_URL,
     SETTING_VERSION_CHECK_AT,
 )
-from .app_state import AppState, app_state, logger
+from .app_state import app_state
 from .auth import get_current_admin
+
+logger = logging.getLogger(__name__)
 
 
 def _has_version_update(latest_version: str, current_version: str) -> bool:
@@ -45,7 +46,7 @@ async def get_app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
     """Return administrative application metadata and capabilities."""
     runtime = await app_state.settings_repo.get_runtime_settings()
     return AppInfo(
-        system_version=read_system_version(),
+        system_version=__version__,
         site_name=str(runtime["site_name"]),
         logo_url=str(runtime["site_logo_url"]),
         time_zone=str(runtime["time_zone"]),
@@ -54,7 +55,7 @@ async def get_app_info(_: Any = Depends(get_current_admin)) -> AppInfo:
 
 async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResult:
     """Return the latest stored application update status."""
-    current_version = read_system_version()
+    current_version = __version__
 
     settings = await app_state.settings_repo.list_settings()
     settings_dict = {setting.key: setting.value for setting in settings}
@@ -71,31 +72,4 @@ async def check_version(_: Any = Depends(get_current_admin)) -> VersionCheckResu
         release_url=latest_url if has_update else "",
         has_update=has_update,
         checked_at=checked_at,
-    )
-
-
-async def sync_version(state: AppState) -> None:
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            "https://dyedd.github.io/lens/version.txt",
-            headers={"Accept": "text/plain", "Cache-Control": "no-cache"},
-        )
-        response.raise_for_status()
-
-    published_version = version.Version(response.text.strip())
-    has_update = published_version > version.Version(read_system_version())
-    latest_version = str(published_version) if has_update else ""
-    release_url = (
-        f"https://github.com/dyedd/lens/releases/tag/v{published_version}"
-        if has_update
-        else ""
-    )
-    await state.settings_repo.upsert_settings(
-        [
-            SettingItem(key=SETTING_LATEST_VERSION, value=latest_version),
-            SettingItem(key=SETTING_LATEST_VERSION_URL, value=release_url),
-            SettingItem(
-                key=SETTING_VERSION_CHECK_AT, value=datetime.now(UTC).isoformat()
-            ),
-        ]
     )

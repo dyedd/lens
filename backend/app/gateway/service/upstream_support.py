@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
+from contextlib import suppress
 from functools import lru_cache
 from html.parser import HTMLParser
 from typing import Any
 
 import httpx
 
-from ...core.version import read_system_version
-from .app_state import app_state
+from app import __version__
+
+from .app_context import app_state
 
 GENERIC_USER_AGENT_TOKENS = (
     "python-httpx",
@@ -71,12 +73,8 @@ class _HtmlTitleParser(HTMLParser):
 
 def format_http_response_error(response: httpx.Response) -> str:
     detail = response.text or f"HTTP {response.status_code}"
-    try:
-        payload = json.loads(detail)
-    except json.JSONDecodeError:
-        pass
-    else:
-        detail = json.dumps(payload, ensure_ascii=False)
+    with suppress(ValueError, RecursionError):
+        detail = json.dumps(json.loads(detail), ensure_ascii=False)
     return summarize_html_error_detail(
         detail,
         status_code=response.status_code,
@@ -138,7 +136,7 @@ def format_transport_error(exc: httpx.HTTPError, fallback_url: str) -> str:
 
 @lru_cache(maxsize=1)
 def default_lens_user_agent() -> str:
-    return f"Lens/{read_system_version()}"
+    return f"Lens/{__version__}"
 
 
 def sanitize_user_agent(value: str | None) -> str:

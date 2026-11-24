@@ -3,16 +3,93 @@ from __future__ import annotations
 import asyncio
 import json
 import zlib
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from time import sleep
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
 from conftest import gateway_headers, json_response, valid_site_payload
+from fastapi.testclient import TestClient
 
+import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+from app.gateway.router import cooldown, gateway, routing
+from app.gateway.router import health as health_router
+from app.gateway.router.cooldown import parse_cooldown_seconds
+from app.gateway.service.proxy import proxy_flow
+from app.gateway.service.streaming.restore import distill_stream_response_content
+from app.gateway.service.streaming.types import parse_sse_payloads
+from app.gateway.upstream_request import UpstreamRequest
 from app.models.protocols import ProtocolKind
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        float("inf"),
+        float("-inf"),
+        float("nan"),
+        10**400,
+        "inf",
+        "-inf",
+        "nan",
+        "1e309",
+    ],
+)
+def test_cooldown_parser_rejects_nonfinite_values(value: object) -> None:
+    assert parse_cooldown_seconds(value) is None
+
+
+def test_anthropic_stream_restores_content_in_index_order() -> None:
+    events = [
+        {
+            "type": "message_start",
+            "message": {
+                "id": "msg-1",
+                "type": "message",
+                "role": "assistant",
+                "model": "test-model",
+                "content": [],
+            },
+        },
+        {
+            "type": "content_block_start",
+            "index": 2,
+            "content_block": {"type": "text", "text": "world"},
+        },
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": "hello"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 2,
+            "delta": {"type": "text_delta", "text": "!"},
+        },
+    ]
+    raw_content = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+
+    distilled_content = distill_stream_response_content(
+        ProtocolKind.ANTHROPIC, raw_content
+    )
+
+    assert distilled_content is not None
+    restored = json.loads(distilled_content)
+    assert restored["content"] == [
+        {"type": "text", "text": "hello"},
+        {"type": "text", "text": "world!"},
+    ]
+
+
+def test_sse_parser_rejects_integers_beyond_python_digit_limit() -> None:
+    errors: list[str] = []
+    raw_content = f'data: {{"index": {"9" * 5000}}}\n\n'
+
+    assert parse_sse_payloads(raw_content, errors=errors) == []
+    assert errors == ["invalid SSE JSON value"]
 
 
 @pytest.mark.parametrize("protocol", ["openai_chat", "openai_responses", "anthropic"])
@@ -404,6 +481,86 @@ def test_upstream_error_body_respects_first_token_budget(
         "items"
     ]
     assert logs[0]["lifecycle_status"] == "failed"
+    log = client.get(
+        f"/api/admin/request-logs/{logs[0]['id']}", headers=admin_headers
+    ).json()
+    attempt = log["attempts"][-1]
+    assert attempt["status_code"] == 504
+    assert "GatewayTimeoutError" in attempt["error_message"]
+
+
+@pytest.mark.parametrize(
+    ("upstream_status_code", "gateway_status_code"),
+    [(429, 429), (503, 503), (500, 502)],
+)
+def test_nonfinite_retry_after_preserves_gateway_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    create_site_group_and_key: Callable[
+        [], tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+    ],
+    upstream_status_code: int,
+    gateway_status_code: int,
+) -> None:
+    _, _, gateway_key = create_site_group_and_key()
+
+    async def send(
+        _client: httpx.AsyncClient,
+        upstream: UpstreamRequest,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        return httpx.Response(
+            upstream_status_code,
+            headers={"Retry-After": "inf"},
+            json={"error": {"message": "upstream unavailable"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr("app.gateway.service.proxy.proxy_upstream._send_upstream", send)
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(gateway_key),
+        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert response.status_code == gateway_status_code, response.text
+    assert "upstream unavailable" in response.json()["error"]["message"]
+    assert "retry-after" not in response.headers
+
+
+def test_proxy_log_failure_preserves_unexpected_proxy_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    create_site_group_and_key: Callable[
+        [], tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+    ],
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    _, _, key = create_site_group_and_key()
+
+    async def fail_route(_context, fallback_group_id=None):
+        raise RuntimeError("upstream preparation failed")
+
+    async def fail_log(self, **_kwargs):
+        raise OperationalError(
+            "update request log", {}, RuntimeError("database is locked")
+        )
+
+    monkeypatch.setattr(proxy_flow, "_resolve_proxy_route", fail_route)
+    monkeypatch.setattr(
+        "app.gateway.service.request_logger.RequestLogger.record_failure", fail_log
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers=gateway_headers(key),
+        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["message"] == "Internal server error"
 
 
 def test_upstream_retry_after_and_single_recovery_probe(
@@ -412,6 +569,9 @@ def test_upstream_retry_after_and_single_recovery_probe(
     import app.gateway.service.proxy.proxy_upstream as proxy_upstream
 
     _, _, key = create_site_group_and_key()
+    clock = 1_000.0
+    for module in (cooldown, gateway, health_router, routing):
+        monkeypatch.setattr(module, "monotonic", lambda: clock)
     probe_started = Event()
     release_probe = Event()
     calls = 0
@@ -448,7 +608,7 @@ def test_upstream_retry_after_and_single_recovery_probe(
     assert int(waiting.headers["Retry-After"]) > 0
     assert calls == 1
 
-    sleep(1.05)
+    clock += 1.05
     with ThreadPoolExecutor(max_workers=1) as executor:
         probe = executor.submit(
             client.post, "/v1/chat/completions", headers=headers, json=body
@@ -469,6 +629,55 @@ def test_upstream_retry_after_and_single_recovery_probe(
     recovered = client.post("/v1/chat/completions", headers=headers, json=body)
     assert recovered.status_code == 200, recovered.text
     assert calls == 3
+
+
+def test_cooldown_retry_uses_the_new_upstream_wait(
+    client, admin_headers, monkeypatch, create_site_group_and_key
+) -> None:
+    _, _, key = create_site_group_and_key()
+    clock = 1_000.0
+    for module in (cooldown, gateway, health_router, routing):
+        monkeypatch.setattr(module, "monotonic", lambda: clock)
+    calls = 0
+    waits: list[float] = []
+
+    async def advance_clock(seconds: float) -> None:
+        nonlocal clock
+        waits.append(seconds)
+        clock += seconds
+
+    async def send(_client, upstream, *, stream, body_bytes):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            503,
+            headers={"Retry-After": "1" if calls == 1 else "60"},
+            json={"error": {"message": "upstream maintenance"}},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    monkeypatch.setattr(
+        proxy_flow,
+        "asyncio",
+        SimpleNamespace(gather=asyncio.gather, sleep=advance_clock),
+    )
+    body = {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}
+    first = client.post("/v1/chat/completions", headers=gateway_headers(key), json=body)
+    assert first.status_code == 503, first.text
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": "failover_cooled_wait_seconds", "value": "1"}]},
+    )
+    assert settings.status_code == 200, settings.text
+
+    retry = client.post("/v1/chat/completions", headers=gateway_headers(key), json=body)
+
+    assert retry.status_code == 503, retry.text
+    assert calls == 2
+    assert waits == [1.0]
+    assert retry.headers["Retry-After"] == "60"
 
 
 def test_chat_stream_accepts_empty_tool_deltas(
@@ -799,6 +1008,84 @@ def test_proxy_routes_accept_supported_request_shapes(
         assert calls[-1]["user_agent"] == "lens-tests"
 
 
+def test_gemini_stream_logs_output_across_incomplete_frames(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    create_site: Callable[..., dict[str, Any]],
+    create_model_group: Callable[..., dict[str, Any]],
+    create_gateway_key: Callable[..., dict[str, Any]],
+) -> None:
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": "relay_log_body_enabled", "value": "true"}]},
+    )
+    assert settings.status_code == 200, settings.text
+    model_name = "gemini-2.5-flash"
+    create_site(valid_site_payload(protocols=["gemini"], model_name=model_name))
+    create_model_group(
+        name="public-gemini",
+        items=[
+            {
+                "channel_id": "pc-1_gemini",
+                "credential_id": "cred-1",
+                "model_name": model_name,
+                "enabled": True,
+            }
+        ],
+    )
+    events = [
+        {
+            "candidates": [{"content": {"parts": [{"text": "hello"}]}}],
+            "usageMetadata": {"promptTokenCount": 11},
+        },
+        {"candidates": None, "usageMetadata": None},
+        {"candidates": [{"content": {"parts": None}}]},
+        {
+            "candidates": [
+                {"content": {"parts": [{"text": " world"}]}, "finishReason": "STOP"}
+            ]
+        },
+    ]
+
+    async def send(
+        _client: httpx.AsyncClient,
+        upstream: UpstreamRequest,
+        *,
+        stream: bool,
+        body_bytes: bytes | None,
+    ) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content="".join(f"data: {json.dumps(event)}\n\n" for event in events),
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        "/v1beta/models/public-gemini:streamGenerateContent?alt=sse",
+        headers=gateway_headers(create_gateway_key()),
+        json={"contents": [{"role": "user", "parts": [{"text": "hello"}]}]},
+    )
+    assert response.status_code == 200, response.text
+    assert " world" in response.text
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers).json()[
+        "items"
+    ]
+    log = client.get(
+        f"/api/admin/request-logs/{logs[0]['id']}", headers=admin_headers
+    ).json()
+    assert log["lifecycle_status"] == "succeeded"
+    restored = json.loads(log["response_content"])
+    assert restored["candidates"][0]["content"]["parts"] == [
+        {"text": "hello"},
+        {"text": " world"},
+    ]
+    assert restored["usageMetadata"] == {"promptTokenCount": 11}
+
+
 @pytest.mark.parametrize(
     ("protocol", "base_url", "usage", "input_tokens"),
     [
@@ -912,6 +1199,60 @@ def test_native_embedding_and_rerank_forward_payload_and_record_usage(
         logs[0]["output_tokens"],
         logs[0]["total_tokens"],
     ) == (input_tokens, 0, input_tokens)
+
+
+def test_image_request_with_infinite_count_uses_default_count(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    create_site: Callable[..., dict[str, Any]],
+    create_model_group: Callable[..., dict[str, Any]],
+    create_gateway_key: Callable[..., dict[str, Any]],
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    create_site(
+        valid_site_payload(protocols=["openai_image"], model_name="image-model")
+    )
+    create_model_group(
+        name="image-group",
+        items=[
+            {
+                "channel_id": "pc-1_openai_image",
+                "credential_id": "cred-1",
+                "model_name": "image-model",
+                "enabled": True,
+            }
+        ],
+    )
+    received: dict[str, Any] = {}
+
+    async def send(
+        _client: httpx.AsyncClient,
+        upstream: Any,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream is False
+        received.update(json.loads(body_bytes))
+        return httpx.Response(
+            200,
+            json={"created": 1},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        "/v1/images/generations",
+        headers={
+            **gateway_headers(create_gateway_key()),
+            "Content-Type": "application/json",
+        },
+        content=b'{"model":"image-group","prompt":"test","n":1e999}',
+    )
+
+    assert response.status_code == 200, response.text
+    assert received == {"model": "image-model", "prompt": "test", "n": float("inf")}
 
 
 @pytest.mark.parametrize(

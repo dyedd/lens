@@ -1,15 +1,14 @@
 import { FieldError } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
-import { TabsContent } from "@/components/ui/Tabs";
-import { type Locale, titleForLocale } from "@/lib/I18nContext";
-
-import { SettingsSectionCard } from "./SettingsSectionCard";
 import {
   SettingsFieldList,
   SettingsFieldRow,
   SettingsSectionSeparator,
-} from "./settingsLayout";
+} from "@/components/ui/SettingsLayout";
+import { Switch } from "@/components/ui/Switch";
+import { TabsContent } from "@/components/ui/Tabs";
+import { type Locale, titleForLocale } from "@/lib/I18nContext";
+import { SettingsSectionCard } from "./SettingsSectionCard";
 import type { useSettingsDraft } from "./useSettingsDraft";
 
 type CircuitBreakerKey =

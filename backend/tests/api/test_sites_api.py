@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from typing import Any
 
 import httpx
-from conftest import gateway_headers, valid_site_payload
+from conftest import assert_error, gateway_headers, valid_site_payload
+from fastapi import FastAPI, Response
+from fastapi.testclient import TestClient
 
 
 def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
@@ -18,6 +22,7 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     )
     assert preflight.status_code == 204
     assert preflight.headers["access-control-allow-origin"] == "*"
+    assert preflight.headers["vary"].lower() == "access-control-request-headers"
 
     site = create_site(valid_site_payload())
     assert site["name"] == "OpenAI Site"
@@ -35,6 +40,89 @@ def test_site_crud_round_trip(client, admin_headers, create_site) -> None:
     delete = client.delete(f"/api/admin/sites/{site['id']}", headers=admin_headers)
     assert delete.status_code == 204
     assert client.get("/api/admin/sites", headers=admin_headers).json() == []
+
+
+def test_dynamic_cors_responses_vary_on_origin_and_preflight_headers(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    assert isinstance(client.app, FastAPI)
+
+    @client.app.get("/api/public/cors-vary")
+    async def vary_response() -> Response:
+        return Response(headers={"vary": "Accept-Encoding"})
+
+    saved = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={
+            "items": [
+                {
+                    "key": "cors_allow_origins",
+                    "value": "https://allowed.example, https://second.example",
+                }
+            ]
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    allowed = client.get(
+        "/api/public/cors-vary", headers={"Origin": "https://allowed.example"}
+    )
+    denied = client.get(
+        "/api/public/branding", headers={"Origin": "https://denied.example"}
+    )
+    preflight = client.options(
+        "/api/admin/sites",
+        headers={
+            "Origin": "https://allowed.example",
+            "Access-Control-Request-Headers": "authorization, x-client-id",
+        },
+    )
+
+    assert allowed.headers["access-control-allow-origin"] == "https://allowed.example"
+    assert set(allowed.headers["vary"].lower().split(", ")) == {
+        "accept-encoding",
+        "origin",
+    }
+    assert "access-control-allow-origin" not in denied.headers
+    assert "origin" in denied.headers["vary"].lower().split(", ")
+    assert preflight.status_code == 204
+    assert preflight.headers["access-control-allow-origin"] == "https://allowed.example"
+    assert (
+        preflight.headers["access-control-allow-headers"]
+        == "authorization, x-client-id"
+    )
+    assert preflight.headers["vary"].lower() == "origin, access-control-request-headers"
+
+
+def test_site_save_rejects_protocol_config_from_another_site(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    create_site: Callable[[dict[str, Any]], dict[str, Any]],
+) -> None:
+    original_site = create_site(valid_site_payload())
+    other_payload = valid_site_payload(
+        name="Other Site",
+        base_id="base-2",
+        credential_id="cred-2",
+        protocol_config_id="pc-2",
+        model_name="gpt-4.1",
+    )
+    other_site = create_site(other_payload)
+    other_payload["protocols"][0]["id"] = "pc-1"
+
+    response = client.put(
+        f"/api/admin/sites/{other_site['id']}",
+        headers=admin_headers,
+        json=other_payload,
+    )
+    assert_error(response, 400, "Protocol config belongs to another site")
+    sites = client.get("/api/admin/sites", headers=admin_headers)
+    assert sites.status_code == 200, sites.text
+    assert {site["id"]: site for site in sites.json()} == {
+        original_site["id"]: original_site,
+        other_site["id"]: other_site,
+    }
 
 
 def test_site_changes_reach_other_gateway_instance(

@@ -6,8 +6,9 @@ from typing import Any
 from fastapi import Depends, File, UploadFile
 from fastapi.responses import JSONResponse
 
+from app import __version__
+
 from ....core.time_zone import load_time_zone
-from ....core.version import read_system_version
 from ....models.backups import ConfigImportResult
 from ....persistence.backup_store import BackupStore
 from ..app_state import app_state
@@ -23,7 +24,7 @@ async def export_settings_bundle(
     """Export the selected configuration as a downloadable backup."""
     await app_state.request_log_store.statistics.persist_request_log_stats(force=True)
     dump = await app_state.backup_store.export_dump(
-        lens_version=read_system_version(),
+        lens_version=__version__,
         include_request_logs=include_logs,
         include_gateway_api_keys=include_gateway_api_keys,
     )

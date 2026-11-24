@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 import pytest
 from conftest import gateway_headers, valid_site_payload
+from fastapi.testclient import TestClient
+
+from app.gateway.upstream_request import UpstreamRequest
 
 _PROTOCOLS = ("openai_chat", "openai_responses", "anthropic", "gemini")
 _IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j0XkAAAAASUVORK5CYII="
@@ -809,6 +813,169 @@ def test_protocol_conversion_preserves_tool_history_response_and_usage(
         logs[0]["cache_read_input_tokens"],
         logs[0]["output_tokens"],
     ) == (10, 4, 7)
+
+
+@pytest.mark.parametrize(
+    ("upstream_protocol", "expected_error"),
+    [
+        ("openai_chat", "Chat stream ended before [DONE]"),
+        ("anthropic", "Anthropic stream ended before message_stop"),
+    ],
+)
+def test_protocol_conversion_rejects_streams_missing_terminal_event(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    create_site: Callable[..., dict[str, Any]],
+    create_model_group: Callable[..., dict[str, Any]],
+    create_gateway_key: Callable[..., dict[str, Any]],
+    upstream_protocol: str,
+    expected_error: str,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    create_site(
+        valid_site_payload(protocols=[upstream_protocol], model_name="upstream-model")
+    )
+    create_model_group(
+        name="public-model",
+        items=[
+            {
+                "channel_id": f"pc-1_{upstream_protocol}",
+                "credential_id": "cred-1",
+                "model_name": "upstream-model",
+                "enabled": True,
+            }
+        ],
+    )
+    complete_stream = _upstream_stream(upstream_protocol, "upstream-model")
+    upstream_content = complete_stream.rstrip(b"\r\n").rsplit(b"\r\n\r\n", 1)[0]
+    upstream_content += b"\r\n\r\n"
+
+    async def send(
+        _client: httpx.AsyncClient,
+        upstream: UpstreamRequest,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream is True
+        return httpx.Response(
+            200,
+            stream=_Chunks(upstream_content),
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(create_gateway_key()),
+        json={"model": "public-model", "stream": True, "input": "hello"},
+    )
+
+    assert response.status_code == 200, response.text
+    events = _events(response.text)
+    assert any(
+        event["type"] == "response.output_text.delta" and event["delta"] == "Checking"
+        for event in events
+    )
+    assert all(event["type"] != "response.completed" for event in events)
+    assert events[-1]["type"] == "error"
+    assert expected_error in events[-1]["message"]
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    assert logs.status_code == 200, logs.text
+    request_log = logs.json()["items"][0]
+    assert request_log["success"] is False
+    assert expected_error in request_log["error_message"]
+
+
+def test_responses_stream_completes_identity_only_function_call(
+    client,
+    monkeypatch,
+    create_site_group_and_key,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    _, _, key = create_site_group_and_key(model_name="public-model")
+    upstream_frames = [
+        {
+            "id": "chat-empty-tool",
+            "model": "public-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call-empty",
+                                "type": "function",
+                                "function": {"name": "lookup", "arguments": ""},
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
+        {"choices": [], "usage": {"prompt_tokens": 4, "completion_tokens": 0}},
+    ]
+    upstream_stream = (
+        "".join(f"data: {json.dumps(frame)}\n\n" for frame in upstream_frames)
+        + "data: [DONE]\n\n"
+    )
+
+    async def send(_client, upstream, *, stream: bool, body_bytes: bytes):
+        assert stream is True
+        return httpx.Response(
+            200,
+            stream=_Chunks(upstream_stream.encode()),
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        "/v1/responses",
+        headers=gateway_headers(key),
+        json={
+            "model": "public-model",
+            "stream": True,
+            "max_output_tokens": 64,
+            "input": "Look up the current time",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.text.endswith("data: [DONE]\n\n")
+    events = _events(response.text)
+    added_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["type"] == "response.output_item.added"
+    )
+    argument_deltas = [
+        event["delta"]
+        for event in events
+        if event["type"] == "response.function_call_arguments.delta"
+    ]
+    assert argument_deltas == ["{}"]
+    tool_done_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["type"] == "response.function_call_arguments.done"
+    )
+    completed_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["type"] == "response.completed"
+    )
+    assert added_index < tool_done_index < completed_index
+    completed = events[completed_index]["response"]
+    assert completed["usage"]["input_tokens"] == 4
+    assert completed["output"][0]["arguments"] == "{}"
 
 
 @pytest.mark.parametrize(

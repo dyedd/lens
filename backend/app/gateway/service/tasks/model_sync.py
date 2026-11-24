@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -14,7 +15,6 @@ from ....models.channels import (
 from ....models.model_groups import ModelGroupReconcileReport
 from ....models.protocols import ChannelModelSyncStatus, ProtocolKind
 from ....models.sites import SiteBaseUrl, SiteConfig, SiteCredential, SiteProtocolConfig
-from ..app_state import logger
 from .model_discovery import (
     UpstreamModelList,
     fetch_upstream_model_list,
@@ -22,6 +22,8 @@ from .model_discovery import (
 
 if TYPE_CHECKING:
     from ..app_state import AppState
+
+logger = logging.getLogger(__name__)
 
 
 def channel_for_credential(

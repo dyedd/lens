@@ -27,7 +27,12 @@ function arrayLength(value: unknown): number {
 }
 
 export function parseBackupPreview(rawValue: string): ConfigBackupPreview {
-  const payload: unknown = JSON.parse(rawValue);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawValue);
+  } catch (error) {
+    throw new Error("Invalid backup file", { cause: error });
+  }
   if (!isRecord(payload)) throw new Error("Invalid backup file");
   const stats = isRecord(payload.stats) ? payload.stats : {};
   return {
@@ -49,7 +54,8 @@ export function parseBackupPreview(rawValue: string): ConfigBackupPreview {
         Number(isRecord(stats.imported_total)) +
         arrayLength(stats.imported_daily) +
         arrayLength(stats.request_daily) +
-        arrayLength(stats.model_daily),
+        arrayLength(stats.model_daily) +
+        arrayLength(stats.attribution_hourly),
     },
   };
 }

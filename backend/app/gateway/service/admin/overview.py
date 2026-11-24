@@ -15,7 +15,7 @@ from ..auth import get_current_admin
 
 
 async def get_overview_summary(
-    days: int = 7,
+    days: int = Query(default=7, ge=-1),
     _: Any = Depends(get_current_admin),
 ) -> OverviewSummary:
     """Return aggregate request statistics for the selected period."""
@@ -25,7 +25,7 @@ async def get_overview_summary(
 
 
 async def list_overview_daily(
-    days: int = 0,
+    days: int = Query(default=0, ge=-1),
     granularity: str = Query(default="daily", pattern="^(daily|hourly)$"),
     _: Any = Depends(get_current_admin),
 ) -> list[OverviewDailyPoint]:
@@ -38,7 +38,7 @@ async def list_overview_daily(
 
 
 async def get_overview_model_analytics(
-    days: int = 7,
+    days: int = Query(default=7, ge=-1),
     metric: str = Query(default="cost", pattern="^(cost|requests|tokens)$"),
     gateway_key_id: str | None = None,
     _: Any = Depends(get_current_admin),

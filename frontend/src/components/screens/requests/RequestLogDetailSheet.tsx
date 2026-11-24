@@ -21,6 +21,7 @@ import type { Locale } from "@/lib/I18nContext";
 import { titleForLocale } from "@/lib/I18nContext";
 import { formatJson } from "@/lib/jsonFormatting";
 import { protocolLabel } from "@/lib/protocols";
+import { formatUserAgentDisplay } from "./requestUserAgent";
 import {
   formatCacheHitRate,
   formatChannelCredentialLabel,
@@ -29,9 +30,8 @@ import {
   formatInternalCredentialLabel,
   formatMoney,
   formatMs,
-  formatUserAgentDisplay,
-  getResolvedGroupName,
-  getSecondaryModelName,
+  getDistinctUpstreamModelName,
+  getRequestModelDisplayName,
 } from "./requestView";
 
 function generateCurl(
@@ -88,9 +88,8 @@ function generateCurl(
     null,
     2,
   );
-  const bodyStr = requestContent?.trim()
-    ? `  -d '${requestContent.trim().replace(/'/g, "'\\''")}'`
-    : `  -d '${fallbackBody}'`;
+  const body = requestContent?.trim() || fallbackBody;
+  const bodyStr = `  -d '${body.replace(/'/g, "'\\''")}'`;
 
   return `curl -X POST "${origin}${path}" \\\n${headers.join(" \\\n")} \\\n${bodyStr}`;
 }
@@ -291,6 +290,7 @@ export function RequestLogDetailSheet({
   timeZone,
   relayLogBodyEnabled,
   onClose,
+  onCloseAutoFocus,
   onCancel,
   isCancelling,
 }: {
@@ -302,12 +302,13 @@ export function RequestLogDetailSheet({
   timeZone: string;
   relayLogBodyEnabled: boolean;
   onClose: () => void;
+  onCloseAutoFocus: (event: Event) => void;
   onCancel: (id: number) => void;
   isCancelling: boolean;
 }) {
   const record = detail ?? item;
-  const modelName = record ? getResolvedGroupName(record) : "";
-  const upstream = record ? getSecondaryModelName(record) : null;
+  const modelName = record ? getRequestModelDisplayName(record) : "";
+  const upstream = record ? getDistinctUpstreamModelName(record) : null;
   const time = record
     ? formatLogDateTime(record.created_at, locale, timeZone)
     : "";
@@ -317,7 +318,10 @@ export function RequestLogDetailSheet({
       open={Boolean(item) || loading}
       onOpenChange={(open) => !open && onClose()}
     >
-      <SheetContent className="sm:max-w-[480px]">
+      <SheetContent
+        className="sm:max-w-[480px]"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <SheetHeader className="pr-14">
           <div className="flex items-center justify-between gap-3">
             <SheetTitle>

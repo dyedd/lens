@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import Depends, Request, Response
 
+from ....core.errors import InvalidInputError
 from ....models.model_groups import (
     ModelGroupCandidatesRequest,
     ModelGroupCandidatesResponse,
@@ -66,15 +67,17 @@ async def test_model_group_model(
         None,
     )
     if member is None:
-        raise ValueError("Model is not a member of the model group")
+        raise InvalidInputError("Model is not a member of the model group")
     if not member.enabled or member.state != ModelGroupItemState.READY:
-        raise ValueError("Model group member is unavailable")
+        raise InvalidInputError("Model group member is unavailable")
     channel = next(item for item in channels if item.id == member.channel_id)
     credential = next(item for item in channel.keys if item.id == member.credential_id)
 
     protocol = channel.protocol
     if payload.protocol is not None and payload.protocol != protocol:
-        raise ValueError("Test protocol must match the configured upstream protocol")
+        raise InvalidInputError(
+            "Test protocol must match the configured upstream protocol"
+        )
 
     probe_payload = SiteModelTestRequest(
         protocol=protocol,

@@ -37,8 +37,6 @@ export type FormItem = {
   context_window_source: ContextWindowSource | null;
 };
 
-export type EvaluatedFormItem = FormItem;
-
 export type FormState = {
   name: string;
   strategy: RoutingStrategy;
@@ -79,7 +77,7 @@ export type FoldedMember = {
   rate_source: "none" | "sub2api" | "newapi";
   context_window: number | null;
   context_window_source: ContextWindowSource | null;
-  subItems: EvaluatedFormItem[];
+  subItems: FormItem[];
   /** Shared source of every sub item; mixed sources count as manual. */
   source: ModelGroupMemberSource;
   enabled_item_count: number;

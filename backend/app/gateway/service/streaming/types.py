@@ -1,14 +1,34 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from .capture import append_error_sample
 
-OPENAI_RESPONSES_TERMINAL_EVENTS = frozenset(
-    {"response.completed", "response.incomplete"}
-)
+OPENAI_RESPONSES_TERMINAL_EVENTS = ("response.completed", "response.incomplete")
+
+
+def iter_gemini_candidates(
+    payload: Mapping[str, object],
+) -> Iterator[Mapping[str, object]]:
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return
+    for candidate in candidates:
+        if isinstance(candidate, Mapping):
+            yield candidate
+
+
+def iter_gemini_content_parts(content: object) -> Iterator[Mapping[str, object]]:
+    if not isinstance(content, Mapping):
+        return
+    parts = content.get("parts")
+    if isinstance(parts, list):
+        for part in parts:
+            if isinstance(part, Mapping):
+                yield part
 
 
 @dataclass
@@ -128,6 +148,9 @@ def parse_sse_payloads(
         except json.JSONDecodeError as exc:
             append_error_sample(errors, f"invalid SSE JSON: {exc.msg}")
             continue
+        except (RecursionError, ValueError):
+            append_error_sample(errors, "invalid SSE JSON value")
+            continue
         if isinstance(payload, dict):
             payloads.append(payload)
     return payloads
@@ -145,6 +168,9 @@ def parse_ndjson_payloads(
             payload = json.loads(line)
         except json.JSONDecodeError as exc:
             append_error_sample(errors, f"invalid NDJSON: {exc.msg}")
+            continue
+        except (RecursionError, ValueError):
+            append_error_sample(errors, "invalid NDJSON value")
             continue
         if isinstance(payload, dict):
             payloads.append(payload)

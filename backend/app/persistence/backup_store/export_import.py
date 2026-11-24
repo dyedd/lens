@@ -4,6 +4,7 @@ import json
 from typing import Any
 from urllib.parse import urlparse
 
+from app.core.errors import InvalidInputError
 from app.core.model_group_matching import combine_model_group_patterns
 from app.models.backups import ConfigBackupDump
 
@@ -46,7 +47,7 @@ def _migrate_legacy_group_fields(data: object) -> object:
             if not isinstance(rule_ids, list) or any(
                 not isinstance(rule_id, str) for rule_id in rule_ids
             ):
-                raise ValueError("Backup regex rule references must be strings")
+                raise InvalidInputError("Backup regex rule references must be strings")
             if not group.get("match_regex"):
                 patterns = [
                     rules_by_id[rule_id]
@@ -57,7 +58,7 @@ def _migrate_legacy_group_fields(data: object) -> object:
                     group["match_regex"] = combine_model_group_patterns(patterns)
                     group["match_regex_operator"] = "or"
                 elif rule_ids:
-                    raise ValueError("Backup references missing regex rules")
+                    raise InvalidInputError("Backup references missing regex rules")
     return data
 
 
@@ -143,6 +144,13 @@ def _migrate_legacy_sites(data: object) -> object:
                 migrated_models.append(model)
             protocol["models"] = migrated_models
 
+    _migrate_legacy_backup_references(data, legacy_protocols)
+    return data
+
+
+def _migrate_legacy_backup_references(
+    data: dict[str, Any], legacy_protocols: dict[str, str]
+) -> None:
     groups = data.get("groups", [])
     for group in groups if isinstance(groups, list) else []:
         if not isinstance(group, dict):
@@ -190,7 +198,6 @@ def _migrate_legacy_sites(data: object) -> object:
     for row in hourly if isinstance(hourly, list) else []:
         if isinstance(row, dict):
             _migrate_legacy_channel_reference(row, legacy_protocols)
-    return data
 
 
 def _migrate_legacy_channel_reference(
@@ -212,4 +219,4 @@ def parse_dump(payload: bytes) -> ConfigBackupDump:
         data = _migrate_legacy_sites(data)
         return ConfigBackupDump.model_validate(data)
     except ValueError as exc:
-        raise ValueError("Invalid backup file") from exc
+        raise InvalidInputError("Invalid backup file") from exc

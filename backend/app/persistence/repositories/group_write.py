@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import InvalidInputError
 from app.core.model_group_matching import (
     compile_model_group_pattern,
     matches_model_group,
@@ -37,7 +38,7 @@ async def validate_group_payload(
 ) -> ModelGroupEntity | None:
     trimmed_name = name.strip()
     if not trimmed_name:
-        raise ValueError("Model group name is required")
+        raise InvalidInputError("Model group name is required")
     result = await session.execute(
         select(ModelGroupEntity.id)
         .where(ModelGroupEntity.name == trimmed_name)
@@ -45,28 +46,28 @@ async def validate_group_payload(
     )
     existing_id = result.scalar_one_or_none()
     if existing_id is not None and existing_id != exclude_group_id:
-        raise ValueError(f"Model group already exists: {trimmed_name}")
+        raise InvalidInputError(f"Model group already exists: {trimmed_name}")
 
     trimmed_route_group_id = route_group_id.strip()
     route_group: ModelGroupEntity | None = None
     if trimmed_route_group_id:
         if exclude_group_id is not None and trimmed_route_group_id == exclude_group_id:
-            raise ValueError("Model group cannot route to itself")
+            raise InvalidInputError("Model group cannot route to itself")
         route_group = await session.get(ModelGroupEntity, trimmed_route_group_id)
         if route_group is None:
-            raise ValueError(
+            raise InvalidInputError(
                 f"Route target model group not found: {trimmed_route_group_id}"
             )
         if route_group.route_group_id.strip():
-            raise ValueError(
+            raise InvalidInputError(
                 f"Route target must be an execution group: {route_group.name}"
             )
 
     fallback_ids = [item.strip() for item in (fallback_group_ids or [])]
     if exclude_group_id is not None and exclude_group_id in fallback_ids:
-        raise ValueError("Model group cannot fall back to itself")
+        raise InvalidInputError("Model group cannot fall back to itself")
     if fallback_ids and trimmed_route_group_id:
-        raise ValueError("Route groups cannot configure multimodal fallbacks")
+        raise InvalidInputError("Route groups cannot configure multimodal fallbacks")
     if fallback_ids:
         fallback_rows = (
             (
@@ -84,9 +85,9 @@ async def validate_group_payload(
             (item for item in fallback_ids if item not in found_ids), None
         )
         if missing_id is not None:
-            raise ValueError(f"Fallback model group not found: {missing_id}")
+            raise InvalidInputError(f"Fallback model group not found: {missing_id}")
         if any(row.route_group_id.strip() for row in fallback_rows):
-            raise ValueError("Fallback model groups must be execution groups")
+            raise InvalidInputError("Fallback model groups must be execution groups")
 
     if items is None:
         return route_group
@@ -95,7 +96,7 @@ async def validate_group_payload(
     for item in items:
         item_key = model_group_item_key(item)
         if item_key in seen_keys:
-            raise ValueError(
+            raise InvalidInputError(
                 "Duplicate model group member: "
                 f"channel={item.channel_id} credential={item.credential_id} "
                 f"model={item.model_name}"
@@ -105,13 +106,13 @@ async def validate_group_payload(
     for item in excluded_items or []:
         item_key = model_group_item_key(item)
         if item_key in seen_keys:
-            raise ValueError(
+            raise InvalidInputError(
                 "Model group member cannot also be excluded: "
                 f"channel={item.channel_id} credential={item.credential_id} "
                 f"model={item.model_name}"
             )
         if item_key in excluded_keys:
-            raise ValueError(
+            raise InvalidInputError(
                 "Duplicate excluded model group member: "
                 f"channel={item.channel_id} credential={item.credential_id} "
                 f"model={item.model_name}"
@@ -157,29 +158,29 @@ def _raise_group_item_error(
 ) -> None:
     reason_label = f"{reason.value}: "
     if reason == ModelGroupItemReason.CHANNEL_NOT_FOUND:
-        raise ValueError(f"{reason_label}Channels not found: {item.channel_id}")
+        raise InvalidInputError(f"{reason_label}Channels not found: {item.channel_id}")
     if reason == ModelGroupItemReason.CHANNEL_DISABLED:
-        raise ValueError(
+        raise InvalidInputError(
             f"{reason_label}Channel '{item.channel_id}' is disabled; "
             "enable it before "
             "adding this member"
         )
     if reason == ModelGroupItemReason.CREDENTIAL_NOT_FOUND:
-        raise ValueError(
+        raise InvalidInputError(
             f"{reason_label}Credential not found in channel {item.channel_id}: "
             f"{item.credential_id}"
         )
     if reason == ModelGroupItemReason.CREDENTIAL_DISABLED:
-        raise ValueError(
+        raise InvalidInputError(
             f"{reason_label}Credential is disabled; enable it before adding this member"
         )
     if reason == ModelGroupItemReason.MODEL_NOT_FOUND:
-        raise ValueError(
+        raise InvalidInputError(
             f"{reason_label}Model not found in channel {item.channel_id} "
             f"credential={item.credential_id}: {item.model_name}"
         )
     if reason == ModelGroupItemReason.MODEL_DISABLED:
-        raise ValueError(
+        raise InvalidInputError(
             f"{reason_label}Model is disabled in channel {item.channel_id} "
             f"credential={item.credential_id}: {item.model_name}"
         )

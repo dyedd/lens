@@ -5,6 +5,7 @@ from urllib.parse import quote, urlsplit
 
 from fastapi import HTTPException
 
+from ..core.model_name_parser import parse_model_name
 from ..core.upstream_rules import (
     RuleContext,
     RuleLayer,
@@ -97,10 +98,9 @@ def build_upstream_request(
     context_model_name = str(body.get("model") or "")
 
     if channel.protocol == ProtocolKind.GEMINI:
-        from ..core.model_name_parser import parse_model_name
-
-        model_name = str(body.get("model") or "")
-        model_name = parse_model_name(model_name).base_model.removeprefix("models/")
+        model_name = parse_model_name(context_model_name).base_model.removeprefix(
+            "models/"
+        )
         context_model_name = model_name
         if not model_name:
             raise HTTPException(status_code=400, detail="Gemini request requires model")

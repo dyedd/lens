@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useState } from "react";
+import { useState } from "react";
 import type { ModelGroup } from "@/lib/api/groups";
 import { useI18n } from "@/lib/I18nContext";
 import { lazyComponent } from "@/lib/lazyComponent";
@@ -39,19 +39,9 @@ const BatchModelTestDialog = lazyComponent(() =>
 function useGroupEditorState() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpenState] = useState(false);
-  const [candidateSearch, setCandidateSearch] = useState("");
-  const [expandedChannels, setExpandedChannels] = useState<string[]>([]);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [memberStatusFilter, setMemberStatusFilter] =
     useState<MemberStatusFilter>("all");
-  const setDialogOpen: Dispatch<SetStateAction<boolean>> = (value) => {
-    const isOpen = typeof value === "function" ? value(dialogOpen) : value;
-    if (!isOpen) {
-      setCandidateSearch("");
-      setExpandedChannels([]);
-    }
-    setDialogOpenState(isOpen);
-  };
   function openCreate() {
     setEditingId(null);
     setForm(EMPTY_FORM);
@@ -63,51 +53,40 @@ function useGroupEditorState() {
     setDialogOpen(true);
   }
   return {
-    candidateSearch,
     dialogOpen,
     editingId,
-    expandedChannels,
     form,
     memberStatusFilter,
     openCreate,
     openEdit,
-    setCandidateSearch,
     setDialogOpen,
     setEditingId,
-    setExpandedChannels,
     setForm,
     setMemberStatusFilter,
   };
 }
 
-/** Render the model group management screen. */
 export function GroupsScreen() {
   const { locale } = useI18n();
   const editor = useGroupEditorState();
   const [isSyncRunsOpen, setIsSyncRunsOpen] = useState(false);
   const queries = useGroupsQueries({
-    dialogOpen: editor.dialogOpen,
     editingId: editor.editingId,
-    form: editor.form,
     locale,
   });
   const filters = useGroupFilters(queries.groupRows, locale);
   const candidates = useGroupCandidates({
-    candidateResponse: queries.candidateQuery.data,
-    candidateSearch: editor.candidateSearch,
-    expandedChannels: editor.expandedChannels,
-    matchRegex: editor.form.route_group_id ? "" : editor.form.match_regex,
-    matchRegexOperator: editor.form.match_regex_operator,
+    dialogOpen: editor.dialogOpen,
+    editingId: editor.editingId,
+    form: editor.form,
     locale,
-    setExpandedChannels: editor.setExpandedChannels,
     setForm: editor.setForm,
   });
   const members = useGroupMembers(
     editor.form,
-    queries.evaluatedItems,
+    candidates.evaluatedItems,
     editor.setForm,
     editor.memberStatusFilter,
-    candidates.isAutoJoined,
   );
   const modelTest = useGroupModelTest(locale);
   const commands = useGroupCommands({
@@ -189,24 +168,9 @@ export function GroupsScreen() {
           submit={commands.submit}
           form={editor.form}
           setForm={editor.setForm}
-          changeName={candidates.changeName}
           routeTargetOptions={queries.routeTargetOptions}
-          changeRouteTarget={candidates.changeRouteTarget}
           members={members}
-          candidateSearch={editor.candidateSearch}
-          changeCandidateSearch={editor.setCandidateSearch}
-          refetchCandidates={queries.candidateQuery.refetch}
-          isFetchingCandidates={queries.candidateQuery.isFetching}
-          candidateRegex={candidates.candidateRegex}
-          onCandidateRegexChange={candidates.setCandidateRegex}
-          onAddAllCandidates={candidates.addAllVisibleCandidates}
-          visibleCandidateCount={candidates.visibleCandidateCount}
-          groupedCandidates={candidates.groupedCandidates}
-          expandedChannels={candidates.expandedChannels}
-          toggleChannel={candidates.toggleChannel}
-          addCandidate={candidates.addCandidate}
-          candidateIsError={queries.candidateQuery.isError}
-          candidateListError={queries.candidateQuery.error}
+          candidates={candidates}
           memberStatusFilter={editor.memberStatusFilter}
           setMemberStatusFilter={editor.setMemberStatusFilter}
         />

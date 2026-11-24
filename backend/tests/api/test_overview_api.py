@@ -5,8 +5,22 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from conftest import run_async, seed_request_log, valid_site_payload
+from fastapi.testclient import TestClient
 
 from app.persistence.entities import RequestLogEntity
+
+
+def test_overview_rejects_days_below_supported_range(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    for endpoint in ("summary", "daily", "models", "attribution"):
+        response = client.get(
+            f"/api/admin/overview-{endpoint}",
+            params={"days": -2},
+            headers=admin_headers,
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error"]["type"] == "validation_error"
 
 
 def test_overview_attribution_groups_agents_and_keeps_history(
@@ -148,6 +162,15 @@ def test_overview_attribution_survives_channel_deletion_and_log_cleanup(
     site = create_site()
     seed_request_log(app_state)
     seed_request_log(app_state, resolved_group_name="other-model", success=False)
+    model_params = {"days": 7, "metric": "tokens"}
+    models_before = client.get(
+        "/api/admin/overview-models", params=model_params, headers=admin_headers
+    )
+    assert models_before.status_code == 200, models_before.text
+    assert any(
+        point["model"] == "gpt-4o" and point["value"] == 30
+        for point in models_before.json()["trend"]
+    )
     params = {"days": -1, "dimension": "model", "metric": "cache"}
     response = client.get(
         "/api/admin/overview-attribution", params=params, headers=admin_headers
@@ -178,6 +201,11 @@ def test_overview_attribution_survives_channel_deletion_and_log_cleanup(
     ).json()
     assert after["items"] == before["items"]
     assert after["trend"] == before["trend"]
+    models_after = client.get(
+        "/api/admin/overview-models", params=model_params, headers=admin_headers
+    )
+    assert models_after.status_code == 200, models_after.text
+    assert models_after.json() == models_before.json()
     channels = client.get(
         "/api/admin/overview-attribution",
         params={**params, "dimension": "channel", "filter_key": "gpt-4o"},

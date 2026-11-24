@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from math import isfinite
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -22,12 +22,14 @@ from ...upstream_request import (
     resolve_channel_api_key,
     resolve_upstream_proxy_url,
 )
-from ..app_state import AppState
 from ..upstream_support import (
     default_lens_user_agent,
     format_http_response_error,
 )
 from .model_sync import channel_for_credential
+
+if TYPE_CHECKING:
+    from ..app_state import AppState
 
 
 class CredentialRateSyncError(Exception):
@@ -52,7 +54,10 @@ def _site_credential(site: SiteConfig, credential_id: str) -> SiteCredential | N
 def _nonnegative_number(value: Any, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"Invalid {label}")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"Invalid {label}") from exc
     if not isfinite(number) or number < 0:
         raise ValueError(f"Invalid {label}")
     return number

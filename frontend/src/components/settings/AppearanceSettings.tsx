@@ -2,9 +2,12 @@ import { ImageIcon } from "lucide-react";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import { Input } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import {
+  SettingsFieldList,
+  SettingsFieldRow,
+} from "@/components/ui/SettingsLayout";
 import { titleForLocale, useI18n } from "@/lib/I18nContext";
 import { TIME_ZONE_OPTIONS } from "./settingsDraft";
-import { SettingsFieldList, SettingsFieldRow } from "./settingsLayout";
 
 interface AppearanceSettingsProps {
   siteName: string;

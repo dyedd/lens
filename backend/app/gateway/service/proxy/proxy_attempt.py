@@ -39,6 +39,7 @@ from ..compat import (
 from ..error_responses import protocol_error_response
 from ..payload_serialization import dump_log_json
 from ..request_logger import RequestLogger
+from ..request_support import elapsed_ms
 from ..runtime_types import (
     AttemptLog,
     RequestDeadline,
@@ -62,7 +63,6 @@ from .proxy_upstream import (
     execute_upstream_request,
     prepare_upstream_request,
 )
-from .routing_plan import elapsed_ms
 from .routing_request import apply_reasoning_intent
 
 
@@ -580,7 +580,11 @@ def _record_stream_route_health(
         model_name=target.model_name,
         fault_protocol=fault_protocol,
         was_probe=capture.route_was_probe if capture is not None else False,
-        retry_action=classification.action if classification is not None else None,
+        retry_action=(
+            RetryAction(classification.action)
+            if classification is not None and classification.action is not None
+            else None
+        ),
     )
 
 
