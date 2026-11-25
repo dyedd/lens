@@ -890,6 +890,118 @@ def test_protocol_conversion_rejects_streams_missing_terminal_event(
     assert expected_error in request_log["error_message"]
 
 
+@pytest.mark.parametrize("protocol", (*_PROTOCOLS, "openai_image"))
+def test_native_stream_without_terminal_event_fails_and_logs_parsed_events(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    create_site: Callable[..., dict[str, Any]],
+    create_model_group: Callable[..., dict[str, Any]],
+    create_gateway_key: Callable[..., dict[str, Any]],
+    protocol: str,
+) -> None:
+    import app.gateway.service.proxy.proxy_upstream as proxy_upstream
+
+    settings = client.put(
+        "/api/admin/settings",
+        headers=admin_headers,
+        json={"items": [{"key": "relay_log_body_enabled", "value": "true"}]},
+    )
+    assert settings.status_code == 200, settings.text
+    create_site(valid_site_payload(protocols=[protocol], model_name="upstream-model"))
+    create_model_group(
+        name="public-model",
+        items=[
+            {
+                "channel_id": f"pc-1_{protocol}",
+                "credential_id": "cred-1",
+                "model_name": "upstream-model",
+                "enabled": True,
+            }
+        ],
+    )
+    if protocol == "openai_image":
+        path = "/v1/images/generations"
+        body = {"model": "public-model", "stream": True, "prompt": "hello"}
+    else:
+        path, body = _client_request(protocol, stream=True)
+
+    event = {
+        "openai_chat": {"choices": [{"index": 0, "delta": {"content": "partial"}}]},
+        "openai_responses": {
+            "type": "response.created",
+            "response": {"id": "resp_partial", "model": "upstream-model"},
+        },
+        "anthropic": {
+            "type": "message_start",
+            "message": {
+                "id": "msg_partial",
+                "type": "message",
+                "role": "assistant",
+                "model": "upstream-model",
+                "content": [],
+                "usage": {"input_tokens": 1, "output_tokens": 0},
+            },
+        },
+        "gemini": {
+            "candidates": [
+                {
+                    "index": 0,
+                    "content": {"role": "model", "parts": [{"text": "partial"}]},
+                }
+            ]
+        },
+        "openai_image": {
+            "type": "image_generation.partial_image",
+            "b64_json": "YWJj",
+            "partial_image_index": 0,
+        },
+    }[protocol]
+    upstream_content = "".join(
+        (f"event: {event['type']}\n" if "type" in event else "")
+        + f"data: {json.dumps(event)}\n\n"
+    )
+
+    async def send(
+        _client: httpx.AsyncClient,
+        upstream: UpstreamRequest,
+        *,
+        stream: bool,
+        body_bytes: bytes,
+    ) -> httpx.Response:
+        assert stream
+        return httpx.Response(
+            200,
+            content=upstream_content,
+            headers={"content-type": "text/event-stream"},
+            request=httpx.Request("POST", upstream.url),
+        )
+
+    monkeypatch.setattr(proxy_upstream, "_send_upstream", send)
+    response = client.post(
+        path,
+        headers=gateway_headers(create_gateway_key()),
+        json=body,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.text.startswith(upstream_content)
+    assert "stream ended before a terminal event" in response.text
+    logs = client.get("/api/admin/request-logs/page", headers=admin_headers)
+    assert logs.status_code == 200, logs.text
+    request_log = logs.json()["items"][0]
+    assert request_log["success"] is False
+    assert request_log["status_code"] == 502
+    assert "stream ended before a terminal event" in request_log["error_message"]
+    detail = client.get(
+        f"/api/admin/request-logs/{request_log['id']}", headers=admin_headers
+    )
+    assert detail.status_code == 200, detail.text
+    response_content = detail.json()["response_content"]
+    assert "event:" not in response_content
+    assert json.loads(response_content)
+
+
 def test_responses_stream_completes_identity_only_function_call(
     client,
     monkeypatch,

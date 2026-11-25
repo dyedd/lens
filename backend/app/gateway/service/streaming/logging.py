@@ -10,15 +10,14 @@ from ....models.protocols import RequestLogLifecycleStatus
 from ....models.request_logs import RequestLogInput
 from ....persistence.repositories.model_price_repository import ModelCostEstimate
 from ..app_state import app_state
+from ..payload_serialization import dump_log_json
 from ..request_logger import RequestLogger
 from ..request_support import elapsed_ms
 from ..runtime_types import UpstreamResult
-from .capture import (
-    StreamCapture,
-    record_stream_parse_error,
-)
+from .capture import StreamCapture
 from .events import join_stream_chunks, stream_capture_usage
 from .restore import distill_stream_response_content
+from .types import parse_ndjson_payloads, parse_sse_payloads
 from .usage import (
     _describe_stream_capture_issue,
     _is_pure_client_stream_disconnect,
@@ -101,6 +100,11 @@ async def record_stream_request_log(
         capture.response_content_chunks.clear()
     response_protocol = channel.protocol
     response_raw_content = raw_content
+    response_format = capture.event_format if capture is not None else None
+    response_truncated = capture is not None and (
+        capture.is_response_content_truncated
+        or capture.is_client_response_content_truncated
+    )
     client_response_content = (
         join_stream_chunks(capture.client_response_content_chunks)
         if capture is not None and capture.capture_body
@@ -115,13 +119,8 @@ async def record_stream_request_log(
     ):
         response_protocol = log_ctx.protocol
         response_raw_content = client_response_content
-    # 响应在帧内截断时保留原文，避免完整解析误报错误。
-    upstream_body_incomplete = _is_stream_body_cut_short(capture) or (
-        capture is not None and capture.is_response_content_truncated
-    )
-    logged_body_incomplete = upstream_body_incomplete or (
-        capture is not None and capture.is_client_response_content_truncated
-    )
+        response_format = "sse"
+        response_truncated = capture.is_client_response_content_truncated
     if capture is not None:
         parsed = stream_capture_usage(capture)
     elif raw_content:
@@ -131,17 +130,29 @@ async def record_stream_request_log(
             parsed = stream_capture_usage(capture)
     else:
         parsed = stream_capture_usage(capture)
-    try:
-        if logged_body_incomplete:
-            distilled_content = response_raw_content
-        else:
-            distilled_content = distill_stream_response_content(
-                response_protocol, response_raw_content
+    body_incomplete = response_truncated or _is_stream_body_cut_short(capture)
+    distilled_content = response_raw_content
+    if response_raw_content and not body_incomplete:
+        if (
+            outcome.lifecycle_status == RequestLogLifecycleStatus.SUCCEEDED
+            and response_format != "ndjson"
+        ):
+            try:
+                distilled_content = distill_stream_response_content(
+                    response_protocol, response_raw_content
+                )
+            except ValueError:
+                distilled_content = response_raw_content
+        if distilled_content == response_raw_content and not (
+            capture is not None and capture.parse_errors
+        ):
+            payloads = (
+                parse_ndjson_payloads(response_raw_content)
+                if response_format == "ndjson"
+                else parse_sse_payloads(response_raw_content)
             )
-    except ValueError as exc:
-        if capture is not None:
-            record_stream_parse_error(capture, str(exc))
-        distilled_content = response_raw_content
+            if payloads:
+                distilled_content = dump_log_json(payloads) or response_raw_content
     first_token_latency_ms = (
         capture.first_token_latency_ms
         if capture is not None

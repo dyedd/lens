@@ -370,7 +370,9 @@ def _build_stream_result(
         converted_iter = raw_iter
         stream_media = response.headers.get("content-type")
 
-    converted_iter = _stream_client_iterator(converted_iter, capture, client_protocol)
+    converted_iter = _stream_client_iterator(
+        converted_iter, capture, client_protocol, channel.protocol
+    )
 
     return UpstreamResult(
         response=FinalizingStreamingResponse(
@@ -395,10 +397,15 @@ async def _stream_client_iterator(
     stream: AsyncIterator[bytes],
     capture: StreamCapture,
     client_protocol: ProtocolKind | None,
+    upstream_protocol: ProtocolKind,
 ) -> AsyncIterator[bytes]:
     try:
         async for chunk in stream:
             yield chunk
+        if not capture.protocol_completed and not capture.errors:
+            raise ValueError(
+                f"{upstream_protocol.value} stream ended before a terminal event"
+            )
     except (ValueError, httpx.HTTPError, GatewayTimeoutError) as exc:
         if not capture.errors:
             record_stream_error(
