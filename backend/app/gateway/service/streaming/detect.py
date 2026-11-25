@@ -80,7 +80,11 @@ def _record_stream_completion(
         )
         return False
     if protocol == ProtocolKind.OPENAI_RESPONSES:
-        is_terminal = payload.get("type") in OPENAI_RESPONSES_TERMINAL_EVENTS
+        event_type = payload.get("type")
+        response_payload = payload.get("response")
+        is_terminal = event_type in OPENAI_RESPONSES_TERMINAL_EVENTS and isinstance(
+            response_payload, dict
+        )
         if is_terminal:
             capture.protocol_completed = True
         return is_terminal
