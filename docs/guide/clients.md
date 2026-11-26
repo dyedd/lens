@@ -1,47 +1,59 @@
 # 客户端接入
 
-客户端需要三个值：Lens 地址、网关 API Key、模型组名称。管理员登录令牌和上游服务商的 Key 都不应填到客户端。
+客户端只需要三个参数即可接入 Lens：**网关地址**、**网关密钥（Gateway Key）** 和 **模型组名称**。
 
-## 创建网关 Key
+## 第一步：创建网关密钥
 
-打开 **设置 → 网关密钥**，点击 **创建网关密钥**：
+进入 **设置 → 网关密钥** 点击 **创建网关密钥**：
 
-1. 填写用途备注。
-2. 按需限制可用模型组、费用上限和有效期。
-3. 创建后复制 Key，填入客户端的 API Key 项。
+1. **用途备注**：填写客户端或项目名，便于后续在请求日志与概览归因中识别。
+2. **可用模型组**：留空表示允许调用全部模型组；或显式勾选允许访问的模型组列表（同时影响 `/v1/models` 返回的可见列表）。
+3. **费用上限与有效期**：可设置累计美元上限（`max_cost_usd`）与过期时间（`expires_at`），超限或过期后自动拒绝请求（`401`）。
+4. **启停控制**：支持随时一键禁用或删除，无需修改上游配置。
 
 ![网关密钥列表中的模型权限、费用上限和启停状态](/images/api-keys.png)
 
-客户端的 `model` 必须是 Lens 中已有的模型组名称。先确认组里有可用成员。默认部署地址是 `http://127.0.0.1:3000`；远程部署时换成实际域名。
+## 第二步：了解接口与认证方式
 
-例如，可建立 `gpt-6.1-sol`、`claude-opus-5-5` 同名组，也可以通过 `daily-chat` 别名引用执行组。下面的 `your-model-group` 等占位名称都应替换为自己的组名。使用 GPT-6.1 Sol 的工具调用时，客户端和上游均选择 [Responses API](https://developers.openai.com/api/docs/models/gpt-6.1-sol)。
+Lens 默认监听 `http://127.0.0.1:3000`（Docker 部署），支持三种网关认证头，可按客户端习惯任选其一：
+- `Authorization: Bearer sk-lens-...`
+- `x-api-key: sk-lens-...`
+- `x-goog-api-key: sk-lens-...`
 
-| 客户端接口 | Base URL / 请求路径 |
-| --- | --- |
-| OpenAI SDK | Base URL 为 `http://127.0.0.1:3000/v1` |
-| Anthropic SDK | Base URL 为 `http://127.0.0.1:3000` |
-| Chat Completions | `POST /v1/chat/completions` |
-| Responses | `POST /v1/responses` |
-| Anthropic Messages | `POST /v1/messages` |
-| Gemini | `POST /v1beta/models/{模型组}:generateContent` |
-| Embeddings | `POST /v1/embeddings` |
-| Images | `POST /v1/images/generations` 或 `/v1/images/edits` |
-| Rerank | `POST /v1/rerank` |
+此外，客户端可携带可选请求头 `x-lens-session-id`（最长 256 字符），用于在开启 **规则隐私** 时隔离不同会话的脱敏占位符恢复映射。
 
-## 先验证模型列表
+| 协议入口 | 请求路径 | 跨协议转换支持 |
+| --- | --- | --- |
+| **OpenAI Chat** | `POST /v1/chat/completions` | 支持与 Responses / Anthropic / Gemini 双向转换 |
+| **OpenAI Responses** | `POST /v1/responses` | 支持与 Chat / Anthropic / Gemini 双向转换 |
+| **Anthropic Messages** | `POST /v1/messages` | 支持与 Chat / Responses / Gemini 双向转换；自动将 `messages` 中的 `system` 角色提升为顶层 `system` |
+| **Gemini** | `POST /v1beta/models/{模型组}:generateContent`<br>`POST /v1beta/models/{模型组}:streamGenerateContent` | 支持与 Chat / Responses / Anthropic 双向转换 |
+| **Embeddings** | `POST /v1/embeddings` | 仅直通具备向量能力的上游模型 |
+| **Images** | `POST /v1/images/generations`<br>`POST /v1/images/edits`（支持 JSON 与 multipart 文件上传） | 仅直通具备图像能力的上游模型 |
+| **Rerank** | `POST /v1/rerank` | 仅直通重排上游（上游地址以 `/v2` 结尾时自动适配 Cohere v2） |
+| **模型目录** | `GET /v1/models` · `GET /v1beta/models` | 按当前网关密钥权限动态返回可用模型组 |
 
-以下 curl 示例适用于 Bash。将示例 Key 换成自己的网关 Key：
+> [!TIP]
+> **同协议零损直通 vs 跨协议转换**：当客户端协议与上游成员协议一致时，Lens 仅替换模型名、规则参数与认证头后**原样转发**，完整保留 Prompt Caching 与服务商特有字段（如 `previous_response_id`）；仅在协议不同时才经过 Unified IR 进行转换。
+
+## 第三步：验证模型列表
 
 ```bash
 curl http://127.0.0.1:3000/v1/models \
   -H "Authorization: Bearer sk-lens-..."
 ```
 
-返回的模型列表受 Key 的模型权限限制。选择可用模型组后，发送一次简单请求。
+返回的列表中仅包含该网关密钥有权访问、且至少拥有一个就绪成员的模型组。
 
-## OpenAI Chat
+## SDK 与 API 调用示例
 
-```bash
+下列示例中的 `your-model-group` 请替换为 Lens 中实际存在的模型组名称；如需要指定推理强度，可附加后缀如 `your-model-group(high)`。
+
+### OpenAI Chat & Responses
+
+::: code-group
+
+```bash [Chat Completions (cURL)]
 curl http://127.0.0.1:3000/v1/chat/completions \
   -H "Authorization: Bearer sk-lens-..." \
   -H "Content-Type: application/json" \
@@ -51,20 +63,7 @@ curl http://127.0.0.1:3000/v1/chat/completions \
   }'
 ```
 
-PowerShell 7 可使用：
-
-```powershell
-$headers = @{ Authorization = "Bearer sk-lens-..." }
-$body = @{
-    model = "your-model-group"
-    messages = @(@{ role = "user"; content = "hello" })
-} | ConvertTo-Json -Depth 5
-Invoke-RestMethod -Uri "http://127.0.0.1:3000/v1/chat/completions" -Method Post -Headers $headers -ContentType "application/json" -Body $body
-```
-
-Python 客户端安装 `openai` SDK 后：
-
-```python
+```python [OpenAI Python SDK]
 import os
 from openai import OpenAI
 
@@ -79,22 +78,30 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 ```
 
-`LENS_API_KEY` 是这里给客户端使用的环境变量，不是 Lens 服务端的启动配置。
-
-## OpenAI Responses
-
-```bash
-curl http://127.0.0.1:3000/v1/responses \
+```bash [Responses API (cURL)]
+curl -N http://127.0.0.1:3000/v1/responses \
   -H "Authorization: Bearer sk-lens-..." \
   -H "Content-Type: application/json" \
-  -d '{"model":"your-model-group","input":"hello"}'
+  -d '{"model":"your-model-group","input":"hello","stream":true}'
 ```
 
-对话接口支持流式输出。在请求体中设置 `"stream": true`，使用 curl 时加上 `-N` 以便即时显示事件。
+```powershell [PowerShell 7]
+$headers = @{ Authorization = "Bearer sk-lens-..." }
+$body = @{
+    model = "your-model-group"
+    messages = @(@{ role = "user"; content = "hello" })
+} | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Uri "http://127.0.0.1:3000/v1/chat/completions" `
+  -Method Post -Headers $headers -ContentType "application/json" -Body $body
+```
 
-## Anthropic Messages
+:::
 
-```bash
+### Anthropic Messages
+
+::: code-group
+
+```bash [Anthropic Messages (cURL)]
 curl http://127.0.0.1:3000/v1/messages \
   -H "x-api-key: sk-lens-..." \
   -H "anthropic-version: 2023-06-01" \
@@ -106,9 +113,7 @@ curl http://127.0.0.1:3000/v1/messages \
   }'
 ```
 
-Python 客户端安装 `anthropic` SDK 后：
-
-```python
+```python [Anthropic Python SDK]
 import os
 from anthropic import Anthropic
 
@@ -124,7 +129,9 @@ message = client.messages.create(
 print(message.content[0].text)
 ```
 
-## Gemini
+:::
+
+### Gemini
 
 ```bash
 curl "http://127.0.0.1:3000/v1beta/models/your-gemini-group:generateContent" \
@@ -133,11 +140,9 @@ curl "http://127.0.0.1:3000/v1beta/models/your-gemini-group:generateContent" \
   -d '{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}'
 ```
 
-流式请求使用 `streamGenerateContent`。路径中的模型组名称应进行 URL 编码；简单的字母、数字与连字符名称无需额外处理。
+流式输出使用 `:streamGenerateContent`。如果模型组名包含 `/` 等特殊字符，路径段需先做 URL 编码。
 
-## 向量、图像与重排
-
-这些接口需要对应能力的模型组，不会自动把普通对话模型变成向量或图像模型。
+### Embeddings / Images / Rerank
 
 ::: code-group
 
@@ -174,13 +179,11 @@ curl http://127.0.0.1:3000/v1/rerank \
 
 :::
 
-图片编辑还支持 multipart 上传；图像接口支持 JSON 请求和 `stream: true` 事件流。图像单价在价格配置中按张设置。
+## 编程工具接入
 
-Rerank 转发到上游的 `/v1/rerank`。使用 Cohere v2 时，按服务商要求配置带 `/v2` 的上游 Base URL。
+### Codex
 
-## Codex
-
-在 `~/.codex/config.toml` 中选择自定义提供商。将模型名替换为实际可用的 Lens 模型组：
+在 `~/.codex/config.toml` 中配置自定义模型提供商（参考 [Codex 官方配置文档](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers)）：
 
 ```toml
 model = "your-model-group"
@@ -193,20 +196,23 @@ env_key = "LENS_API_KEY"
 wire_api = "responses"
 ```
 
-启动 Codex 的终端需要设置 `LENS_API_KEY`。例如 PowerShell：
+在终端注入环境变量后启动（PowerShell 示例）：
 
 ```powershell
 $env:LENS_API_KEY = "sk-lens-..."
 codex
 ```
 
-这里使用 Responses 接口和环境变量认证。先验证简单 Responses 请求，再验证工具调用和流式输出。提供商配置以 [Codex 官方说明](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers) 为准。
+> [!TIP]
+> 在模型管理界面可以使用 **测试模型 → Codex 模式** 预先验证上游是否接受 Codex 的 Responses 请求头与载荷格式。
 
-## Claude Code
+### Claude Code
 
-选择包含 Claude 上游的模型组，在启动终端设置网关地址、Key 和模型。例如 PowerShell：
+配置 Anthropic 兼容地址与模型组映射（参考 [Claude Code 环境变量](https://code.claude.com/docs/en/env-vars)）：
 
-```powershell
+::: code-group
+
+```powershell [PowerShell]
 $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:3000"
 $env:ANTHROPIC_AUTH_TOKEN = "sk-lens-..."
 $env:ANTHROPIC_MODEL = "your-claude-group"
@@ -214,10 +220,14 @@ $env:ANTHROPIC_DEFAULT_HAIKU_MODEL = "your-small-claude-group"
 claude
 ```
 
-两个模型组都需要提前配置。若只配置一个组，可以让这两个变量使用同一个名称。需要固定 Sonnet / Opus 别名时，再设置 `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL`。
+```bash [Bash / Zsh]
+export ANTHROPIC_BASE_URL="http://127.0.0.1:3000"
+export ANTHROPIC_AUTH_TOKEN="sk-lens-..."
+export ANTHROPIC_MODEL="your-claude-group"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="your-small-claude-group"
+claude
+```
 
-这些变量控制请求地址、认证和模型选择，详见 [Claude Code 环境变量](https://code.claude.com/docs/en/env-vars) 与 [模型配置](https://code.claude.com/docs/en/model-config)。
+:::
 
-## 确认请求结果
-
-成功后打开 **请求日志**，确认模型组、实际渠道和用量。常见问题的排查步骤见 [查看用量与排查请求](./monitoring)。
+如果只配置了一个模型组，可将 `ANTHROPIC_DEFAULT_HAIKU_MODEL`（以及按需设置的 `SONNET` / `OPUS` 环境变量）指向同一个模型组名。同样建议先在 Lens 中使用 **测试模型 → Claude Code 模式** 验证上游兼容性。

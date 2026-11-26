@@ -1,10 +1,10 @@
 # 维护与发布文档
 
-文档源码放在主分支的 `docs/`。修改时创建普通工作分支，通过 PR 合并；功能变化和对应文档可以放在同一个 PR 中。
+文档站源码位于主分支 `docs/` 目录，使用 VitePress `1.6.4` 构建。功能变更与对应文档更新可以在同一个 PR 中一并提交。
 
-## 本地预览
+## 本地预览与构建
 
-在 `docs/` 安装依赖并启动：
+在 `docs/` 目录安装依赖并启动开发服务：
 
 ```bash
 cd docs
@@ -12,82 +12,41 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开终端显示的地址，并进入 `/lens/`。文档站使用 VitePress 1.6.4，与 `frontend/` 的依赖和构建命令分开。
-
-提交前构建并预览生产产物：
+访问终端提示的本地地址并进入 `/lens/` 路径。提交前请运行生产构建与预览，VitePress 构建阶段会自动校验站内链接有效性：
 
 ```bash
 pnpm build
 pnpm preview
 ```
 
-构建会检查页面内部链接。预览时再确认导航、图片、页面目录、移动端布局和搜索结果。
+## 目录与内容分工
 
-## 内容组织
-
-| 位置 | 内容 |
+| 路径 | 职责边界 |
 | --- | --- |
-| `guide/` | 部署和日常操作：前提、步骤、预期结果与排错 |
-| `reference/` | 环境变量、默认值和配置语义 |
-| `development/` | 环境搭建、架构和文档维护 |
-| `public/images/` | 操作截图和架构图 |
-| `public/version.txt` | 与源码同步的版本号，构建后位于站点根路径 |
-| `diagrams/` | 架构图的 Mermaid 源文件 |
-| `.vitepress/config.ts` | 导航、侧栏、搜索和 Pages 路径 |
+| `README.md` / `README_EN.md` | 仓库门面：核心价值、能力矩阵、1 分钟启动、代表性截图与文档/贡献入口（避免与指南重复长篇操作） |
+| `docs/guide/` | 面向用户的操作与排错指南（部署、渠道接入、模型组、客户端、监控隐私、设置迁移） |
+| `docs/reference/` | 参数级参考手册（环境变量、网关设置键、冷却公式、隐私规则字段与限额） |
+| `docs/development/` | 面向贡献者与深度用户：环境搭建（`setup.md`）、系统设计（`architecture.md`）、工作流（`workflow.md`）、源码解析（`source-guide.md`）、文档维护（`documentation.md`） |
+| `docs/diagrams/` 与 `docs/public/images/` | 机制图 Mermaid 源文件与导出的 SVG，以及控制台脱敏截图 |
+| `docs/public/version.txt` | 与 `backend/app/__init__.py` 同步的源码版本号 |
+| `docs/.vitepress/config.ts` | 导航栏、侧边栏、本地中文分词搜索与 Pages 基础路径配置 |
 
-新增页面后更新侧栏，并从相关页面链接过去。README 展示项目价值、UI 集合、快速启动和文档入口，详细说明在这里维护。
+新增文档页面时，记得同步更新 `docs/.vitepress/config.ts` 的 `sidebar` 并在首页 `docs/index.md` 或相关页面补充链接。
 
-## 更新截图
+## 更新控制台截图
 
-先用隔离数据库启动 Lens，准备虚构站点和凭证，再在浏览器中完成页面操作并截图。示例中的站点名称应能辨认是演示数据。
+1. 使用 `LENS_DATABASE_URL` 启动一个隔离的演示数据库（参见 [搭建开发环境](./setup#隔离开发数据库（强烈推荐）)）。
+2. 录入明显可辨认为虚构演示数据的站点名称、虚拟 Key 与测试请求。
+3. 将截取的清晰界面图片保存到 `docs/public/images/`，在 Markdown 中使用 `/images/文件名.png`（VitePress 会自动拼接 `/lens/` 前缀）。
+4. 切勿在截图或示例中包含真实上游 Key、管理员密码或生产业务隐私数据。
 
-截图存入 `public/images/`，用与操作对应的文件名。只保留需要展示的页面或弹窗范围，等待加载完成后再截图。不要包含真实 Key、管理员密码、请求正文或个人数据。
+## GitHub Pages 与 CI / Release 联动
 
-Markdown 使用带说明的图片：
-
-```markdown
-![模型组及其路由策略](/images/model-groups.png)
-```
-
-路径由 VitePress 加上站点的 `base`。配图附近写清点击位置和完成后的状态。修改控件名称或操作流程时，同步检查截图和正文。
-
-## GitHub Pages
-
-仓库第一次接入时，在 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**。源码合并到 `main` 后，`.github/workflows/docs.yml` 会构建并发布文档。
-
-默认站点地址：
-
-<https://dyedd.github.io/lens/>
-
-当前配置的 `base` 是 `/lens/`。如果改为其他仓库名或根域名，需同步修改 `base` 和 favicon 路径。
-
-- 文档 PR：安装锁定依赖、构建文档并上传 Pages 产物。
-- 文档合并到 `main`：构建成功后部署。
-- 手动发布：运行 **Actions → Docs → Run workflow**，选择 `main`。
-- 应用正式发版成功：Release 工作流调用 Docs，刷新文档与在线版本文件。
-- 构建失败：查看日志中的链接、资源路径或 Markdown 编译错误，修正后重新运行。
-
-PR 不会部署公开站点；需要预览时在本地运行 `pnpm preview`。
-
-## 与应用 CI 和发版的关系
-
-CI 根据实际文件变化判断是否需要应用检查。仅修改 `docs/**`、Markdown、`screenshots/**` 或文档工作流时，后端、前端和镜像任务跳过；混合修改应用代码时仍正常执行。
-
-自动发版仍在每天 UTC 03:00 检查：自上一个版本标签起累计 5 个应用提交才发版。纯文档提交不计入；手动应用发版也至少需要 1 个应用提交。发布说明可以包含同时合入的文档改动。
-
-`.dockerignore` 排除整个 `docs/`、截图和两个 README。文档依赖、缓存和构建输出都不会传入 Docker 构建上下文。
-
-## 同步应用版本号
-
-在仓库根目录运行升版本命令，默认递增 patch，并同时更新 `backend/app/__init__.py` 与 `docs/public/version.txt`：
-
-```bash
-uv run --no-sync python scripts/bump_version.py --dry-run
-uv run --no-sync python scripts/bump_version.py
-```
-
-`--dry-run` 只输出下一版本，不写文件。Release 工作流复用同一命令，并传入 `--base-version`：若源码已提前升版本，就沿用源码版本；否则递增已发布版本的 patch。源码落后于基准时命令会报错。
-
-应用的“版本检测”计划任务读取 <https://dyedd.github.io/lens/version.txt>，文件只包含一行版本号，例如 `0.2.14`。检测到更新后，界面链接到对应的 GitHub Release。
-
-公开站点只提供成功发布的版本。Docs 部署时使用工作流令牌查询一次最新正式 Release，并据此生成构建产物中的 `version.txt`。因此，升版本提交后的镜像构建即使失败，站点也不会提前提示该版本；各个 Lens 实例无需请求 GitHub API。文档站不可访问或返回无效内容时，检测任务记录失败，并保留上一次成功的检测结果。
+- **文档构建与发布（`.github/workflows/docs.yml`）**：
+  - 针对 `docs/**` 或 `docs.yml` 的 PR 会执行 `pnpm build` 验证链接并上传构建产物（不部署公网站点）；
+  - 合入 `main` 后自动构建并部署到 <https://dyedd.github.io/lens/>；
+  - 公开站点的 `version.txt` 会在发布步骤中通过 `gh release view` 查询**最新正式 Release** 版本生成，避免预发版提前触发实例更新提示。
+- **与应用 CI 的隔离（`.github/workflows/build.yml`）**：
+  - 当提交仅修改 `docs/**`、`*.md`、`screenshots/**` 或 `.github/workflows/docs.yml` 时，CI 会自动跳过后端测试、前端构建与 Docker 镜像任务；
+  - 每天 UTC `03:00` 检查的自动发版工作流（`release.yml`）也只统计应用代码提交数（累计 5 个应用提交触发自动发版），纯文档提交不计入。
+- **版本同步工具**：发版脚本使用 `uv run --no-sync python scripts/bump_version.py` 同步更新 `backend/app/__init__.py` 与 `docs/public/version.txt`（支持 `--dry-run` 预演）。
