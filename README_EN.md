@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="./frontend/public/logo.svg" alt="Lens" width="88" height="88">
+  <img src="./frontend/public/logo.svg" alt="Lens" width="84" height="84">
 </p>
 
 <h1 align="center">Lens</h1>
 
-<p align="center"><strong>One gateway for your models, providers, and tools.</strong></p>
+<p align="center"><strong>One unified control plane for your LLM providers, protocol translation, and observability.</strong></p>
 <p align="center">
-  A self-hosted LLM gateway with a visual control panel.<br>
-  Connect once. Route across providers. See what every request costs.
+  A self-hosted, multi-protocol LLM gateway with a visual management console.<br>
+  Configure your clients once — handle model grouping, protocol bridging, failover, privacy masking, and cost tracking inside the gateway.
 </p>
 
 <p align="center">
@@ -17,74 +17,78 @@
 </p>
 
 <p align="center">
-  <a href="./README.md">简体中文</a> · <a href="https://dyedd.github.io/lens/">Documentation</a> · <a href="#quick-start">Quick start</a> · <a href="https://github.com/dyedd/lens/releases">Releases</a>
+  <a href="./README.md">简体中文</a> · <a href="https://dyedd.github.io/lens/">Documentation</a> · <a href="#quick-start">Quick start</a> · <a href="./docs/development/architecture.md">Architecture</a> · <a href="./docs/development/source-guide.md">Source guide</a>
 </p>
 
-**Keep your client setup simple, even as your model providers change.** Lens brings upstream URLs, keys, models, routing, and usage into one place. Connect your apps and coding tools with a Lens URL, a gateway key, and a model group name.
+---
 
-## Why Lens
+**Keep client configuration simple while upstream providers evolve.** Lens centralizes upstream base URLs, multiple API keys, model catalogs, routing groups, protocol conversion, privacy rules, and usage accounting. Your apps and coding agents (Codex, Claude Code, OpenAI/Anthropic/Gemini SDKs) only need a Lens URL, a gateway key, and a model group name.
 
-| What you need | What Lens gives you |
+## Key capabilities
+
+| Area | How Lens handles it |
 | --- | --- |
-| Connect clients that use different APIs | OpenAI Chat, Responses, Embeddings, and Images; Anthropic, Gemini, and Rerank endpoints, with conversion between supported conversation protocols |
-| Switch providers without editing every client | Model groups and aliases give clients stable names while you change upstream members |
-| Keep a backup ready | Ordered failover, smooth round robin, health tracking, and cooldown controls |
-| Manage several upstream accounts | Multiple URLs and keys, model discovery, model synchronization, and automatic group assignment |
-| Understand usage and failures | Usage and cost trends, cache statistics, request details, and the upstream attempt history |
-| Run it on your own terms | Docker deployment, SQLite or PostgreSQL, backups, and scheduled tasks under the MIT license |
+| **Multi-protocol ingress & bridging** | Exposes OpenAI Chat, Responses, Embeddings, Images, Anthropic Messages, Gemini `v1beta`, and Rerank endpoints; bridges conversation protocols via a Unified IR while passing same-protocol traffic through untouched to preserve prompt caching and server state |
+| **Two-tier groups & smart routing** | Decouples client model names from upstream topology via Execution Groups and Alias Groups; supports ordered Failover (with short-term affinity), health-weighted Smooth Round Robin (SWRR), multimodal fallback groups, and reasoning-effort suffixes like `model(high)` |
+| **Scoped circuit breaking & recovery** | Separates key-level faults (`401`/`403`/`429`) from model-level faults (`404`/`5xx`/timeout/network), with custom regex detection rules, multi-key rate-limit escalation, exponential backoff, and single-request probe leases on recovery |
+| **Sites, keys & platform migration** | Manages endpoint purposes, per-URL credential scopes, proxies, and layered header/parameter overrides; includes latency probes, Codex/Claude compatibility tests, and channel import from Metapi, Sub2API, ccLoad, All API Hub, Octopus, and CLIProxyAPI |
+| **Observability & cost accounting** | Tracks overview trends, model/channel/agent attribution, full upstream attempt chains, and TTFT/latency; syncs LiteLLM pricing and Sub2API/NewAPI rate multipliers with per-key USD budgets and expiry |
+| **Server-side rule privacy** | Detects secrets and PII locally without external models; supports reversible placeholder masking (`mask`), log redaction (`warn`), or local blocking (`block`) |
 
-## UI gallery
+## Interface preview
 
-Overview, routing, and maintenance in one control panel. Click an image to view it at full size. Screenshots use fictional demo data.
+A unified console for analytics, provider management, routing groups, and request troubleshooting (screenshots use fictional demo data; see the [documentation](https://dyedd.github.io/lens/) for all screens):
 
-| Overview | Request logs |
+| Overview & Attribution | Channels & Credentials |
 | --- | --- |
-| ![Usage overview](./docs/public/images/overview.png) | ![Request logs and upstream attempts](./docs/public/images/request-logs.png) |
-| **Channels** | **Model groups** |
-| ![Provider channels](./docs/public/images/channels.png) | ![Model groups and routing strategies](./docs/public/images/model-groups.png) |
-| **Settings** | **Gateway keys** |
-| ![Gateway settings](./docs/public/images/settings.png) | ![Gateway key permissions and budgets](./docs/public/images/api-keys.png) |
-| **Scheduled tasks** | **Backups and migration** |
-| ![Scheduled maintenance tasks](./docs/public/images/scheduled-tasks.png) | ![Backup and migration tools](./docs/public/images/backups.png) |
+| ![Usage overview](./docs/public/images/overview.png) | ![Provider channels](./docs/public/images/channels.png) |
+| **Model Groups & Routing** | **Request Logs & Attempt Chain** |
+| ![Model groups and routing strategies](./docs/public/images/model-groups.png) | ![Request logs and upstream attempts](./docs/public/images/request-logs.png) |
 
 ## Quick start
 
-Install Docker and Docker Compose, then run in a Linux / macOS shell:
+On a Linux or macOS host with Docker and Docker Compose installed:
 
 ```bash
 mkdir lens && cd lens
 curl -fsSLO https://raw.githubusercontent.com/dyedd/lens/main/scripts/docker/deploy.sh
 sh deploy.sh
-docker compose pull
-docker compose up -d
+docker compose pull && docker compose up -d
 docker compose exec app cat /app/data/admin-password
 ```
 
-Open `http://127.0.0.1:3000` and sign in as `admin` with the generated password. Change the password after signing in, then delete the initial password file.
+Open `http://127.0.0.1:3000`, sign in as `admin` with the generated password, then change it under **Settings → General** and remove `/app/data/admin-password`.
 
-Next: **add a channel → fetch models → check model groups → create a gateway key → configure your client**. See the [quick start guide](./docs/guide/quick-start.md) for details.
+> [!TIP]
+> First-time setup takes five steps: **Create channel → Fetch models → Verify model group → Create gateway key → Connect client**.
+> For 1Panel deployment, PostgreSQL setup, Windows instructions, or upgrades, see the [Quick Start Guide](./docs/guide/quick-start.md).
 
 ## Documentation
 
-The detailed guides are currently written in Simplified Chinese.
+Full guides, workflows, and source-code walkthroughs live in the [documentation site](https://dyedd.github.io/lens/) (currently written in Simplified Chinese):
 
-| Operation and deployment | Development |
+| Operations & Deployment | Architecture & Source |
 | --- | --- |
-| [Providers and models](./docs/guide/sites.md) | [Local environment](./docs/development/setup.md) |
-| [Model groups](./docs/guide/model-groups.md) · [Client setup](./docs/guide/clients.md) | [Architecture](./docs/development/architecture.md) |
-| [Logs and troubleshooting](./docs/guide/monitoring.md) · [Backups and maintenance](./docs/guide/maintenance.md) | — |
-| [Environment variables and settings](./docs/reference/configuration.md) | [Documentation development and publishing](./docs/development/documentation.md) |
+| [Quick Start & Upgrades](./docs/guide/quick-start.md) · [Configuration Reference](./docs/reference/configuration.md) | [Local Development Setup](./docs/development/setup.md) |
+| [Sites & Models](./docs/guide/sites.md) · [Model Groups](./docs/guide/model-groups.md) | [System Design & Architecture](./docs/development/architecture.md) |
+| [Client Setup (SDKs / Codex / Claude Code)](./docs/guide/clients.md) | [Core Runtime & CI Workflows](./docs/development/workflow.md) |
+| [Monitoring, Privacy & Troubleshooting](./docs/guide/monitoring.md) · [Settings, Backups & Migration](./docs/guide/maintenance.md) | [Source Code & Extension Guide](./docs/development/source-guide.md) |
 
-Stack: Python 3.14+ / FastAPI / SQLAlchemy / SQLite or PostgreSQL; React 19 / TypeScript / Vite.
+Tech stack: `Python 3.14+` · `FastAPI` · `SQLAlchemy` · `SQLite / PostgreSQL` · `React 19` · `TypeScript` · `Vite`
 
-## Get involved
+## Contributing & getting involved
 
-If Lens makes your model setup easier, **give the project a Star**. It helps more people find it.
+Lens is built to be an understandable, hackable foundation for self-hosted LLM routing. If you care about reliable multi-provider routing or protocol interoperability, feel free to watch releases for updates or share your deployment scenarios in GitHub Issues to help shape sensible defaults.
 
-Bug reports, documentation improvements, and pull requests are welcome. For a bug report, include the Lens version, reproduction steps, and redacted logs. Start with the [development setup](./docs/development/setup.md) and [architecture guide](./docs/development/architecture.md) when contributing code.
+Whether you are fixing a subtle edge case or extending Lens with new capabilities, the codebase keeps clear boundaries:
 
-## Acknowledgments and license
+- **Extend protocol support**: Add a `parse_*` / `build_*` spoke pair in [`converters/`](./backend/app/gateway/converters) to join the full chat protocol matrix
+- **Add backup importers**: Implement format detection and mapping in [`foreign_site_import/`](./backend/app/gateway/service/admin/foreign_site_import)
+- **Improve routing, UI, or docs**: Start with [Development Setup](./docs/development/setup.md), [Architecture](./docs/development/architecture.md), [Workflows](./docs/development/workflow.md), and the [Source Code Guide](./docs/development/source-guide.md)
+- **Report issues**: Open a [GitHub Issue](https://github.com/dyedd/lens/issues) with your Lens version, reproduction steps, and redacted request logs or attempt chains
 
-Thanks to [octopus](https://github.com/bestruirui/octopus), [metapi](https://github.com/cita-777/metapi), [ccLoad](https://github.com/caidaoli/ccLoad), [DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat), and the [Linux DO community](https://linux.do/).
+## Acknowledgments & license
 
-[MIT](./LICENSE)
+Thanks to [octopus](https://github.com/bestruirui/octopus), [metapi](https://github.com/cita-777/metapi), [ccLoad](https://github.com/caidaoli/ccLoad), [DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat), and the [Linux DO community](https://linux.do/) for inspiration and ecosystem support.
+
+Released under the [MIT License](./LICENSE).
