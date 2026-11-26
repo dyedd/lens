@@ -1,4 +1,5 @@
 import { ApiError, apiRequest, isRecord } from "./client";
+import { isPrivacyHit, type PrivacyHit } from "./privacy";
 import { isProtocolKind, type ProtocolKind } from "./protocols";
 
 export type RequestLogLifecycleStatus =
@@ -62,6 +63,7 @@ export type RequestLogItem = {
   created_at: string;
 };
 export type RequestLogDetail = RequestLogItem & {
+  privacy_summary?: PrivacyHit[];
   request_content?: string | null;
   response_content?: string | null;
   attempts: RequestLogAttempt[];
@@ -184,6 +186,9 @@ function isRequestLogDetail(value: unknown): value is RequestLogDetail {
     value.attempts.every(isRequestLogAttempt) &&
     isOptionalString(value.request_content) &&
     isOptionalString(value.response_content) &&
+    (value.privacy_summary === undefined ||
+      (Array.isArray(value.privacy_summary) &&
+        value.privacy_summary.every(isPrivacyHit))) &&
     isRequestLogItem(value)
   );
 }

@@ -369,6 +369,33 @@ export function RequestLogDetailSheet({
           ) : null}
           {record ? (
             <>
+              {detail?.privacy_summary?.length ? (
+                <DetailBlock
+                  title={titleForLocale(locale, "隐私处理", "Privacy")}
+                >
+                  {detail.privacy_summary.map((hit) => (
+                    <DetailRow
+                      key={hit.category}
+                      label={
+                        {
+                          secrets: titleForLocale(
+                            locale,
+                            "密钥与密码",
+                            "Secrets",
+                          ),
+                          personal: titleForLocale(
+                            locale,
+                            "个人信息",
+                            "Personal data",
+                          ),
+                          custom: titleForLocale(locale, "自定义", "Custom"),
+                        }[hit.category]
+                      }
+                      value={`${hit.count} · ${{ mask: titleForLocale(locale, "替换", "Masked"), warn: titleForLocale(locale, "告警", "Warned"), block: titleForLocale(locale, "阻止", "Blocked") }[hit.action]}`}
+                    />
+                  ))}
+                </DetailBlock>
+              ) : null}
               <DetailBlock title={titleForLocale(locale, "请求", "Request")}>
                 <DetailRow label="ID" value={record.id} mono />
                 <DetailRow

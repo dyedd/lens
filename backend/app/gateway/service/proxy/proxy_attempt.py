@@ -38,6 +38,7 @@ from ..compat import (
 )
 from ..error_responses import protocol_error_response
 from ..payload_serialization import dump_log_json
+from ..privacy_context import PrivacyContext
 from ..request_logger import RequestLogger
 from ..request_support import elapsed_ms
 from ..runtime_types import (
@@ -74,6 +75,7 @@ class AttemptRequest:
     body: dict[str, Any]
     runtime: RuntimeSettings
     upstream_user_agent: str
+    privacy: PrivacyContext
     inbound_headers: Mapping[str, str] | None = None
     path_suffix: str | None = None
     multipart_files: list[tuple[str, tuple[str, bytes, str]]] | None = None
@@ -255,6 +257,7 @@ async def _prepare_attempt(run: _AttemptRun) -> _PreparedAttempt | Response | No
     if request.protocol in {ProtocolKind.OPENAI_EMBEDDING, ProtocolKind.RERANK}:
         upstream_body.pop("stream", None)
 
+    upstream_body = request.privacy.prepare(upstream_body, channel.protocol)
     try:
         upstream, body_bytes, upstream_request_content = prepare_upstream_request(
             channel,
@@ -313,6 +316,7 @@ async def _send_attempt(
     plan = run.plan
     target = run.target
     channel = prepared.channel
+    request.privacy.remember_session()
     run.attempt.reasoning_effort = prepared.reasoning_effort
     await run.log_ctx.record_connecting(
         is_stream=bool(prepared.upstream_body.get("stream")),
@@ -333,6 +337,7 @@ async def _send_attempt(
             log_body_enabled=run.log_body_enabled,
             deadline=run.deadline,
             tool_mapping=prepared.tool_mapping,
+            privacy=request.privacy,
         )
         with run.log_ctx.cancellation.watch():
             return await execute_upstream_request(
@@ -487,6 +492,11 @@ async def _finalize_stream_request(
     was_probe: bool,
 ) -> None:
     """Background close-out of a streamed attempt: route health, then the log row."""
+    if log_ctx.privacy is not None and result.stream_capture is not None:
+        result.stream_capture.errors[:] = [
+            log_ctx.privacy.clean_log(error) or "Stream failed"
+            for error in result.stream_capture.errors
+        ]
     outcome = stream_log_outcome(result, result.stream_capture)
     try:
         _record_stream_route_health(
@@ -507,6 +517,10 @@ async def _finalize_stream_request(
         elif (
             outcome.lifecycle_status != RequestLogLifecycleStatus.CANCELLED
             and was_probe
+            and not (
+                result.stream_capture is not None
+                and result.stream_capture.skip_route_failure
+            )
             and not (
                 result.stream_capture is not None
                 and result.stream_capture.error_classification is not None
@@ -609,7 +623,11 @@ async def _record_target_failure(
 ) -> Response | None:
     """Log the failed attempt, feed cooldowns, and honor stop-fallback."""
     channel = run.target.channel
-    message = format_channel_error(exc.detail)
+    message = format_channel_error(
+        run.request.privacy.clean_log(
+            str(exc.detail) if exc.detail is not None else None
+        )
+    )
     policy = _failure_policy(exc)
     if (
         policy is not None

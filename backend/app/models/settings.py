@@ -1,6 +1,7 @@
 from typing import TypedDict
 
 from ..core.cooldown_rules import CompiledCooldownDetectionRule
+from .privacy import PrivacyConfig
 from .upstream_rules import UpstreamHeadersConfig, UpstreamParamOverrideConfig
 from .validation import StrictBaseModel
 
@@ -15,6 +16,7 @@ class SettingsUpdate(StrictBaseModel):
 
 
 class RuntimeSettings(TypedDict):
+    privacy_config: PrivacyConfig
     proxy_url: str
     auth_access_token_minutes: int
     first_token_timeout_seconds: float

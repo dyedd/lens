@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, Literal
@@ -230,6 +231,7 @@ def to_request_log_detail(
         ).model_dump(),
         request_content=entity.request_content,
         response_content=entity.response_content,
+        privacy_summary=json.loads(entity.privacy_summary_json),
         attempts=[
             to_request_log_attempt(item, resolved_metadata, resolved_counts)
             for item in parse_attempts_json(entity.attempts_json)

@@ -14,6 +14,7 @@ export interface SettingsTabDefinition {
   value:
     | "general"
     | "gateway"
+    | "privacy"
     | "circuit-breaker"
     | "api-keys"
     | "cronjobs"
@@ -36,6 +37,11 @@ export function createSettingsTabs(
       value: "gateway",
       label: titleForLocale(locale, "网关", "Gateway"),
       icon: ServerCog,
+    },
+    {
+      value: "privacy",
+      label: titleForLocale(locale, "隐私", "Privacy"),
+      icon: ShieldAlert,
     },
     {
       value: "circuit-breaker",

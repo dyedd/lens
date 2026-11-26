@@ -74,6 +74,7 @@ async def load_request_logs(session: AsyncSession) -> list[ConfigBackupRequestLo
                 stats_archived=bool(row.stats_archived),
                 attribution_archived=bool(row.attribution_archived),
                 request_content=row.request_content,
+                privacy_summary=json.loads(row.privacy_summary_json),
                 response_content=row.response_content,
                 attempts=attempts,
             )
@@ -122,6 +123,9 @@ async def replace_request_logs(
                 billing_mode=item.billing_mode,
                 billing_units=max(item.billing_units, 0),
                 request_content=item.request_content,
+                privacy_summary_json=json.dumps(
+                    [hit.model_dump(mode="json") for hit in item.privacy_summary]
+                ),
                 response_content=item.response_content,
                 attempts_json=json.dumps(
                     [attempt.model_dump(mode="json") for attempt in item.attempts],

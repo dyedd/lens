@@ -2,6 +2,7 @@ import { RotateCcw, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CircuitBreakerSettingsSection } from "@/components/settings/CircuitBreakerSettingsSection";
 import { GatewaySettingsSection } from "@/components/settings/GatewaySettingsSection";
+import { PrivacySettingsSection } from "@/components/settings/PrivacySettingsSection";
 import { GeneralSettingsSection } from "@/components/settings/ProfileSettingsSections";
 import {
   createSettingsTabs,
@@ -116,6 +117,7 @@ export function SettingsScreen() {
               account={account}
             />
             <GatewaySettingsSection locale={locale} settings={settings} />
+            <PrivacySettingsSection locale={locale} settings={settings} />
             <CircuitBreakerSettingsSection
               locale={locale}
               settings={settings}

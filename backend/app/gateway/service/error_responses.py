@@ -118,8 +118,9 @@ def stream_error_frame(
     message: str,
     error_type: str = "server_error",
     status_code: int = status.HTTP_502_BAD_GATEWAY,
+    ndjson: bool = False,
 ) -> bytes:
-    """Build an in-band SSE error frame for a stream that already started.
+    """Build an in-band error frame for a stream that already started.
 
     Once response headers are sent the status code is fixed, so a failure has
     to travel as a protocol event instead of an HTTP error.
@@ -139,6 +140,8 @@ def stream_error_frame(
             message=message,
         )
     data = json.dumps(payload, ensure_ascii=False)
+    if ndjson:
+        return f"{data}\n".encode()
     if protocol == ProtocolKind.OPENAI_CHAT:
         return f"data: {data}\n\n".encode()
     return f"event: error\ndata: {data}\n\n".encode()

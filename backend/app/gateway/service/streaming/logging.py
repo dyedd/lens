@@ -16,6 +16,7 @@ from ..request_support import elapsed_ms
 from ..runtime_types import UpstreamResult
 from .capture import StreamCapture
 from .events import join_stream_chunks, stream_capture_usage
+from .privacy_content import clean_privacy_stream_log
 from .restore import distill_stream_response_content
 from .types import parse_ndjson_payloads, parse_sse_payloads
 from .usage import (
@@ -153,6 +154,23 @@ async def record_stream_request_log(
             )
             if payloads:
                 distilled_content = dump_log_json(payloads) or response_raw_content
+    if (
+        log_ctx.privacy is not None
+        and log_ctx.privacy.config.enabled
+        and response_raw_content
+    ):
+        distilled_content = (
+            "[privacy incomplete stream content omitted]"
+            if body_incomplete
+            or outcome.lifecycle_status != RequestLogLifecycleStatus.SUCCEEDED
+            or (capture is not None and not capture.protocol_completed)
+            else clean_privacy_stream_log(
+                response_raw_content,
+                response_protocol,
+                log_ctx.privacy,
+                ndjson=response_format == "ndjson",
+            )
+        )
     first_token_latency_ms = (
         capture.first_token_latency_ms
         if capture is not None
@@ -211,6 +229,7 @@ async def record_stream_request_log(
         attempts=attempt_logs,
         error_message=outcome.capture_issue,
     )
+    log_ctx.clean_payload(payload)
     await app_state.request_log_store.commands.update_request_log(
         log_ctx.request_log_id, payload
     )

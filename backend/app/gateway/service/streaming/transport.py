@@ -106,6 +106,11 @@ class FinalizingStreamingResponse(StreamingResponse):
                         message=str(cancellation_error),
                         error_type=cancellation_error.error_type,
                         status_code=cancellation_error.status_code,
+                        ndjson=bool(
+                            self.media_type
+                            and self.media_type.split(";")[0]
+                            in {"application/x-ndjson", "application/ndjson"}
+                        ),
                     ),
                     "more_body": False,
                 }
