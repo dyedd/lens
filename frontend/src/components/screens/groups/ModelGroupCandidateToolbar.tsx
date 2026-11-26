@@ -34,7 +34,7 @@ export function ModelGroupCandidateToolbar({
   visibleCandidateCount,
 }: ModelGroupCandidateToolbarProps) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-border/60 p-3">
+    <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-6 py-3">
       <ToolbarSearchInput
         className="max-w-none"
         value={candidateSearch}

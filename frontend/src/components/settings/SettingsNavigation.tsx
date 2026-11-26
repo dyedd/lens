@@ -1,4 +1,6 @@
 import {
+  DatabaseBackup,
+  EyeOff,
   type LucideIcon,
   Palette,
   ServerCog,
@@ -41,7 +43,7 @@ export function createSettingsTabs(
     {
       value: "privacy",
       label: titleForLocale(locale, "隐私", "Privacy"),
-      icon: ShieldAlert,
+      icon: EyeOff,
     },
     {
       value: "circuit-breaker",
@@ -61,26 +63,28 @@ export function createSettingsTabs(
     {
       value: "backups",
       label: titleForLocale(locale, "备份与迁移", "Backup & Migration"),
-      icon: ServerCog,
+      icon: DatabaseBackup,
     },
   ];
 }
 
-/** Render the responsive settings tab navigation. */
+/** Render the horizontal workspace tab strip for settings. */
 export function SettingsNavigation({
   tabs,
 }: {
   tabs: readonly SettingsTabDefinition[];
 }) {
   return (
-    <TabsList className="flex h-auto w-full flex-row justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 text-foreground lg:sticky lg:top-4 lg:flex-col lg:items-start lg:overflow-visible">
+    <TabsList className="flex h-auto w-full flex-row justify-start gap-1 overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0 text-foreground">
       {tabs.map((item) => {
+        const Icon = item.icon;
         return (
           <TabsTrigger
             key={item.value}
             value={item.value}
-            className="h-9 w-40 shrink-0 justify-start rounded-md px-3.5 text-base font-medium text-sidebar-foreground shadow-none lg:w-full data-[state=active]:bg-sidebar-accent data-[state=active]:text-sidebar-accent-foreground data-[state=active]:shadow-none"
+            className="h-9 shrink-0 justify-start gap-1.5 rounded-none border-b-2 border-transparent px-3 text-[13px] font-normal text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:ring-0 data-[state=active]:shadow-none"
           >
+            <Icon className="size-3.5 shrink-0 opacity-75" />
             <span>{item.label}</span>
           </TabsTrigger>
         );

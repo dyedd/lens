@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { siteModelCounts } from "@/components/screens/channels/channelDisplay";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
+import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { apiRequest } from "@/lib/api/client";
 import {
   type AttributionDimension,
@@ -10,6 +12,7 @@ import {
   type OverviewDailyPoint,
   type OverviewSummary,
 } from "@/lib/api/overview";
+import type { Site } from "@/lib/api/sites";
 import { getDateBucketPrefix } from "@/lib/datetime";
 import { useI18n } from "@/lib/I18nContext";
 import { ActivityTrendCard } from "./overview/ActivityTrendCard";
@@ -29,7 +32,7 @@ export function OverviewScreen() {
   const isChineseLocale = locale === "zh-CN";
   const timeZone = useAppTimeZone();
   const [timeRange, setTimeRange] = useState<TimeRange>("-1");
-  const [metric, setMetric] = useState<AnalysisMetric>("cache");
+  const [metric, setMetric] = useState<AnalysisMetric>("tokens");
   const [dimension, setDimension] = useState<AttributionDimension>("model");
   const [filterKey, setFilterKey] = useState<string | null>(null);
   const days = Number(timeRange);
@@ -49,6 +52,12 @@ export function OverviewScreen() {
       apiRequest<OverviewDailyPoint[]>("/admin/overview-daily?days=371"),
     staleTime: 60_000,
   });
+  const sitesQuery = useQuery({
+    queryKey: ["sites"],
+    queryFn: () => apiRequest<Site[]>("/admin/sites"),
+    staleTime: 2 * 60_000,
+  });
+  const groupsQuery = useModelGroupsQuery();
   const attributionQuery = useQuery({
     queryKey: [
       "overview-attribution",
@@ -100,6 +109,14 @@ export function OverviewScreen() {
     { successful: 0, failed: 0 },
   );
   const summary = summaryQuery.data;
+  const sites = sitesQuery.data ?? [];
+  const groups = groupsQuery.data ?? [];
+  const totalChannels = sites.length;
+  const enabledChannels = sites.filter((site) => site.enabled).length;
+  const enabledUpstreamModels = sites.reduce(
+    (count, site) => count + siteModelCounts(site).enabled,
+    0,
+  );
   const todayKey = parseDateKey(getDateBucketPrefix(timeZone));
   const activityPoints = useMemo(() => {
     const points = activityQuery.data ?? [];
@@ -140,6 +157,7 @@ export function OverviewScreen() {
     });
   }, [activityQuery.data, days, timeZone]);
   const heatmapPoints = useMemo(() => {
+    if (days !== 0) return [];
     const counts = new Map(
       (heatmapQuery.data ?? []).map((point) => [
         parseDateKey(point.date),
@@ -158,21 +176,29 @@ export function OverviewScreen() {
       points.push({ date: key, count: counts.get(key) ?? 0 });
     }
     return points;
-  }, [heatmapQuery.data, todayKey]);
+  }, [days, heatmapQuery.data, todayKey]);
   return (
     <section className="flex min-w-0 flex-col gap-6">
       <OverviewStats
-        cacheReadTokens={summary?.cache_read_input_tokens.value ?? 0}
-        cacheWriteTokens={summary?.cache_write_input_tokens.value ?? 0}
-        consumedTime={summary?.wait_time_ms.value ?? 0}
-        inputCost={summary?.input_cost_usd.value ?? 0}
-        inputTokens={summary?.input_tokens.value ?? 0}
+        cacheReadTokens={summary?.cache_read_input_tokens?.value ?? 0}
+        cacheWriteTokens={summary?.cache_write_input_tokens?.value ?? 0}
+        consumedTime={summary?.wait_time_ms?.value ?? 0}
+        enabledChannels={enabledChannels}
+        enabledUpstreamModels={enabledUpstreamModels}
+        inputCost={summary?.input_cost_usd?.value ?? 0}
+        inputTokens={summary?.input_tokens?.value ?? 0}
         isChineseLocale={isChineseLocale}
-        isRefreshing={queries.some((query) => query.isFetching)}
+        isRefreshing={
+          queries.some((query) => query.isFetching) ||
+          sitesQuery.isFetching ||
+          groupsQuery.isFetching
+        }
         loading={!summary || !dailyQuery.data}
-        outputCost={summary?.output_cost_usd.value ?? 0}
-        outputTokens={summary?.output_tokens.value ?? 0}
-        requestCount={summary?.request_count.value ?? 0}
+        modelGroupCount={groups.length}
+        outputCost={summary?.output_cost_usd?.value ?? 0}
+        outputTokens={summary?.output_tokens?.value ?? 0}
+        requestCount={summary?.request_count?.value ?? 0}
+        resourcesLoading={sitesQuery.isPending || groupsQuery.isPending}
         successfulRequests={completed.successful}
         failedRequests={completed.failed}
         successRate={
@@ -184,12 +210,15 @@ export function OverviewScreen() {
               ) / 10
             : Number.NaN
         }
-        totalCost={summary?.total_cost_usd.value ?? 0}
-        totalTokens={summary?.total_tokens.value ?? 0}
+        totalChannels={totalChannels}
+        totalCost={summary?.total_cost_usd?.value ?? 0}
+        totalTokens={summary?.total_tokens?.value ?? 0}
         timeRange={timeRange}
         onTimeRangeChange={setTimeRange}
         onRefresh={() => {
           for (const query of queries) void query.refetch();
+          void sitesQuery.refetch();
+          void groupsQuery.refetch();
         }}
       />
       <ActivityTrendCard
@@ -202,13 +231,10 @@ export function OverviewScreen() {
           waitTimeMs: point.wait_time_ms,
           tokens: point.total_tokens,
         }))}
-        isHourly={
-          days === -1 &&
-          (activityQuery.data ?? []).every((point) => point.date.length === 10)
-        }
         locale={locale}
         isLoading={activityQuery.isPending}
         isError={activityQuery.isError}
+        showHeatmapOption={timeRange === "0"}
         heatmapPoints={heatmapPoints}
         isHeatmapLoading={heatmapQuery.isPending}
         isHeatmapError={heatmapQuery.isError}

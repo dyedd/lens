@@ -53,7 +53,7 @@ export function RequestHeatmap({ points, isChineseLocale }: Props) {
     return "bg-primary";
   }
   return (
-    <div className="rounded-md bg-muted/35 p-2 md:p-3">
+    <div>
       <div className="overflow-x-auto pb-1">
         <div
           className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2"
@@ -98,7 +98,7 @@ export function RequestHeatmap({ points, isChineseLocale }: Props) {
             style={{ gridAutoColumns: "minmax(0.75rem, 1fr)" }}
           >
             {points.map((point) => (
-              <Tooltip key={point.date}>
+              <Tooltip key={point.date} delayDuration={0}>
                 <TooltipTrigger asChild>
                   <button
                     type="button"

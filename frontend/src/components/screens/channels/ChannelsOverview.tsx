@@ -2,13 +2,12 @@ import {
   ArrowDownUp,
   Check,
   FileInput,
-  Funnel,
   Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
 import { useState } from "react";
-import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
@@ -17,13 +16,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
+import { FilterPillGroup } from "@/components/ui/FilterPillGroup";
 import { Input } from "@/components/ui/Input";
 import { TablePagination } from "@/components/ui/Pagination";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/Popover";
 import {
   Select,
   SelectContent,
@@ -31,12 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { ToolbarButton } from "@/components/ui/ToolbarButton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
+import { SelectionActionBar } from "@/components/ui/SelectionActionBar";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { Site } from "@/lib/api/sites";
@@ -140,136 +130,113 @@ export function ChannelsOverview({
       : "Search channel name or URL...";
 
   return (
-    <div className="space-y-5 pb-10">
-      <div className="flex h-10 items-center justify-between gap-3 px-1">
-        <h3 className="page-title">
-          {locale === "zh-CN" ? "渠道" : "Channels"}
-        </h3>
-      </div>
+    <div className="space-y-4 pb-10">
+      <PageHeader
+        title={locale === "zh-CN" ? "渠道" : "Channels"}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onRefresh}
+              disabled={isLoading}
+              aria-label={locale === "zh-CN" ? "刷新" : "Refresh"}
+            >
+              <RefreshCw
+                className={cn("size-3.5", isLoading && "animate-spin")}
+              />
+              {locale === "zh-CN" ? "刷新" : "Refresh"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onImport}
+              aria-label={locale === "zh-CN" ? "导入渠道" : "Import Channels"}
+            >
+              <FileInput className="size-3.5" />
+              {locale === "zh-CN" ? "导入" : "Import"}
+            </Button>
+            <Button type="button" size="sm" onClick={onCreate}>
+              <Plus className="size-3.5" />
+              {locale === "zh-CN" ? "新建渠道" : "New Channel"}
+            </Button>
+          </>
+        }
+      />
 
-      <section className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 [scrollbar-width:none] md:gap-3 [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-w-max flex-nowrap items-center gap-1.5 md:min-w-0 md:flex-1">
-          <div className="relative min-w-[160px] flex-1 md:max-w-[320px]">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              onChange={(event) => {
-                onSearchChange(event.target.value);
+      <section className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterPillGroup
+            value={statusFilter}
+            ariaLabel={locale === "zh-CN" ? "渠道状态筛选" : "Channel status"}
+            onValueChange={(value) => {
+              onStatusChange(value);
+              resetPage();
+            }}
+            options={[
+              {
+                value: "all",
+                label: locale === "zh-CN" ? "全部" : "All",
+              },
+              {
+                value: "enabled",
+                label: locale === "zh-CN" ? "已启用" : "Enabled",
+              },
+              {
+                value: "disabled",
+                label: locale === "zh-CN" ? "已停用" : "Paused",
+              },
+            ]}
+          />
+
+          {tags.length ? (
+            <Select
+              value={tagFilter ? `tag:${tagFilter}` : "all"}
+              onValueChange={(value) => {
+                onTagChange(value === "all" ? null : value.slice(4));
                 resetPage();
               }}
-              className="pl-8"
-            />
-          </div>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <ToolbarButton
-                aria-label={locale === "zh-CN" ? "筛选" : "Filter"}
-              >
-                <Funnel className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "筛选" : "Filter"}
-                </span>
-                {activeFilterCount ? (
-                  <span className="text-xs tabular-nums">
-                    {activeFilterCount}
-                  </span>
-                ) : null}
-              </ToolbarButton>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[240px] p-2">
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <p className="px-1 text-xs text-muted-foreground">
-                    {locale === "zh-CN" ? "状态" : "Status"}
-                  </p>
-                  <Select
-                    value={statusFilter}
-                    onValueChange={(value) => {
-                      onStatusChange(value as ChannelStatusFilter);
-                      resetPage();
-                    }}
-                  >
-                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {locale === "zh-CN" ? "全部状态" : "All statuses"}
-                      </SelectItem>
-                      <SelectItem value="enabled">
-                        {locale === "zh-CN" ? "启用" : "Enabled"}
-                      </SelectItem>
-                      <SelectItem value="disabled">
-                        {locale === "zh-CN" ? "停用" : "Disabled"}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {tags.length ? (
-                  <div className="space-y-1">
-                    <p className="px-1 text-xs text-muted-foreground">
-                      {locale === "zh-CN" ? "标签" : "Tag"}
-                    </p>
-                    <Select
-                      value={tagFilter ? `tag:${tagFilter}` : "all"}
-                      onValueChange={(value) => {
-                        onTagChange(value === "all" ? null : value.slice(4));
-                        resetPage();
-                      }}
-                    >
-                      <SelectTrigger className="h-7 px-2 text-muted-foreground">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {locale === "zh-CN" ? "全部标签" : "All tags"}
-                        </SelectItem>
-                        {tags.map((tag) => (
-                          <SelectItem key={tag} value={`tag:${tag}`}>
-                            {tag}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : null}
-                {activeFilterCount ? (
-                  <div className="flex justify-end border-t border-border/60 pt-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs shadow-none"
-                      onClick={() => {
-                        onReset();
-                        resetPage();
-                      }}
-                    >
-                      {locale === "zh-CN" ? "清空" : "Clear"}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </PopoverContent>
-          </Popover>
+            >
+              <SelectTrigger className="h-8 w-auto min-w-[104px] border-0 bg-transparent px-2 text-[13px] text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {locale === "zh-CN" ? "全部标签" : "All tags"}
+                </SelectItem>
+                {tags.map((tag) => (
+                  <SelectItem key={tag} value={`tag:${tag}`}>
+                    {tag}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <ToolbarButton aria-label={locale === "zh-CN" ? "排序" : "Sort"}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={locale === "zh-CN" ? "排序" : "Sort"}
+                className="h-8 px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+              >
                 <ArrowDownUp className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "排序" : "Sort"}
+                <span>
+                  {sortOptions.find((o) => o.value === sortBy)?.label ??
+                    (locale === "zh-CN" ? "排序" : "Sort")}
                 </span>
-              </ToolbarButton>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-40 p-1.5">
               {sortOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-xs"
+                  className="h-7 gap-2 px-2 py-0 text-xs"
                   onSelect={() => onSortChange(option.value)}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
@@ -281,59 +248,76 @@ export function ChannelsOverview({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <BulkActionsPopover
-            locale={locale}
-            count={selectedSites.length}
-            isBusy={Boolean(busyId)}
-            onSetEnabled={(enabled) => {
-              void onBulkEnabled(selectedSites, enabled);
-              selection.clear();
-            }}
-            onDelete={() => setBulkDeleteOpen(true)}
-          />
+          {activeFilterCount > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={() => {
+                onReset();
+                resetPage();
+              }}
+            >
+              {locale === "zh-CN" ? "重置" : "Reset"}
+            </Button>
+          ) : null}
         </div>
 
-        <div className="ml-auto flex min-h-8 shrink-0 items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <ToolbarButton
-                onClick={onRefresh}
-                disabled={isLoading}
-                aria-label={locale === "zh-CN" ? "刷新" : "Refresh"}
-              >
-                <RefreshCw
-                  className={cn("size-3.5", isLoading && "animate-spin")}
-                />
-              </ToolbarButton>
-            </TooltipTrigger>
-            <TooltipContent>
-              {locale === "zh-CN" ? "刷新" : "Refresh"}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <ToolbarButton
-                onClick={onImport}
-                aria-label={locale === "zh-CN" ? "导入渠道" : "Import Channels"}
-              >
-                <FileInput className="size-3.5" />
-              </ToolbarButton>
-            </TooltipTrigger>
-            <TooltipContent>
-              {locale === "zh-CN" ? "导入渠道" : "Import Channels"}
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            type="button"
-            size="sm"
-            className="gap-1 text-sm"
-            onClick={onCreate}
-          >
-            <Plus className="size-3.5 stroke-1" />
-            {locale === "zh-CN" ? "新建渠道" : "New Channel"}
-          </Button>
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            onChange={(event) => {
+              onSearchChange(event.target.value);
+              resetPage();
+            }}
+            className="pl-8"
+          />
         </div>
       </section>
+
+      <SelectionActionBar
+        locale={locale}
+        count={selectedSites.length}
+        onClear={selection.clear}
+      >
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={Boolean(busyId)}
+          onClick={() => {
+            void onBulkEnabled(selectedSites, true);
+            selection.clear();
+          }}
+        >
+          {locale === "zh-CN" ? "启用" : "Enable"}
+        </Button>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={Boolean(busyId)}
+          onClick={() => {
+            void onBulkEnabled(selectedSites, false);
+            selection.clear();
+          }}
+        >
+          {locale === "zh-CN" ? "停用" : "Disable"}
+        </Button>
+        <Button
+          type="button"
+          size="xs"
+          variant="destructive"
+          disabled={Boolean(busyId)}
+          onClick={() => setBulkDeleteOpen(true)}
+        >
+          {locale === "zh-CN" ? "删除选中" : "Delete"}
+        </Button>
+      </SelectionActionBar>
 
       <ChannelsTable
         locale={locale}

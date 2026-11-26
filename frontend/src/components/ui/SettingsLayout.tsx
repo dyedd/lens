@@ -33,16 +33,13 @@ export function SettingsSection({
   headerClassName?: string;
 }) {
   return (
-    <section
-      className={cn("space-y-4 px-0.5 md:space-y-5 xl:space-y-6", className)}
-      {...props}
-    >
+    <section className={cn("space-y-3", className)} {...props}>
       {title || actions ? (
         <div
           className={cn(
             actions
-              ? "flex h-9 items-center justify-between gap-2 md:h-10 md:gap-3"
-              : "flex h-9 items-center md:h-10",
+              ? "flex min-h-9 items-center justify-between gap-2 md:gap-3"
+              : "flex min-h-9 items-center",
             headerClassName,
           )}
         >
@@ -56,7 +53,9 @@ export function SettingsSection({
           ) : null}
         </div>
       ) : null}
-      {children}
+      <div className="rounded-xl border border-border/55 bg-card p-5">
+        {children}
+      </div>
     </section>
   );
 }
@@ -114,9 +113,6 @@ export function SettingsSectionSeparator({
   ...props
 }: ComponentProps<typeof Separator>) {
   return (
-    <Separator
-      className={cn("mx-0.5 my-7 md:my-8 xl:mx-1 xl:my-10", className)}
-      {...props}
-    />
+    <Separator className={cn("my-5 bg-border/60", className)} {...props} />
   );
 }

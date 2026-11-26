@@ -1,5 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Eye, EyeOff, RefreshCcw, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eye,
+  EyeOff,
+  Plus,
+  RefreshCcw,
+  Trash2,
+} from "lucide-react";
 import {
   type Dispatch,
   type KeyboardEvent,
@@ -29,6 +37,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TruncatedTooltip,
 } from "@/components/ui/Tooltip";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { SiteCredential } from "@/lib/api/sites";
@@ -170,6 +179,9 @@ export function ChannelCredentialSection({
   const queryClient = useQueryClient();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [addDraftOpen, setAddDraftOpen] = useState(() =>
+    Boolean(form.newApiKeysLines.trim()),
+  );
   const scopedKeys = form.credentials.map((credential, index) => ({
     credential,
     index,
@@ -299,43 +311,65 @@ export function ChannelCredentialSection({
     }
   }
 
+  const showDraftArea =
+    scopedKeys.length === 0 ||
+    addDraftOpen ||
+    Boolean(form.newApiKeysLines.trim());
+
   return (
-    <div className="min-w-0 max-w-full space-y-1">
-      <Label
-        htmlFor={inputId}
-        required={required}
-        className="text-sm font-normal text-muted-foreground"
-      >
-        {scopedKeys.length
-          ? isZh
-            ? "添加 API Key"
-            : "Add API keys"
-          : isZh
-            ? "API Key（支持多个）"
-            : "API keys (rotated)"}
-      </Label>
-      <Textarea
-        id={inputId}
-        required={required && scopedKeys.length === 0}
-        spellCheck={false}
-        className="h-24 w-full min-w-0 max-w-full resize-none overflow-y-auto font-mono text-xs break-all placeholder:font-sans"
-        placeholder={
-          isZh
-            ? "每行输入一个 API Key，按 Enter 添加；Shift+Enter 换行"
-            : "One API key per line. Enter adds it; Shift+Enter inserts a new line"
-        }
-        value={form.newApiKeysLines}
-        onChange={(event) => changeDraft(event.target.value)}
-        onKeyDown={handleDraftKeyDown}
-      />
+    <div className="min-w-0 max-w-full space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label
+          htmlFor={inputId}
+          required={required}
+          className="text-[13px] font-medium text-foreground/85"
+        >
+          {scopedKeys.length
+            ? isZh
+              ? `API 密钥 · ${scopedKeys.length}`
+              : `API keys · ${scopedKeys.length}`
+            : isZh
+              ? "API 密钥（支持批量）"
+              : "API keys (one per line)"}
+        </Label>
+        {scopedKeys.length > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setAddDraftOpen((open) => !open)}
+          >
+            <Plus className="size-3" />
+            {showDraftArea
+              ? isZh
+                ? "收起输入"
+                : "Hide input"
+              : isZh
+                ? "添加 API Key"
+                : "Add keys"}
+          </Button>
+        ) : null}
+      </div>
+      {showDraftArea ? (
+        <Textarea
+          id={inputId}
+          required={required && scopedKeys.length === 0}
+          spellCheck={false}
+          className="h-24 w-full min-w-0 max-w-full resize-none overflow-y-auto font-mono text-[13px] break-all placeholder:font-sans"
+          placeholder={
+            isZh
+              ? "每行输入一个 API Key，按 Enter 添加；Shift+Enter 换行"
+              : "One API key per line. Enter adds it; Shift+Enter inserts a new line"
+          }
+          value={form.newApiKeysLines}
+          onChange={(event) => changeDraft(event.target.value)}
+          onKeyDown={handleDraftKeyDown}
+        />
+      ) : null}
       {scopedKeys.length > 0 ? (
-        <div className="mt-2 space-y-1.5">
-          <div className="text-xs leading-4 text-muted-foreground">
-            {isZh
-              ? `${scopedKeys.length} 个 API Key`
-              : `${scopedKeys.length} keys`}
-          </div>
-          <div className="overflow-hidden rounded-md bg-muted/35">
+        <div className="space-y-1.5">
+          <div className="divide-y divide-border/40">
             {scopedKeys.map(({ credential, index }) => {
               const isSyncing = syncingId === credential.id;
               const needsGroup =
@@ -584,16 +618,14 @@ export function ChannelCredentialSection({
                           </Tooltip>
                         ) : null}
                         {credential.rate_last_error ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="min-w-0 truncate text-xs text-destructive">
-                                {credential.rate_last_error}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-sm">
+                          <TruncatedTooltip
+                            content={credential.rate_last_error}
+                            contentClassName="max-w-sm"
+                          >
+                            <span className="min-w-0 truncate text-xs text-destructive">
                               {credential.rate_last_error}
-                            </TooltipContent>
-                          </Tooltip>
+                            </span>
+                          </TruncatedTooltip>
                         ) : credential.rate_multiplier === null ? (
                           <span className="truncate text-xs text-muted-foreground">
                             {canSyncRates
@@ -606,35 +638,19 @@ export function ChannelCredentialSection({
                           </span>
                         ) : null}
                       </div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="inline-flex shrink-0">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="xs"
-                              disabled={
-                                !canSyncRates || needsGroup || isSyncing
-                              }
-                              onClick={() => void syncRate(credential.id)}
-                            >
-                              <RefreshCcw
-                                className={
-                                  isSyncing ? "animate-spin" : undefined
-                                }
-                              />
-                              {isZh ? "查询倍率" : "Sync rate"}
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        {canSyncRates ? null : (
-                          <TooltipContent>
-                            {isZh
-                              ? "先保存渠道后再查询"
-                              : "Save the channel first"}
-                          </TooltipContent>
-                        )}
-                      </Tooltip>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        className="shrink-0"
+                        disabled={!canSyncRates || needsGroup || isSyncing}
+                        onClick={() => void syncRate(credential.id)}
+                      >
+                        <RefreshCcw
+                          className={isSyncing ? "animate-spin" : undefined}
+                        />
+                        {isZh ? "查询倍率" : "Sync rate"}
+                      </Button>
                     </div>
                   ) : null}
                 </div>

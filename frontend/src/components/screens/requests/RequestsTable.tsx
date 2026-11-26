@@ -285,26 +285,26 @@ export function RequestsTable({
   }, [hasRunning]);
 
   return (
-    <Table className="min-w-[1080px]">
+    <Table className="min-w-[880px]">
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead className="min-w-[72px] w-[72px]">ID</TableHead>
-          <TableHead className="w-[13rem] min-w-[13rem] max-w-[13rem]">
+          <TableHead className="min-w-[64px] w-[64px]">ID</TableHead>
+          <TableHead className="w-[11rem] min-w-[11rem] max-w-[11rem]">
             {titleForLocale(locale, "模型", "Model")}
           </TableHead>
-          <TableHead className="min-w-[88px]">
+          <TableHead className="min-w-[76px]">
             {titleForLocale(locale, "状态", "Status")}
           </TableHead>
-          <TableHead className="min-w-[148px]">
+          <TableHead className="min-w-[144px]">
             {titleForLocale(locale, "用量", "Usage")}
           </TableHead>
-          <TableHead className="min-w-[96px]">
+          <TableHead className="min-w-[88px]">
             {titleForLocale(locale, "费用", "Cost")}
           </TableHead>
           <TableHead className="min-w-[88px]">
             {titleForLocale(locale, "耗时", "Latency")}
           </TableHead>
-          <TableHead className="min-w-[132px]">
+          <TableHead className="min-w-[120px]">
             {titleForLocale(locale, "时间", "Time")}
           </TableHead>
         </TableRow>

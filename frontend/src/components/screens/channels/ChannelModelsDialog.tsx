@@ -3,7 +3,6 @@ import {
   Cable,
   Check,
   CloudDownload,
-  Funnel,
   Plus,
   Wand2,
 } from "lucide-react";
@@ -13,16 +12,11 @@ import {
   useMemo,
   useState,
 } from "react";
-import {
-  BulkActionButton,
-  BulkActionsPopover,
-} from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -33,19 +27,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/Popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/Select";
-import { ToolbarButton } from "@/components/ui/ToolbarButton";
+import { FilterPillGroup } from "@/components/ui/FilterPillGroup";
+import { SelectionActionBar } from "@/components/ui/SelectionActionBar";
 import { ToolbarSearchInput } from "@/components/ui/ToolbarSearchInput";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type { ProtocolKind } from "@/lib/api/protocols";
@@ -99,7 +82,10 @@ export function ChannelModelsDialog({
 }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex max-h-[min(88vh,780px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+      >
         <ChannelModelsBody onOpenChange={onOpenChange} {...props} />
         {children}
       </DialogContent>
@@ -179,7 +165,6 @@ function ChannelModelsBody({
     [selection.selectedRows],
   );
   const selectedCount = selectedKeys.length;
-  const activeFilterCount = Number(statusFilter !== "all");
   const sortOptions = modelSortOptions(locale);
 
   function applyBulkProtocols() {
@@ -209,191 +194,188 @@ function ChannelModelsBody({
           else onSave(event);
         }}
       >
-        <DialogHeader className="shrink-0 px-4 py-4">
+        <DialogHeader className="shrink-0 px-5 pb-3 pt-5 pr-12">
           <DialogTitle>
             {locale === "zh-CN"
-              ? `模型列表 - ${channelName}`
-              : `Models - ${channelName}`}
+              ? `渠道模型 · ${channelName}`
+              : `Models · ${channelName}`}
           </DialogTitle>
-          <DialogDescription>
-            {supportsModelListing
-              ? locale === "zh-CN"
-                ? "同步会核对已保存的模型，移除已从上游目录下线的模型。"
-                : "Sync checks saved models and removes those no longer in the upstream catalog."
-              : locale === "zh-CN"
-                ? "目录获取已关闭，模型不会自动同步。"
-                : "Model listing is off. Models will not sync automatically."}
-          </DialogDescription>
         </DialogHeader>
-        <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <ToolbarSearchInput
-            value={query}
-            onChange={setQuery}
-            onClear={() => setQuery("")}
-            clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
-            placeholder={
-              hasMultipleBaseUrls
-                ? locale === "zh-CN"
-                  ? "搜索模型名、地址或协议..."
-                  : "Search model name, URL, or protocol..."
-                : locale === "zh-CN"
-                  ? "搜索模型名或协议..."
-                  : "Search model name or protocol..."
-            }
-            className="max-w-none min-w-40 flex-1"
-          />
-          <Popover modal={false}>
-            <PopoverTrigger asChild>
-              <ToolbarButton
-                aria-label={locale === "zh-CN" ? "筛选" : "Filter"}
-              >
-                <Funnel className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "筛选" : "Filter"}
-                </span>
-                {activeFilterCount ? (
-                  <span className="text-xs tabular-nums">
-                    {activeFilterCount}
-                  </span>
-                ) : null}
-              </ToolbarButton>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="z-[100] w-[240px] p-2">
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <p className="px-1 text-xs text-muted-foreground">
-                    {locale === "zh-CN" ? "状态" : "Status"}
-                  </p>
-                  <Select
-                    value={statusFilter}
-                    onValueChange={(value) =>
-                      setStatusFilter(value as ModelStatusFilter)
-                    }
+
+        <div className="flex shrink-0 flex-col gap-2.5 px-5 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FilterPillGroup
+                value={statusFilter}
+                ariaLabel={
+                  locale === "zh-CN" ? "模型启用状态" : "Model status filter"
+                }
+                onValueChange={(value) =>
+                  setStatusFilter(value as ModelStatusFilter)
+                }
+                options={[
+                  {
+                    value: "all",
+                    label: locale === "zh-CN" ? "全部" : "All",
+                  },
+                  {
+                    value: "enabled",
+                    label: locale === "zh-CN" ? "已启用" : "Enabled",
+                  },
+                  {
+                    value: "disabled",
+                    label: locale === "zh-CN" ? "已停用" : "Paused",
+                  },
+                ]}
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+                    aria-label={locale === "zh-CN" ? "排序" : "Sort"}
                   >
-                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="z-[100]">
-                      <SelectItem value="all">
-                        {locale === "zh-CN" ? "全部状态" : "All statuses"}
-                      </SelectItem>
-                      <SelectItem value="enabled">
-                        {locale === "zh-CN" ? "启用" : "Enabled"}
-                      </SelectItem>
-                      <SelectItem value="disabled">
-                        {locale === "zh-CN" ? "停用" : "Disabled"}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {activeFilterCount ? (
-                  <div className="flex justify-end border-t border-border/60 pt-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs shadow-none"
-                      onClick={() => setStatusFilter("all")}
-                    >
-                      {locale === "zh-CN" ? "重置" : "Reset"}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </PopoverContent>
-          </Popover>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <ToolbarButton aria-label={locale === "zh-CN" ? "排序" : "Sort"}>
-                <ArrowDownUp className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "排序" : "Sort"}
-                </span>
-              </ToolbarButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="z-[100] w-40 p-1.5">
-              {sortOptions.map((option) => (
-                <DropdownMenuItem
-                  key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-xs"
-                  onSelect={() => setSortBy(option.value)}
+                    <ArrowDownUp className="size-3.5" />
+                    <span>
+                      {sortOptions.find((o) => o.value === sortBy)?.label ??
+                        (locale === "zh-CN" ? "排序" : "Sort")}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="z-[100] w-40 p-1.5"
                 >
-                  <span className="flex-1 truncate">{option.label}</span>
-                  {sortBy === option.value ? (
-                    <Check className="size-3.5 text-muted-foreground" />
-                  ) : null}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <BulkActionsPopover
-            locale={locale}
-            count={selectedCount}
-            isInDialog
-            onSetEnabled={(enabled) => {
-              for (const key of selectedKeys) onToggleEnabled(key, enabled);
-            }}
-            onDelete={() => requestRemoval(selectedKeys)}
-          >
-            <BulkActionButton
-              icon={<Wand2 className="size-3.5" />}
-              label={
-                detecting
-                  ? locale === "zh-CN"
-                    ? "识别协议中..."
-                    : "Detecting protocols..."
-                  : locale === "zh-CN"
-                    ? "自动识别协议"
-                    : "Detect protocols"
-              }
-              isBusy={detecting}
-              onClick={() => void onDetectProtocols(selectedKeys)}
-            />
-            <div className="mt-1 flex h-7 w-full items-center gap-1.5">
+                  {sortOptions.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      className="h-7 gap-2 px-2 py-0 text-xs"
+                      onSelect={() => setSortBy(option.value)}
+                    >
+                      <span className="flex-1 truncate">{option.label}</span>
+                      {sortBy === option.value ? (
+                        <Check className="size-3.5 text-muted-foreground" />
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <ToolbarSearchInput
+                value={query}
+                onChange={setQuery}
+                onClear={() => setQuery("")}
+                clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
+                placeholder={
+                  hasMultipleBaseUrls
+                    ? locale === "zh-CN"
+                      ? "搜索模型名、地址或协议..."
+                      : "Search model name, URL, or protocol..."
+                    : locale === "zh-CN"
+                      ? "搜索模型名或协议..."
+                      : "Search model name or protocol..."
+                }
+                className="w-full sm:w-56"
+              />
               <Button
                 type="button"
-                variant="ghost"
-                className="h-7 w-16 shrink-0 justify-start gap-2 px-2 text-xs text-foreground/70 shadow-none hover:bg-muted"
-                disabled={!bulkProtocols.length}
-                onClick={applyBulkProtocols}
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0"
+                disabled={fetching || detecting || !supportsModelListing}
+                onClick={onOpenRemote}
               >
-                <Cable className="size-3.5" />
-                {locale === "zh-CN" ? "应用" : "Apply"}
+                <CloudDownload className="size-3.5" />
+                {locale === "zh-CN" ? "获取模型列表" : "Fetch model list"}
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0"
+                disabled={fetching || detecting}
+                onClick={() => setNewOpen(true)}
+              >
+                <Plus className="size-3.5" />
+                {locale === "zh-CN" ? "模型规则" : "Model rule"}
+              </Button>
+            </div>
+          </div>
+
+          <SelectionActionBar
+            locale={locale}
+            count={selectedCount}
+            onClear={selection.clear}
+          >
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() => {
+                for (const key of selectedKeys) onToggleEnabled(key, true);
+              }}
+            >
+              {locale === "zh-CN" ? "启用" : "Enable"}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() => {
+                for (const key of selectedKeys) onToggleEnabled(key, false);
+              }}
+            >
+              {locale === "zh-CN" ? "停用" : "Disable"}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={detecting}
+              onClick={() => void onDetectProtocols(selectedKeys)}
+            >
+              <Wand2 className="size-3" />
+              {detecting
+                ? locale === "zh-CN"
+                  ? "识别中..."
+                  : "Detecting..."
+                : locale === "zh-CN"
+                  ? "识别协议"
+                  : "Detect"}
+            </Button>
+            <div className="flex items-center gap-1">
               <ProtocolDropdown
                 value={bulkProtocols}
                 locale={locale}
-                className="h-auto min-h-7 min-w-0 flex-1 px-2 py-1 text-sm leading-4 has-[>svg]:px-2"
+                className="h-7 min-h-7 w-32 px-2 py-0.5 text-xs"
                 onChange={setBulkProtocols}
               />
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={!bulkProtocols.length}
+                onClick={applyBulkProtocols}
+              >
+                <Cable className="size-3" />
+                {locale === "zh-CN" ? "应用协议" : "Apply"}
+              </Button>
             </div>
-          </BulkActionsPopover>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button
               type="button"
-              size="sm"
-              variant="outline"
-              className="h-8"
-              disabled={fetching || detecting || !supportsModelListing}
-              onClick={onOpenRemote}
+              size="xs"
+              variant="destructive"
+              onClick={() => requestRemoval(selectedKeys)}
             >
-              <CloudDownload className="size-3.5" />
-              {locale === "zh-CN" ? "获取模型列表" : "Fetch model list"}
+              {locale === "zh-CN" ? "删除" : "Delete"}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8"
-              disabled={fetching || detecting}
-              onClick={() => setNewOpen(true)}
-            >
-              <Plus className="size-3.5" />
-              {locale === "zh-CN" ? "模型规则" : "Model rule"}
-            </Button>
-          </div>
+          </SelectionActionBar>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden px-4 py-2">
+
+        <div className="min-h-0 flex-1 overflow-hidden px-5 py-1">
           <ChannelModelsTable
             locale={locale}
             items={visibleModels}
@@ -414,29 +396,36 @@ function ChannelModelsBody({
             onTest={onTest}
           />
         </div>
-        <DialogFooter className="shrink-0 px-4 py-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            {locale === "zh-CN" ? "关闭" : "Close"}
-          </Button>
-          <Button type="submit" size="sm" disabled={saving || detecting}>
-            {saving
-              ? locale === "zh-CN"
-                ? "保存中..."
-                : "Saving..."
-              : detecting
+        <DialogFooter className="shrink-0 items-center justify-between gap-2 px-5 py-3">
+          <span className="mr-auto font-mono text-xs tabular-nums text-muted-foreground">
+            {locale === "zh-CN"
+              ? `显示 ${visibleModels.length} / ${models.length} 个模型`
+              : `Showing ${visibleModels.length} of ${models.length} models`}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              disabled={saving}
+            >
+              {locale === "zh-CN" ? "关闭" : "Close"}
+            </Button>
+            <Button type="submit" size="sm" disabled={saving || detecting}>
+              {saving
                 ? locale === "zh-CN"
-                  ? "后台识别中..."
-                  : "Detecting in background..."
-                : locale === "zh-CN"
-                  ? "保存"
-                  : "Save"}
-          </Button>
+                  ? "保存中..."
+                  : "Saving..."
+                : detecting
+                  ? locale === "zh-CN"
+                    ? "后台识别中..."
+                    : "Detecting in background..."
+                  : locale === "zh-CN"
+                    ? "保存"
+                    : "Save"}
+            </Button>
+          </div>
         </DialogFooter>
       </form>
       <ChannelModelPatternDialog

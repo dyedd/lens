@@ -86,15 +86,6 @@ export function ChannelModelPatternDialog({
       <AppDialogContent
         className="max-w-md"
         title={locale === "zh-CN" ? "模型规则" : "Model rule"}
-        description={
-          supportsModelListing
-            ? locale === "zh-CN"
-              ? "每行一个模型名或正则，正则从上游目录匹配。"
-              : "One model name or regex per line. Regex matches the upstream catalog."
-            : locale === "zh-CN"
-              ? "每行一个模型名。"
-              : "One model name per line."
-        }
         footer={
           <>
             <Button

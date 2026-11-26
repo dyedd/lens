@@ -3,9 +3,9 @@ import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/Alert";
-import { BulkActionsPopover } from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
+import { SelectionActionBar } from "@/components/ui/SelectionActionBar";
 import { SettingsSection } from "@/components/ui/SettingsLayout";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
@@ -220,58 +220,82 @@ export function GatewayApiKeyManager({ locale }: { locale: Locale }) {
       <SettingsSection
         title={titleForLocale(locale, "网关密钥", "Gateway Keys")}
         actions={
-          <>
-            <BulkActionsPopover
-              locale={locale}
-              count={selectedKeys.length}
-              isBusy={Boolean(busyId)}
-              placement="section"
-              onSetEnabled={(enabled) => void bulkSetEnabled(enabled)}
-              onDelete={() => setBulkDeleteOpen(true)}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
-              onClick={openCreateDialog}
-            >
-              <Plus className="size-3.5" />
-              {titleForLocale(locale, "创建网关密钥", "Create gateway key")}
-            </Button>
-          </>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={openCreateDialog}
+          >
+            <Plus className="size-3.5" />
+            {titleForLocale(locale, "创建网关密钥", "Create gateway key")}
+          </Button>
         }
       >
-        {keysError ? (
-          <Alert variant="destructive">
-            <AlertDescription>
-              {getApiErrorMessage(
-                keysError,
-                titleForLocale(
-                  locale,
-                  "网关密钥加载失败",
-                  "Failed to load gateway keys",
-                ),
-              )}
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <GatewayApiKeyTable
+        <div className="space-y-3">
+          <SelectionActionBar
             locale={locale}
-            gatewayKeys={gatewayKeys}
-            timeZone={timeZone}
-            selected={selection.selected}
-            busyId={busyId}
-            copiedKey={copiedKey}
-            onSelectAll={(checked) =>
-              selection.toggleRows(gatewayKeys, checked)
-            }
-            onSelectOne={selection.toggleId}
-            onCopy={copyGatewayKey}
-            onEdit={openEditDialog}
-            onToggle={toggleGatewayKeyEnabled}
-          />
-        )}
+            count={selectedKeys.length}
+            onClear={selection.clear}
+          >
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={Boolean(busyId)}
+              onClick={() => void bulkSetEnabled(true)}
+            >
+              {titleForLocale(locale, "启用", "Enable")}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={Boolean(busyId)}
+              onClick={() => void bulkSetEnabled(false)}
+            >
+              {titleForLocale(locale, "停用", "Disable")}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="destructive"
+              disabled={Boolean(busyId)}
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              {titleForLocale(locale, "删除选中项", "Delete selected")}
+            </Button>
+          </SelectionActionBar>
+          {keysError ? (
+            <Alert variant="destructive">
+              <AlertDescription>
+                {getApiErrorMessage(
+                  keysError,
+                  titleForLocale(
+                    locale,
+                    "网关密钥加载失败",
+                    "Failed to load gateway keys",
+                  ),
+                )}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <GatewayApiKeyTable
+              locale={locale}
+              gatewayKeys={gatewayKeys}
+              timeZone={timeZone}
+              selected={selection.selected}
+              busyId={busyId}
+              copiedKey={copiedKey}
+              onSelectAll={(checked) =>
+                selection.toggleRows(gatewayKeys, checked)
+              }
+              onSelectOne={selection.toggleId}
+              onCopy={copyGatewayKey}
+              onEdit={openEditDialog}
+              onToggle={toggleGatewayKeyEnabled}
+            />
+          )}
+        </div>
       </SettingsSection>
 
       <ConfirmDeleteDialog

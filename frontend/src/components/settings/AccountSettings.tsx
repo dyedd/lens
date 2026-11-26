@@ -118,11 +118,6 @@ export function AccountSettings({
             "验证当前密码",
             "Verify current password",
           )}
-          description={titleForLocale(
-            locale,
-            "输入当前密码确认修改。",
-            "Enter your current password to confirm.",
-          )}
           footer={
             <>
               <Button

@@ -55,7 +55,7 @@ export function ChannelBaseUrlSection({
       <Label
         htmlFor="channel-url"
         required
-        className="text-sm font-normal text-muted-foreground"
+        className="text-[13px] font-medium text-foreground/85"
       >
         {locale === "zh-CN" ? "接口地址" : "Base URL"}
       </Label>
@@ -82,7 +82,7 @@ export function ChannelBaseUrlSection({
       <div className="pt-1">
         <button
           type="button"
-          className="flex h-8 w-full items-center justify-between rounded-md text-left text-sm font-normal text-muted-foreground hover:text-foreground"
+          className="flex h-8 w-full items-center justify-between rounded-md text-left text-[13px] font-normal text-muted-foreground hover:text-foreground"
           onClick={() => {
             if (!extraOpen && extraUrls.length === 0) onAdd();
             setExtraOpen((open) => !open);
@@ -120,7 +120,7 @@ export function ChannelBaseUrlSection({
                       })
                     }
                   >
-                    <SelectTrigger className="col-span-3 h-7 w-full min-w-0 gap-1 px-2 text-xs sm:col-span-1">
+                    <SelectTrigger className="col-span-3 h-7 w-full min-w-0 gap-1 px-2 text-[13px] sm:col-span-1">
                       <SelectValue className="min-w-0 flex-1 truncate text-left">
                         {endpointLabel(baseUrl.kind)}
                       </SelectValue>

@@ -1,6 +1,5 @@
 import { AccountSettings } from "@/components/settings/AccountSettings";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
-import { SettingsSectionSeparator } from "@/components/ui/SettingsLayout";
 import { TabsContent } from "@/components/ui/Tabs";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { SettingsSectionCard } from "./SettingsSectionCard";
@@ -22,7 +21,7 @@ export function GeneralSettingsSection({
   account,
 }: SettingsSectionProps & { account: AccountSettingsController }) {
   return (
-    <TabsContent value="general" className="mt-0">
+    <TabsContent value="general" className="mt-0 space-y-8">
       <SettingsSectionCard title={titleForLocale(locale, "外观", "Appearance")}>
         <AppearanceSettings
           siteName={settings.draft.siteName}
@@ -38,12 +37,8 @@ export function GeneralSettingsSection({
             settings.setDraftValue("timeZone", value)
           }
         />
-        <SettingsSectionSeparator />
-        <h3 className="mb-4 text-sm font-semibold">
-          {titleForLocale(locale, "管理员账号", "Admin account")}
-        </h3>
-        <AccountSettingsSection locale={locale} account={account} embedded />
       </SettingsSectionCard>
+      <AccountSettingsSection locale={locale} account={account} />
     </TabsContent>
   );
 }

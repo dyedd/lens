@@ -14,6 +14,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TruncatedTooltip,
 } from "@/components/ui/Tooltip";
 import type { ModelGroupCandidateItem } from "@/lib/api/groups";
 import { cn } from "@/lib/classNames";
@@ -52,7 +53,7 @@ export function CandidateRow({
       disabled={active}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate font-mono text-xs font-medium text-foreground">
+        <div className="truncate font-mono text-[13px] font-medium text-foreground">
           {candidates[0].model_name}
         </div>
         <div className="truncate text-xs font-normal text-muted-foreground">
@@ -135,11 +136,11 @@ export function FoldedMemberRow({
       onDragOver={canReorder ? (event) => event.preventDefault() : undefined}
       onDragEnd={canReorder ? onDragEnd : undefined}
       className={cn(
-        "flex min-h-8 min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-muted/50",
+        "group/item flex min-h-10 min-w-0 items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/45",
         isDragging && "opacity-60",
         !enabled && "opacity-55",
         (member.invalid_item_count > 0 || member.unavailable_item_count > 0) &&
-          "border border-destructive/40 bg-destructive/10",
+          "bg-destructive/10",
       )}
     >
       {canReorder ? (
@@ -152,24 +153,22 @@ export function FoldedMemberRow({
       ) : null}
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
         <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-xs font-medium text-foreground">
+          <div className="truncate font-mono text-[13px] font-medium text-foreground">
             {member.model_name}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="truncate text-xs text-muted-foreground">
-                {sourceLabel}
-                {partiallyEnabled
-                  ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
-                  : !manuallyEnabled
-                    ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
-                    : ""}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-sm break-all">
+          <TruncatedTooltip
+            content={sourceLabel}
+            contentClassName="max-w-sm break-all"
+          >
+            <div className="truncate text-xs text-muted-foreground">
               {sourceLabel}
-            </TooltipContent>
-          </Tooltip>
+              {partiallyEnabled
+                ? ` · ${locale === "zh-CN" ? "部分启用" : "Partially enabled"}`
+                : !manuallyEnabled
+                  ? ` · ${locale === "zh-CN" ? "已关闭" : "Disabled"}`
+                  : ""}
+            </div>
+          </TruncatedTooltip>
         </div>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           {member.rate_source !== "none" &&
@@ -241,8 +240,9 @@ export function FoldedMemberRow({
           ) : null}
         </div>
       </div>
-      <div className="flex size-7 shrink-0 items-center justify-center">
+      <div className="flex shrink-0 items-center justify-center">
         <Switch
+          size="sm"
           checked={enabled}
           disabled={isBusy || automaticallyUnavailable}
           onCheckedChange={onToggle}
@@ -256,7 +256,7 @@ export function FoldedMemberRow({
           <Button
             type="button"
             variant="ghost"
-            className="text-muted-foreground"
+            className="intent-reveal text-muted-foreground/70 hover:text-foreground"
             size="icon-xs"
             aria-label={locale === "zh-CN" ? "移除成员" : "Remove member"}
             onClick={onRemove}
@@ -265,9 +265,7 @@ export function FoldedMemberRow({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {locale === "zh-CN"
-            ? "移除后可在“已排除”中恢复"
-            : "Remove it; restore it later from Excluded"}
+          {locale === "zh-CN" ? "移除" : "Remove"}
         </TooltipContent>
       </Tooltip>
     </li>

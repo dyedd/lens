@@ -1,13 +1,6 @@
-import { MoreHorizontal, Pencil, Settings2, Trash2 } from "lucide-react";
+import { Pencil, Settings2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu";
 import { Switch } from "@/components/ui/Switch";
 import {
   Table,
@@ -21,6 +14,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TruncatedTooltip,
 } from "@/components/ui/Tooltip";
 import type { Site } from "@/lib/api/sites";
 import { siteEndpointUrls, siteModelCounts } from "./channelDisplay";
@@ -104,7 +98,9 @@ export function ChannelsTable({
           </TableHead>
           <TableHead>{locale === "zh-CN" ? "模型数" : "Models"}</TableHead>
           <TableHead>{locale === "zh-CN" ? "更新时间" : "Updated"}</TableHead>
-          <TableHead className="w-[56px]" />
+          <TableHead className="w-[112px] text-right">
+            {locale === "zh-CN" ? "操作" : "Actions"}
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -159,16 +155,15 @@ export function ChannelsTable({
               </TableCell>
               <TableCell>
                 {urls.length > 0 ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="max-w-[14rem] truncate text-xs text-muted-foreground">
-                        {urls[0]}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-sm break-all">
+                  <TruncatedTooltip
+                    content={urls[0]}
+                    side="top"
+                    contentClassName="max-w-sm break-all"
+                  >
+                    <div className="max-w-[14rem] truncate text-xs text-muted-foreground">
                       {urls[0]}
-                    </TooltipContent>
-                  </Tooltip>
+                    </div>
+                  </TruncatedTooltip>
                 ) : (
                   <span className="text-xs text-muted-foreground">
                     {locale === "zh-CN" ? "未配置" : "Not set"}
@@ -193,47 +188,79 @@ export function ChannelsTable({
                 </div>
               </TableCell>
               <TableCell>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {locale === "zh-CN"
-                    ? `${models.enabled} / ${models.total} 已启用`
-                    : `${models.enabled} / ${models.total} active`}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => onManageModels(site)}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Settings2 className="size-3.5" />
+                  <span>
+                    {models.enabled} / {models.total}
+                  </span>
+                </button>
               </TableCell>
-              <TableCell className="whitespace-nowrap text-muted-foreground">
+              <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
                 {formatUpdatedAt(site.updated_at, updatedAtFormatter)}
               </TableCell>
-              <TableCell className="w-[56px] py-1.5">
-                <div className="flex h-7 items-center justify-end">
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
+              <TableCell className="w-[112px] py-1.5">
+                <div className="intent-reveal flex h-7 items-center justify-end gap-0.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        className="text-muted-foreground shadow-none"
+                        className="text-muted-foreground shadow-none hover:text-foreground"
+                        aria-label={
+                          locale === "zh-CN" ? "管理模型" : "Manage models"
+                        }
+                        onClick={() => onManageModels(site)}
                       >
-                        <MoreHorizontal className="size-3.5 stroke-1" />
-                        <span className="sr-only">
-                          {locale === "zh-CN" ? "操作" : "Actions"}
-                        </span>
+                        <Settings2 className="size-3.5" />
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => onEdit(site)}>
-                        <Pencil className="size-3.5 stroke-1" />
-                        {locale === "zh-CN" ? "编辑渠道" : "Edit channel"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => onManageModels(site)}>
-                        <Settings2 className="size-3.5 stroke-1" />
-                        {locale === "zh-CN" ? "管理模型" : "Manage models"}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => onDelete(site)}>
-                        <Trash2 className="size-3.5 stroke-1" />
-                        {locale === "zh-CN" ? "删除渠道" : "Delete channel"}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {locale === "zh-CN" ? "管理模型" : "Manage models"}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground shadow-none hover:text-foreground"
+                        aria-label={
+                          locale === "zh-CN" ? "编辑渠道" : "Edit channel"
+                        }
+                        onClick={() => onEdit(site)}
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {locale === "zh-CN" ? "编辑渠道" : "Edit channel"}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground shadow-none hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={
+                          locale === "zh-CN" ? "删除渠道" : "Delete channel"
+                        }
+                        onClick={() => onDelete(site)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {locale === "zh-CN" ? "删除渠道" : "Delete channel"}
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               </TableCell>
             </TableRow>

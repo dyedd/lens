@@ -34,14 +34,13 @@ export const TIME_RANGE_OPTIONS = [
   { value: "0", zhLabel: "全部", enLabel: "All time" },
 ] satisfies Array<{ value: TimeRange; zhLabel: string; enLabel: string }>;
 export const CHART_COLORS = [
-  "var(--chart-4)",
-  "var(--chart-3)",
-  "var(--chart-2)",
-  "var(--chart-1)",
-  "var(--chart-5)",
-  "var(--primary)",
-  "var(--muted-foreground)",
-];
+  "#2f6fed",
+  "#139a74",
+  "#9b5de5",
+  "#c94a6a",
+  "#b8622a",
+  "#0e8ca8",
+] as const;
 
 /** Format a number using compact dashboard notation. */
 export function formatCompact(value: number, digits = 1) {

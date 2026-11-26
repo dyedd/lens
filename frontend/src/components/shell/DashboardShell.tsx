@@ -200,11 +200,11 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
             <div
               id="dashboard-content"
               tabIndex={-1}
-              className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-4 pb-10 sm:px-6 lg:px-8"
+              className="hide-scrollbar min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-4 py-5 pb-12 sm:px-6 lg:px-8"
             >
               <div
                 key={pathname}
-                className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1256px] animate-[fadeIn_.16s_ease-out]"
+                className="mx-auto min-h-[calc(100vh-10rem)] min-w-0 max-w-[1320px] animate-[fadeIn_.16s_ease-out]"
               >
                 {children}
               </div>

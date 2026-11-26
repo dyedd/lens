@@ -11,6 +11,7 @@ import {
 import { useAccountSettings } from "@/components/settings/useAccountSettings";
 import { useSettingsDraft } from "@/components/settings/useSettingsDraft";
 import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import {
@@ -99,15 +100,13 @@ export function SettingsScreen() {
           showRefresh={activeTab !== "cronjobs"}
         />
       )}
-      <section className="mx-auto min-w-0 max-w-[1256px]">
-        <h1 className="page-title mb-5 px-1">
-          {titleForLocale(locale, "设置", "Settings")}
-        </h1>
+      <section className="mx-auto min-w-0 max-w-[1320px] space-y-5">
+        <PageHeader title={titleForLocale(locale, "设置", "Settings")} />
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          orientation="vertical"
-          className="grid min-w-0 gap-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start"
+          orientation="horizontal"
+          className="flex min-w-0 flex-col gap-6"
         >
           <SettingsNavigation tabs={settingsTabs} />
           <div className="min-w-0">

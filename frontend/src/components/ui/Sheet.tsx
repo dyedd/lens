@@ -35,7 +35,7 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 z-50 bg-black/45 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className,
       )}
       {...props}
@@ -63,15 +63,15 @@ function SheetContent({
         data-slot="sheet-content"
         data-side={side}
         className={cn(
-          "fixed z-50 flex flex-col gap-4 overflow-hidden border border-border/60 bg-background/96 text-sm text-foreground shadow-2xl outline-none backdrop-blur transition ease-in-out data-open:animate-in data-closed:animate-out data-closed:duration-300 data-open:duration-500",
+          "fixed z-50 flex flex-col gap-0 overflow-hidden border-border/75 bg-background text-[13px] text-foreground shadow-2xl outline-none transition ease-in-out data-open:animate-in data-closed:animate-out data-closed:duration-250 data-open:duration-350",
           side === "right" &&
-            "inset-y-3 right-3 h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] rounded-3xl data-open:slide-in-from-right data-closed:slide-out-to-right sm:max-w-sm",
+            "inset-y-0 right-0 h-dvh w-full border-l data-open:slide-in-from-right data-closed:slide-out-to-right sm:max-w-[480px]",
           side === "left" &&
-            "inset-y-3 left-3 h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] rounded-3xl data-open:slide-in-from-left data-closed:slide-out-to-left sm:max-w-sm",
+            "inset-y-0 left-0 h-dvh w-full border-r data-open:slide-in-from-left data-closed:slide-out-to-left sm:max-w-[480px]",
           side === "top" &&
-            "inset-x-3 top-3 h-auto rounded-3xl data-open:slide-in-from-top data-closed:slide-out-to-top",
+            "inset-x-0 top-0 h-auto border-b data-open:slide-in-from-top data-closed:slide-out-to-top",
           side === "bottom" &&
-            "inset-x-3 bottom-3 h-auto rounded-3xl data-open:slide-in-from-bottom data-closed:slide-out-to-bottom",
+            "inset-x-0 bottom-0 h-auto border-t data-open:slide-in-from-bottom data-closed:slide-out-to-bottom",
           className,
         )}
         onInteractOutside={(event) => {
@@ -88,7 +88,7 @@ function SheetContent({
           <SheetPrimitive.Close data-slot="sheet-close" asChild>
             <Button
               variant="ghost"
-              className="absolute top-6 right-6 size-8 opacity-70 hover:opacity-100"
+              className="absolute top-3.5 right-4 size-8 text-muted-foreground hover:text-foreground"
               size="icon-sm"
             >
               <XIcon className="size-4" />
@@ -105,7 +105,10 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-1.5 px-6 pt-6 pb-4", className)}
+      className={cn(
+        "flex flex-col gap-1 border-b border-border/60 px-6 py-4 pr-14",
+        className,
+      )}
       {...props}
     />
   );
@@ -116,7 +119,7 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sheet-footer"
       className={cn(
-        "mt-auto flex flex-row justify-end gap-2 rounded-b-3xl border-t bg-background/96 px-6 py-4 [&_[data-slot=button][data-size=default]]:h-7",
+        "mt-auto flex flex-row items-center justify-end gap-2 border-t border-border/60 bg-background px-6 py-3.5",
         className,
       )}
       {...props}
@@ -131,7 +134,10 @@ function SheetTitle({
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn("text-sm font-semibold text-foreground", className)}
+      className={cn(
+        "text-base font-semibold tracking-tight text-card-foreground",
+        className,
+      )}
       {...props}
     />
   );
@@ -144,7 +150,7 @@ function SheetDescription({
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
-      className={cn("text-xs text-muted-foreground", className)}
+      className={cn("text-[13px] leading-5 text-muted-foreground", className)}
       {...props}
     />
   );

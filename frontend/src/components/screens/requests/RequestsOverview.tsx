@@ -7,6 +7,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
@@ -15,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
+import { FilterPillGroup } from "@/components/ui/FilterPillGroup";
 import { Input } from "@/components/ui/Input";
 import { TablePagination } from "@/components/ui/Pagination";
 import {
@@ -29,12 +31,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { ToolbarButton } from "@/components/ui/ToolbarButton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type {
   RequestLogFilterOption,
@@ -55,7 +51,6 @@ import {
 } from "./requestView";
 
 type Props = {
-  scopeLabel: string;
   locale: Locale;
   items: RequestLogItem[];
   loading: boolean;
@@ -97,7 +92,6 @@ type Props = {
 
 /** Renders request logs as a toolbar and table. */
 export function RequestsOverview({
-  scopeLabel,
   locale,
   items,
   loading,
@@ -172,93 +166,96 @@ export function RequestsOverview({
     "Search model, channel, key, or error...",
   );
 
-  return (
-    <div className="space-y-5 pb-10">
-      <div className="flex h-10 items-center justify-between gap-3 px-1">
-        <h3 className="page-title">
-          {titleForLocale(locale, "请求日志", "Request Logs")}
-        </h3>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 px-2 text-sm text-muted-foreground shadow-none"
-          disabled={clearingLogs}
-          onClick={() => setClearDialogOpen(true)}
-        >
-          <Trash2 className="size-3.5 stroke-1" />
-          {clearingLogs
-            ? titleForLocale(locale, "清空中...", "Clearing...")
-            : titleForLocale(locale, "清空全部请求日志", "Clear all logs")}
-        </Button>
-      </div>
+  const secondaryFilterCount =
+    Number(protocolFilter !== "all") +
+    Number(channelFilter !== "all") +
+    Number(showGatewayKeyFilter && selectedGatewayKeyId !== "all") +
+    Number(effectiveModelPrefix !== "all");
 
-      {scopeLabel ? (
-        <p className="px-1 text-xs text-muted-foreground">{scopeLabel}</p>
-      ) : null}
-      <section className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 [scrollbar-width:none] md:gap-3 [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-w-max flex-nowrap items-center gap-1.5 md:min-w-0 md:flex-1">
-          <div className="relative min-w-[160px] flex-1 md:max-w-[320px]">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={keyword}
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              onChange={(event) => onKeywordChange(event.target.value)}
-              className="pl-8"
-            />
-          </div>
+  return (
+    <div className="space-y-4 pb-10">
+      <PageHeader
+        title={titleForLocale(locale, "请求日志", "Request Logs")}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onRefresh}
+              disabled={fetching}
+              aria-label={titleForLocale(locale, "刷新", "Refresh")}
+            >
+              <RefreshCw
+                className={cn("size-3.5", fetching && "animate-spin")}
+              />
+              {titleForLocale(locale, "刷新", "Refresh")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-destructive"
+              disabled={clearingLogs}
+              onClick={() => setClearDialogOpen(true)}
+            >
+              <Trash2 className="size-3.5" />
+              {clearingLogs
+                ? titleForLocale(locale, "清空中...", "Clearing...")
+                : titleForLocale(locale, "清空日志", "Clear logs")}
+            </Button>
+          </>
+        }
+      />
+
+      <section className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterPillGroup
+            value={statusFilter}
+            ariaLabel={titleForLocale(locale, "请求状态筛选", "Request status")}
+            onValueChange={(value) => onStatusChange(value as StatusFilter)}
+            options={[
+              { value: "all", label: titleForLocale(locale, "全部", "All") },
+              {
+                value: "running",
+                label: titleForLocale(locale, "进行中", "Running"),
+              },
+              {
+                value: "success",
+                label: titleForLocale(locale, "成功", "Success"),
+              },
+              {
+                value: "failed",
+                label: titleForLocale(locale, "失败", "Failed"),
+              },
+              {
+                value: "cancelled",
+                label: titleForLocale(locale, "已取消", "Cancelled"),
+              },
+            ]}
+          />
 
           <Popover>
             <PopoverTrigger asChild>
-              <ToolbarButton
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground"
                 aria-label={titleForLocale(locale, "筛选", "Filter")}
               >
                 <Funnel className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {titleForLocale(locale, "筛选", "Filter")}
-                </span>
-                {activeFilterCount ? (
-                  <span className="text-xs tabular-nums">
-                    {activeFilterCount}
+                <span>{titleForLocale(locale, "更多条件", "Dimensions")}</span>
+                {secondaryFilterCount ? (
+                  <span className="font-mono text-xs tabular-nums text-foreground">
+                    {secondaryFilterCount}
                   </span>
                 ) : null}
-              </ToolbarButton>
+              </Button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-[260px] p-2">
               <div className="space-y-2">
-                <div className="space-y-1">
-                  <p className="px-1 text-xs text-muted-foreground">
-                    {titleForLocale(locale, "状态", "Status")}
-                  </p>
-                  <Select
-                    value={statusFilter}
-                    onValueChange={(value) =>
-                      onStatusChange(value as StatusFilter)
-                    }
-                  >
-                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {titleForLocale(locale, "全部状态", "All statuses")}
-                      </SelectItem>
-                      <SelectItem value="running">
-                        {titleForLocale(locale, "进行中", "Running")}
-                      </SelectItem>
-                      <SelectItem value="success">
-                        {titleForLocale(locale, "成功", "Success")}
-                      </SelectItem>
-                      <SelectItem value="failed">
-                        {titleForLocale(locale, "失败", "Failed")}
-                      </SelectItem>
-                      <SelectItem value="cancelled">
-                        {titleForLocale(locale, "已取消", "Cancelled")}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="space-y-1">
                   <p className="px-1 text-xs text-muted-foreground">
                     {titleForLocale(locale, "协议", "Protocol")}
@@ -377,20 +374,25 @@ export function RequestsOverview({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <ToolbarButton
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl border-border/70 px-2.5 text-[13px] font-medium"
                 aria-label={titleForLocale(locale, "排序", "Sort")}
               >
-                <ArrowDownUp className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {titleForLocale(locale, "排序", "Sort")}
+                <ArrowDownUp className="size-3.5 text-muted-foreground" />
+                <span>
+                  {sortOptions.find((o) => o.value === sortMode)?.label ??
+                    titleForLocale(locale, "排序", "Sort")}
                 </span>
-              </ToolbarButton>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-40 p-1.5">
               {sortOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-xs"
+                  className="h-7 gap-2 px-2 py-0 text-xs"
                   onSelect={() => onSortChange(option.value)}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
@@ -401,25 +403,29 @@ export function RequestsOverview({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {activeFilterCount > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-xs text-muted-foreground"
+              onClick={onReset}
+            >
+              {titleForLocale(locale, "重置", "Reset")}
+            </Button>
+          ) : null}
         </div>
 
-        <div className="ml-auto flex min-h-8 shrink-0 items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <ToolbarButton
-                onClick={onRefresh}
-                disabled={fetching}
-                aria-label={titleForLocale(locale, "刷新", "Refresh")}
-              >
-                <RefreshCw
-                  className={cn("size-3.5", fetching && "animate-spin")}
-                />
-              </ToolbarButton>
-            </TooltipTrigger>
-            <TooltipContent>
-              {titleForLocale(locale, "刷新", "Refresh")}
-            </TooltipContent>
-          </Tooltip>
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={keyword}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            onChange={(event) => onKeywordChange(event.target.value)}
+            className="pl-8"
+          />
         </div>
       </section>
 

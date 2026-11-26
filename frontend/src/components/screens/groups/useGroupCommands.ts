@@ -343,7 +343,7 @@ export function useGroupCommands({
     if (!merged) return false;
     toast.success(
       locale === "zh-CN"
-        ? `已将「${source.name}」合并到「${target.name}」`
+        ? `已将 ${source.name} 合并至 ${target.name}`
         : `Merged "${source.name}" into "${target.name}"`,
     );
     return true;
@@ -367,7 +367,7 @@ export function useGroupCommands({
     if (added) {
       toast.success(
         locale === "zh-CN"
-          ? `已加入「${group.name}」`
+          ? `已加入 ${group.name}`
           : `Added to "${group.name}"`,
       );
     }
@@ -416,7 +416,7 @@ export function useGroupCommands({
     );
     if (created) {
       toast.success(
-        locale === "zh-CN" ? `已创建「${name}」` : `Created "${name}"`,
+        locale === "zh-CN" ? `已创建 ${name}` : `Created "${name}"`,
       );
     }
   }

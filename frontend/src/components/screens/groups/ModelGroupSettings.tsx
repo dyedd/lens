@@ -1,7 +1,9 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { SettingsHint } from "@/components/settings/SettingsSectionCard";
 import { Combobox, ComboboxOption } from "@/components/ui/Combobox";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   Select,
   SelectContent,
@@ -22,28 +24,32 @@ interface ModelGroupSettingsProps {
   routeTargetOptions: ModelGroup[];
 }
 
-/** 标签始终位于控件上方，保持设置表单的纵向层级。 */
 function SettingsRow({
   children,
   htmlFor,
   label,
   required = false,
+  hint,
 }: {
   children: ReactNode;
   htmlFor?: string;
   label: string;
   required?: boolean;
+  hint?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <Label
-        htmlFor={htmlFor}
-        required={required}
-        className="text-xs leading-5 font-normal text-muted-foreground"
-      >
-        {label}
-      </Label>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">{children}</div>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex items-center gap-1">
+        <Label
+          htmlFor={htmlFor}
+          required={required}
+          className="text-[13px] leading-5 font-medium text-foreground/85"
+        >
+          {label}
+        </Label>
+        {hint ? <SettingsHint description={hint} /> : null}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">{children}</div>
     </div>
   );
 }
@@ -80,7 +86,7 @@ export function ModelGroupSettings({
   }
 
   return (
-    <div className="flex shrink-0 flex-col gap-3">
+    <div className="flex shrink-0 flex-col gap-3.5">
       <SettingsRow
         htmlFor="group-name"
         label={isZh ? "模型组名称" : "Group name"}
@@ -89,7 +95,7 @@ export function ModelGroupSettings({
         <Input
           id="group-name"
           required
-          className="font-mono placeholder:font-sans"
+          className="bg-pure/80 font-mono placeholder:font-sans dark:bg-card"
           placeholder={
             isZh
               ? "输入对外模型名，如 gpt-4o"
@@ -103,33 +109,28 @@ export function ModelGroupSettings({
         />
       </SettingsRow>
 
-      <SettingsRow
-        htmlFor="group-type"
-        label={isZh ? "模型组类型" : "Group type"}
-      >
-        <Select
-          value={groupMode}
-          onValueChange={(value) => {
-            if (value === "direct" || value === "alias") {
-              handleModeChange(value);
-            }
-          }}
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+        <SettingsRow
+          htmlFor="group-type"
+          label={isZh ? "调度模式" : "Group type"}
         >
-          <SelectTrigger id="group-type" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="direct">
-                {isZh ? "直接调度" : "Direct execution"}
-              </SelectItem>
-              <SelectItem value="alias">{isZh ? "别名" : "Alias"}</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </SettingsRow>
+          <SegmentedControl
+            value={groupMode}
+            onValueChange={handleModeChange}
+            className="w-full"
+            options={[
+              {
+                value: "direct",
+                label: isZh ? "直接调度" : "Direct",
+              },
+              {
+                value: "alias",
+                label: isZh ? "别名路由" : "Alias",
+              },
+            ]}
+          />
+        </SettingsRow>
 
-      <div className="flex flex-col gap-3">
         {groupMode === "alias" ? (
           <SettingsRow
             htmlFor="group-route-target"
@@ -150,129 +151,125 @@ export function ModelGroupSettings({
             </Combobox>
           </SettingsRow>
         ) : (
-          <>
-            <SettingsRow
-              htmlFor="group-strategy"
-              label={isZh ? "分发策略" : "Routing strategy"}
-            >
+          <SettingsRow
+            htmlFor="group-strategy"
+            label={isZh ? "分发策略" : "Routing strategy"}
+          >
+            <SegmentedControl
+              value={form.strategy}
+              onValueChange={(value) => {
+                if (value === "failover" || value === "round_robin")
+                  setForm((current) => ({ ...current, strategy: value }));
+              }}
+              className="w-full"
+              options={[
+                {
+                  value: "failover",
+                  label: isZh ? "故障切换" : "Failover",
+                },
+                {
+                  value: "round_robin",
+                  label: isZh ? "平滑轮询" : "Round robin",
+                },
+              ]}
+            />
+          </SettingsRow>
+        )}
+      </div>
+
+      {groupMode === "direct" ? (
+        <div className="flex flex-col gap-3.5">
+          <SettingsRow
+            htmlFor="group-context-window"
+            label={isZh ? "默认上下文" : "Default context"}
+            hint={
+              isZh
+                ? "仅用于未单独设置上下文的成员；超出时跳过，均未设置则不筛选。"
+                : "Applies to members without their own window; skip when exceeded, and ignore filtering if none is set."
+            }
+          >
+            <Input
+              id="group-context-window"
+              className="bg-pure/80 font-mono placeholder:font-sans dark:bg-card"
+              inputMode="numeric"
+              aria-invalid={isContextWindowInvalid || undefined}
+              placeholder={isZh ? "如 200K、1M" : "e.g. 200K, 1M"}
+              value={form.context_window}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  context_window: event.target.value,
+                }))
+              }
+            />
+            {isContextWindowInvalid ? (
+              <p className="text-xs text-destructive">
+                {isZh ? "示例：200K、1M、128000" : "e.g. 200K, 1M, 128000"}
+              </p>
+            ) : null}
+          </SettingsRow>
+
+          <SettingsRow
+            htmlFor="group-match-regex"
+            label={isZh ? "匹配规则" : "Match rules"}
+            hint={
+              isZh
+                ? "名称按不区分大小写的包含匹配；填写正则后按逻辑关系组合。"
+                : "Matches model name case-insensitively by containment; combine optional regex with AND/OR."
+            }
+          >
+            <div className="flex h-8 min-w-0 items-center overflow-hidden rounded-md border border-input/60 bg-pure/80 focus-within:border-primary/60 focus-within:ring-[1px] focus-within:ring-primary/40 dark:bg-card">
               <Select
-                value={form.strategy}
+                value={form.match_regex_operator}
                 onValueChange={(value) => {
-                  if (value === "failover" || value === "round_robin")
-                    setForm((current) => ({ ...current, strategy: value }));
+                  if (value === "and" || value === "or") {
+                    setForm((current) => ({
+                      ...current,
+                      match_regex_operator: value,
+                    }));
+                  }
                 }}
               >
-                <SelectTrigger id="group-strategy" className="w-full">
+                <SelectTrigger className="h-full w-auto shrink-0 gap-1 rounded-none border-0 border-r border-border/60 bg-muted/45 px-2.5 text-[13px] text-muted-foreground shadow-none focus-visible:ring-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="failover">
-                      {isZh ? "故障切换 (Failover)" : "Failover"}
+                    <SelectItem value="or">
+                      {isZh ? "包含 · 或" : "Contains · OR"}
                     </SelectItem>
-                    <SelectItem value="round_robin">
-                      {isZh ? "平滑轮询 (Round robin)" : "Round robin"}
+                    <SelectItem value="and">
+                      {isZh ? "包含 · 与" : "Contains · AND"}
                     </SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
-            </SettingsRow>
-
-            <SettingsRow
-              htmlFor="group-context-window"
-              label={isZh ? "默认上下文" : "Default context"}
-            >
               <Input
-                id="group-context-window"
-                className="font-mono placeholder:font-sans"
-                inputMode="numeric"
-                aria-invalid={isContextWindowInvalid || undefined}
-                placeholder={isZh ? "如 200K、1M" : "e.g. 200K, 1M"}
-                value={form.context_window}
+                id="group-match-regex"
+                className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-2.5 font-mono text-[13px] shadow-none placeholder:font-sans focus-visible:ring-0"
+                aria-invalid={isMatchRegexInvalid || undefined}
+                placeholder={
+                  isZh
+                    ? "可选正则，如 ^claude-"
+                    : "Optional regex, e.g. ^claude-"
+                }
+                value={form.match_regex}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    context_window: event.target.value,
+                    match_regex: event.target.value,
                   }))
                 }
               />
-              <p className="text-xs text-muted-foreground">
-                {isContextWindowInvalid
-                  ? isZh
-                    ? "格式无效，示例：200K、1M、128000"
-                    : "Invalid format. Examples: 200K, 1M, 128000"
-                  : isZh
-                    ? "仅用于未单独设置上下文的成员；超出时跳过，均未设置则不筛选。"
-                    : "Applies to members without their own window; skip when exceeded, and ignore filtering if none is set."}
+            </div>
+            {isMatchRegexInvalid ? (
+              <p className="text-xs text-destructive">
+                {isZh ? "正则表达式无效" : "Invalid regex"}
               </p>
-            </SettingsRow>
-
-            <SettingsRow
-              htmlFor="group-match-regex"
-              label={isZh ? "匹配规则" : "Match rules"}
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {isZh ? "名称包含" : "Name contains"}
-                </span>
-                <Select
-                  value={form.match_regex_operator}
-                  onValueChange={(value) => {
-                    if (value === "and" || value === "or") {
-                      setForm((current) => ({
-                        ...current,
-                        match_regex_operator: value,
-                      }));
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-20 shrink-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="or">{isZh ? "或" : "OR"}</SelectItem>
-                      <SelectItem value="and">{isZh ? "与" : "AND"}</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <Input
-                  id="group-match-regex"
-                  className="min-w-0 flex-1 font-mono placeholder:font-sans"
-                  aria-invalid={isMatchRegexInvalid || undefined}
-                  placeholder={
-                    isZh
-                      ? "可选正则，如 ^claude-"
-                      : "Optional regex, e.g. ^claude-"
-                  }
-                  value={form.match_regex}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      match_regex: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <p
-                className={
-                  isMatchRegexInvalid
-                    ? "text-xs text-destructive"
-                    : "text-xs text-muted-foreground"
-                }
-              >
-                {isMatchRegexInvalid
-                  ? isZh
-                    ? "正则表达式无效"
-                    : "Invalid regex"
-                  : isZh
-                    ? "名称按不区分大小写的包含匹配；填写正则后按上面的与/或组合。"
-                    : "The name matches case-insensitively by containment; combine an optional regex with AND/OR."}
-              </p>
-            </SettingsRow>
-          </>
-        )}
-      </div>
+            ) : null}
+          </SettingsRow>
+        </div>
+      ) : null}
     </div>
   );
 }

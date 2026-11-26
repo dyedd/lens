@@ -16,6 +16,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TruncatedTooltip,
 } from "@/components/ui/Tooltip";
 import type { GatewayApiKey } from "@/lib/api/settings";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
@@ -154,21 +155,11 @@ export function GatewayApiKeyTable({
                         titleForLocale(locale, "未命名", "Unnamed")}
                     </p>
                     <div className="flex min-w-0 items-center gap-0.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-                            {isVisible
-                              ? item.api_key
-                              : maskGatewayKey(item.api_key)}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="top"
-                          className="max-w-none font-mono"
-                        >
-                          {item.api_key}
-                        </TooltipContent>
-                      </Tooltip>
+                      <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                        {isVisible
+                          ? item.api_key
+                          : maskGatewayKey(item.api_key)}
+                      </span>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -243,16 +234,14 @@ export function GatewayApiKeyTable({
                   </p>
                 </TableCell>
                 <TableCell className="min-w-0 max-w-[14rem] py-1">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {permissionLabel(item, locale)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
+                  <TruncatedTooltip
+                    content={permissionLabel(item, locale)}
+                    side="top"
+                  >
+                    <span className="block truncate text-xs text-muted-foreground">
                       {permissionLabel(item, locale)}
-                    </TooltipContent>
-                  </Tooltip>
+                    </span>
+                  </TruncatedTooltip>
                 </TableCell>
                 <TableCell className="w-[72px] py-1">
                   <div className="flex h-7 items-center justify-center">
@@ -280,7 +269,7 @@ export function GatewayApiKeyTable({
                           type="button"
                           variant="ghost"
                           size="icon-xs"
-                          className="text-muted-foreground shadow-none"
+                          className="intent-reveal text-muted-foreground shadow-none"
                           onClick={() => onEdit(item)}
                           disabled={isBusy}
                           aria-label={titleForLocale(

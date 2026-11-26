@@ -6,7 +6,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-border/60 bg-background"
+      className="relative w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
     >
       <table
         data-slot="table"
@@ -58,7 +58,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b border-border/60 transition-colors hover:bg-accent has-aria-expanded:bg-accent data-[state=selected]:bg-accent last:border-b-0",
+        "group/row border-b border-border/60 transition-colors hover:bg-accent/55 has-aria-expanded:bg-accent/55 data-[state=selected]:bg-accent/70 last:border-b-0",
         className,
       )}
       {...props}
@@ -84,7 +84,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "px-3 py-2.5 align-middle text-sm leading-5 whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "px-3 py-2.5 align-middle text-[13px] leading-5 whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className,
       )}
       {...props}

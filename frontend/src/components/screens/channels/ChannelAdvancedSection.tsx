@@ -50,7 +50,7 @@ const HEADER_PRESETS: Array<{
 ];
 
 const accordionTriggerClass =
-  "h-11 items-center py-0 text-sm font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0";
+  "h-11 items-center py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0";
 
 /** Renders channel proxy, header, and parameter overrides. */
 export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
@@ -86,15 +86,15 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
       type="multiple"
       value={openSections}
       onValueChange={setOpenSections}
-      className="border-y border-border/60"
+      className="divide-y divide-border/50 border-t border-border/50"
     >
-      <AccordionItem value="proxy" className="border-border/60">
+      <AccordionItem value="proxy" className="border-0">
         <AccordionTrigger className={accordionTriggerClass}>
           <span>{locale === "zh-CN" ? "代理设置" : "Proxy"}</span>
         </AccordionTrigger>
         <AccordionContent className="space-y-4 pb-4 pt-0">
           <div className="min-w-0 space-y-1">
-            <Label className="text-sm font-normal text-muted-foreground">
+            <Label className="text-[13px] font-medium text-foreground/85">
               {locale === "zh-CN" ? "代理方式" : "Proxy mode"}
             </Label>
             <Select
@@ -123,7 +123,7 @@ export function ChannelAdvancedSection({ form, locale, setForm }: Props) {
             <div className="min-w-0 space-y-1">
               <Label
                 htmlFor="channel-proxy"
-                className="text-sm font-normal text-muted-foreground"
+                className="text-[13px] font-medium text-foreground/85"
               >
                 {locale === "zh-CN" ? "代理地址" : "Proxy URL"}
               </Label>

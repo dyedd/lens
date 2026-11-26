@@ -30,7 +30,7 @@ export function ModelGroupCandidateList({
   candidateListError,
 }: ModelGroupCandidateListProps) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
       <div className="flex flex-col">
         {groupedCandidates.map((channelGroup) => {
           const isOpen = expandedChannels.includes(channelGroup.key);
@@ -50,7 +50,7 @@ export function ModelGroupCandidateList({
                 onClick={() => toggleChannel(channelGroup.key)}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-foreground">
+                  <div className="truncate text-[13px] font-medium text-foreground">
                     {channelGroup.channel_name}
                   </div>
                 </div>

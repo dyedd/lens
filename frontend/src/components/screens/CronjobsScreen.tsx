@@ -2,18 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { DashboardHeaderActions } from "@/components/shell/dashboardHeaderActions";
-import {
-  BulkActionButton,
-  BulkActionsPopover,
-} from "@/components/ui/BulkActionsPopover";
 import { Button } from "@/components/ui/Button";
+import { SelectionActionBar } from "@/components/ui/SelectionActionBar";
 import { SettingsSection } from "@/components/ui/SettingsLayout";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
 import { useAppTimeZone } from "@/hooks/useAppTimeZone";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -273,69 +264,85 @@ export function CronjobsScreen() {
 
   return (
     <>
-      <DashboardHeaderActions>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              type="button"
-              aria-label={t.refresh}
-              onClick={() => void refresh()}
-              disabled={tasksQuery.isFetching || settingsQuery.isFetching}
-            >
-              <RotateCcw data-icon="inline-start" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            {t.refresh}
-          </TooltipContent>
-        </Tooltip>
-      </DashboardHeaderActions>
       <SettingsSection
         title={titleForLocale(locale, "计划任务", "Scheduled Tasks")}
         actions={
-          <BulkActionsPopover
-            locale={locale}
-            count={selectedTasks.length}
-            isBusy={bulkBusy}
-            placement="section"
-            onSetEnabled={(enabled) => void bulkSetEnabled(enabled)}
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            aria-label={t.refresh}
+            onClick={() => void refresh()}
+            disabled={tasksQuery.isFetching || settingsQuery.isFetching}
           >
-            <BulkActionButton
-              icon={<Play className="size-3.5" />}
-              label={titleForLocale(locale, "运行选中任务", "Run selected")}
-              isBusy={bulkBusy}
-              onClick={() => void bulkRun()}
-            />
-          </BulkActionsPopover>
+            <RotateCcw className="size-3.5" />
+            {t.refresh}
+          </Button>
         }
       >
-        <CronjobsTable
-          locale={locale}
-          tasks={tasks}
-          isFetching={tasksQuery.isFetching}
-          tasksIsError={tasksQuery.isError}
-          timeZone={timeZone}
-          selected={selection.selected}
-          bulkBusy={bulkBusy}
-          togglingTaskId={
-            updateTask.isPending && !editingTask
-              ? updateTask.variables?.task.id
-              : undefined
-          }
-          runningTaskId={runTask.isPending ? runTask.variables?.id : undefined}
-          onSelectAll={(checked) => selection.toggleRows(tasks, checked)}
-          onSelectOne={selection.toggleId}
-          onEdit={setEditingTask}
-          onRun={(task) => runTask.mutate(task)}
-          onToggleEnabled={(task, enabled) =>
-            updateTask.mutate({
-              task,
-              payload: schedulePayload(task, enabled),
-            })
-          }
-        />
+        <div className="space-y-3">
+          <SelectionActionBar
+            locale={locale}
+            count={selectedTasks.length}
+            onClear={selection.clear}
+          >
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={bulkBusy}
+              onClick={() => void bulkSetEnabled(true)}
+            >
+              {titleForLocale(locale, "启用", "Enable")}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={bulkBusy}
+              onClick={() => void bulkSetEnabled(false)}
+            >
+              {titleForLocale(locale, "停用", "Disable")}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="default"
+              disabled={bulkBusy}
+              onClick={() => void bulkRun()}
+            >
+              <Play className="size-3" />
+              {titleForLocale(locale, "运行选中任务", "Run selected")}
+            </Button>
+          </SelectionActionBar>
+          <CronjobsTable
+            locale={locale}
+            tasks={tasks}
+            isFetching={tasksQuery.isFetching}
+            tasksIsError={tasksQuery.isError}
+            timeZone={timeZone}
+            selected={selection.selected}
+            bulkBusy={bulkBusy}
+            togglingTaskId={
+              updateTask.isPending && !editingTask
+                ? updateTask.variables?.task.id
+                : undefined
+            }
+            runningTaskId={
+              runTask.isPending ? runTask.variables?.id : undefined
+            }
+            onSelectAll={(checked) => selection.toggleRows(tasks, checked)}
+            onSelectOne={selection.toggleId}
+            onEdit={setEditingTask}
+            onRun={(task) => runTask.mutate(task)}
+            onToggleEnabled={(task, enabled) =>
+              updateTask.mutate({
+                task,
+                payload: schedulePayload(task, enabled),
+              })
+            }
+          />
+        </div>
       </SettingsSection>
       {editingTask ? (
         <CronjobEditDialog

@@ -15,7 +15,7 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       className={cn(
-        "inline-flex h-8 w-fit max-w-full items-center gap-1 rounded-full bg-muted/40 p-1",
+        "inline-flex w-fit max-w-full flex-wrap items-center gap-1",
         className,
       )}
     >
@@ -25,10 +25,10 @@ export function SegmentedControl<T extends string>({
           type="button"
           aria-pressed={option.value === value}
           className={cn(
-            "h-6 min-w-0 truncate rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+            "inline-flex h-7 min-w-0 items-center justify-center rounded-lg px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors",
             option.value === value
-              ? "bg-pure text-pure-foreground"
-              : "bg-transparent text-foreground/60 hover:text-foreground",
+              ? "bg-muted text-foreground"
+              : "bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
           onClick={() => onValueChange(option.value)}
         >

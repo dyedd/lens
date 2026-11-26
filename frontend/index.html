@@ -65,10 +65,34 @@
         document.querySelector('meta[name="color-scheme"]').content = colorScheme;
       })();
     </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #f9f8f5;
+        color: #24231e;
+      }
+      html.dark,
+      html.dark body {
+        background: #141412;
+        color: #ebe9e4;
+      }
+      .lens-boot-sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    </style>
   </head>
   <body>
     <div id="root">
-      <main>
+      <main class="lens-boot-sr">
         <h1>Lens</h1>
       </main>
     </div>

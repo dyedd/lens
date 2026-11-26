@@ -10,6 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/Sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import type {
   RequestLogAttempt,
   RequestLogDetail,
@@ -104,11 +105,11 @@ function DetailRow({
   mono?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5 last:border-b-0">
+    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 border-b border-border/50 py-2.5 last:border-b-0">
       <p className="text-xs text-muted-foreground">{label}</p>
       <div
         className={cn(
-          "min-w-0 break-words text-xs leading-5 text-foreground/86",
+          "min-w-0 break-words text-xs leading-5 text-foreground/86 tabular-nums",
           mono && "font-mono",
         )}
       >
@@ -126,11 +127,9 @@ function DetailBlock({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-2">
-      <h4 className="px-1 text-xs font-medium text-foreground/88">{title}</h4>
-      <div className="rounded-lg border border-border/60 bg-background px-3">
-        {children}
-      </div>
+    <section className="space-y-1.5">
+      <h4 className="text-xs font-medium text-muted-foreground">{title}</h4>
+      <div>{children}</div>
     </section>
   );
 }
@@ -319,10 +318,10 @@ export function RequestLogDetailSheet({
       onOpenChange={(open) => !open && onClose()}
     >
       <SheetContent
-        className="sm:max-w-[480px]"
+        className="sm:max-w-[680px]"
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        <SheetHeader className="pr-14">
+        <SheetHeader>
           <div className="flex items-center justify-between gap-3">
             <SheetTitle>
               {titleForLocale(locale, "请求日志详情", "Request log detail")}
@@ -343,14 +342,14 @@ export function RequestLogDetailSheet({
               </Button>
             ) : null}
           </div>
-          <SheetDescription>
+          <SheetDescription className="truncate font-mono">
             {record
               ? `${modelName} · ${time}`
               : titleForLocale(locale, "加载中...", "Loading...")}
           </SheetDescription>
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
           {error ? (
             <p className="text-xs text-muted-foreground">
               {error instanceof Error
@@ -369,208 +368,306 @@ export function RequestLogDetailSheet({
           ) : null}
           {record ? (
             <>
-              {detail?.privacy_summary?.length ? (
-                <DetailBlock
-                  title={titleForLocale(locale, "隐私处理", "Privacy")}
-                >
-                  {detail.privacy_summary.map((hit) => (
+              <div className="grid grid-cols-2 gap-3 pb-1 sm:grid-cols-4">
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">
+                    {titleForLocale(locale, "状态", "Status")}
+                  </div>
+                  <div className="mt-1 truncate text-[13px] font-semibold text-card-foreground">
+                    {statusLabel(record.lifecycle_status, locale)}
+                    {record.lifecycle_status === "failed" &&
+                    record.status_code !== null &&
+                    record.status_code !== undefined
+                      ? ` (${record.status_code})`
+                      : ""}
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">
+                    {titleForLocale(locale, "协议", "Protocol")}
+                  </div>
+                  <div className="mt-1 truncate text-[13px] font-semibold text-card-foreground">
+                    {protocolLabel(record.protocol, locale)}
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">
+                    {titleForLocale(locale, "耗时", "Latency")}
+                  </div>
+                  <div className="mt-1 truncate text-[13px] font-semibold tabular-nums text-card-foreground">
+                    {formatMs(record.latency_ms)}
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">
+                    {titleForLocale(locale, "费用", "Cost")}
+                  </div>
+                  <div className="mt-1 truncate text-[13px] font-semibold tabular-nums text-card-foreground">
+                    {formatMoney(record.total_cost_usd)}
+                  </div>
+                </div>
+              </div>
+              <Tabs defaultValue="summary" className="space-y-4">
+                <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
+                  <TabsTrigger value="summary">
+                    {titleForLocale(locale, "详情与路由", "Trace & Routing")}
+                  </TabsTrigger>
+                  {record.lifecycle_status === "failed" &&
+                  detail &&
+                  detail.attempts.length > 0 ? (
+                    <TabsTrigger value="attempts">
+                      {titleForLocale(locale, "尝试记录", "Attempts")} (
+                      {detail.attempts.length})
+                    </TabsTrigger>
+                  ) : null}
+                  {relayLogBodyEnabled && (detail || (loading && !error)) ? (
+                    <TabsTrigger value="payloads">
+                      {titleForLocale(locale, "请求与响应体", "Payloads")}
+                    </TabsTrigger>
+                  ) : null}
+                </TabsList>
+
+                <TabsContent value="summary" className="mt-0 space-y-4">
+                  {detail?.privacy_summary?.length ? (
+                    <DetailBlock
+                      title={titleForLocale(locale, "隐私处理", "Privacy")}
+                    >
+                      {detail.privacy_summary.map((hit) => (
+                        <DetailRow
+                          key={hit.category}
+                          label={
+                            {
+                              secrets: titleForLocale(
+                                locale,
+                                "密钥与密码",
+                                "Secrets",
+                              ),
+                              personal: titleForLocale(
+                                locale,
+                                "个人信息",
+                                "Personal data",
+                              ),
+                              custom: titleForLocale(
+                                locale,
+                                "自定义",
+                                "Custom",
+                              ),
+                            }[hit.category]
+                          }
+                          value={`${hit.count} · ${{ mask: titleForLocale(locale, "替换", "Masked"), warn: titleForLocale(locale, "告警", "Warned"), block: titleForLocale(locale, "阻止", "Blocked") }[hit.action]}`}
+                        />
+                      ))}
+                    </DetailBlock>
+                  ) : null}
+                  <DetailBlock
+                    title={titleForLocale(locale, "请求", "Request")}
+                  >
+                    <DetailRow label="ID" value={record.id} mono />
                     <DetailRow
-                      key={hit.category}
-                      label={
-                        {
-                          secrets: titleForLocale(
-                            locale,
-                            "密钥与密码",
-                            "Secrets",
-                          ),
-                          personal: titleForLocale(
-                            locale,
-                            "个人信息",
-                            "Personal data",
-                          ),
-                          custom: titleForLocale(locale, "自定义", "Custom"),
-                        }[hit.category]
+                      label={titleForLocale(locale, "时间", "Time")}
+                      value={time}
+                    />
+                    <DetailRow
+                      label={titleForLocale(locale, "状态", "Status")}
+                      value={statusLabel(record.lifecycle_status, locale)}
+                    />
+                    {record.lifecycle_status === "failed" &&
+                    record.status_code !== null &&
+                    record.status_code !== undefined ? (
+                      <DetailRow label="HTTP" value={record.status_code} mono />
+                    ) : null}
+                    <DetailRow
+                      label={titleForLocale(locale, "客户端", "Client")}
+                      value={
+                        record.user_agent
+                          ? formatUserAgentDisplay(record.user_agent, locale)
+                          : "-"
                       }
-                      value={`${hit.count} · ${{ mask: titleForLocale(locale, "替换", "Masked"), warn: titleForLocale(locale, "告警", "Warned"), block: titleForLocale(locale, "阻止", "Blocked") }[hit.action]}`}
                     />
-                  ))}
-                </DetailBlock>
-              ) : null}
-              <DetailBlock title={titleForLocale(locale, "请求", "Request")}>
-                <DetailRow label="ID" value={record.id} mono />
-                <DetailRow
-                  label={titleForLocale(locale, "时间", "Time")}
-                  value={time}
-                />
-                <DetailRow
-                  label={titleForLocale(locale, "状态", "Status")}
-                  value={statusLabel(record.lifecycle_status, locale)}
-                />
-                {record.lifecycle_status === "failed" &&
-                record.status_code !== null &&
-                record.status_code !== undefined ? (
-                  <DetailRow label="HTTP" value={record.status_code} mono />
-                ) : null}
-                <DetailRow
-                  label={titleForLocale(locale, "客户端", "Client")}
-                  value={
-                    record.user_agent
-                      ? formatUserAgentDisplay(record.user_agent, locale)
-                      : "-"
-                  }
-                />
-                <DetailRow
-                  label={titleForLocale(locale, "模式", "Mode")}
-                  value={
-                    record.is_stream
-                      ? titleForLocale(locale, "流式", "Stream")
-                      : titleForLocale(locale, "非流式", "Non-stream")
-                  }
-                />
-                {record.error_message?.trim() ? (
-                  <DetailRow
-                    label={titleForLocale(locale, "错误", "Error")}
-                    value={record.error_message.trim()}
-                  />
-                ) : null}
-              </DetailBlock>
+                    <DetailRow
+                      label={titleForLocale(locale, "模式", "Mode")}
+                      value={
+                        record.is_stream
+                          ? titleForLocale(locale, "流式", "Stream")
+                          : titleForLocale(locale, "非流式", "Non-stream")
+                      }
+                    />
+                    {record.error_message?.trim() ? (
+                      <DetailRow
+                        label={titleForLocale(locale, "错误", "Error")}
+                        value={record.error_message.trim()}
+                      />
+                    ) : null}
+                  </DetailBlock>
 
-              <DetailBlock
-                title={titleForLocale(locale, "模型路由", "Routing")}
-              >
-                <DetailRow
-                  label={titleForLocale(locale, "模型组", "Group")}
-                  value={
-                    record.reasoning_effort
-                      ? `${modelName} ${record.reasoning_effort}`
-                      : modelName
-                  }
-                  mono
-                />
-                <DetailRow
-                  label={titleForLocale(locale, "上游模型", "Upstream model")}
-                  value={upstream || record.upstream_model_name || "-"}
-                  mono
-                />
-                <DetailRow
-                  label={titleForLocale(locale, "渠道", "Channel")}
-                  value={formatChannelCredentialLabel(record, locale)}
-                />
-                {record.channel_has_multiple_credentials ? (
-                  <DetailRow
-                    label={titleForLocale(
-                      locale,
-                      "渠道 API Key",
-                      "Channel API key",
-                    )}
-                    value={formatInternalCredentialLabel(record, locale)}
-                  />
-                ) : null}
-                {record.gateway_key_id ? (
-                  <DetailRow
-                    label={titleForLocale(locale, "请求密钥", "Request key")}
-                    value={formatGatewayKeyLabel(record, locale)}
-                  />
-                ) : null}
-                <DetailRow
-                  label={titleForLocale(locale, "协议", "Protocol")}
-                  value={protocolLabel(record.protocol, locale)}
-                />
-                {record.rate_multiplier === null ? null : (
-                  <DetailRow
-                    label={titleForLocale(locale, "倍率", "Rate")}
-                    value={`${record.rate_multiplier}x`}
-                  />
-                )}
-              </DetailBlock>
-
-              <DetailBlock title={titleForLocale(locale, "用量计费", "Usage")}>
-                <DetailRow
-                  label={titleForLocale(locale, "费用", "Cost")}
-                  value={formatMoney(record.total_cost_usd)}
-                />
-                {record.billing_mode === "non_tokens" ? (
-                  <DetailRow
-                    label={titleForLocale(locale, "图片数", "Images")}
-                    value={formatCount(record.billing_units)}
-                  />
-                ) : (
-                  <>
+                  <DetailBlock
+                    title={titleForLocale(locale, "模型路由", "Routing")}
+                  >
                     <DetailRow
-                      label={titleForLocale(locale, "总 Token", "Total tokens")}
-                      value={formatCount(record.total_tokens)}
-                    />
-                    <DetailRow
-                      label={titleForLocale(locale, "输入", "Input")}
-                      value={formatCount(record.input_tokens)}
-                    />
-                    <DetailRow
-                      label={titleForLocale(locale, "图片输入", "Image input")}
-                      value={formatCount(record.image_input_tokens)}
-                    />
-                    <DetailRow
-                      label={titleForLocale(locale, "输出", "Output")}
-                      value={formatCount(record.output_tokens)}
-                    />
-                    <DetailRow
-                      label={titleForLocale(locale, "缓存读取", "Cache read")}
-                      value={formatCount(record.cache_read_input_tokens)}
-                    />
-                    <DetailRow
-                      label={titleForLocale(locale, "缓存写入", "Cache write")}
-                      value={formatCount(record.cache_write_input_tokens)}
+                      label={titleForLocale(locale, "模型组", "Group")}
+                      value={
+                        record.reasoning_effort
+                          ? `${modelName} ${record.reasoning_effort}`
+                          : modelName
+                      }
+                      mono
                     />
                     <DetailRow
                       label={titleForLocale(
                         locale,
-                        "缓存命中率",
-                        "Cache hit rate",
+                        "上游模型",
+                        "Upstream model",
                       )}
-                      value={formatCacheHitRate(record)}
+                      value={upstream || record.upstream_model_name || "-"}
+                      mono
                     />
                     <DetailRow
-                      label={titleForLocale(locale, "首字", "First token")}
-                      value={formatMs(record.first_token_latency_ms)}
+                      label={titleForLocale(locale, "渠道", "Channel")}
+                      value={formatChannelCredentialLabel(record, locale)}
                     />
-                  </>
-                )}
-                <DetailRow
-                  label={titleForLocale(locale, "耗时", "Latency")}
-                  value={formatMs(record.latency_ms)}
-                />
-              </DetailBlock>
+                    {record.channel_has_multiple_credentials ? (
+                      <DetailRow
+                        label={titleForLocale(
+                          locale,
+                          "渠道 API Key",
+                          "Channel API key",
+                        )}
+                        value={formatInternalCredentialLabel(record, locale)}
+                      />
+                    ) : null}
+                    {record.gateway_key_id ? (
+                      <DetailRow
+                        label={titleForLocale(
+                          locale,
+                          "请求密钥",
+                          "Request key",
+                        )}
+                        value={formatGatewayKeyLabel(record, locale)}
+                      />
+                    ) : null}
+                    <DetailRow
+                      label={titleForLocale(locale, "协议", "Protocol")}
+                      value={protocolLabel(record.protocol, locale)}
+                    />
+                    {record.rate_multiplier === null ? null : (
+                      <DetailRow
+                        label={titleForLocale(locale, "倍率", "Rate")}
+                        value={`${record.rate_multiplier}x`}
+                      />
+                    )}
+                  </DetailBlock>
 
-              {record.lifecycle_status === "failed" &&
-              detail &&
-              detail.attempts.length > 0 ? (
-                <DetailBlock title={titleForLocale(locale, "尝试", "Attempts")}>
-                  {detail.attempts.map((attempt, index) => (
-                    <AttemptGroup
-                      key={`${attempt.channel_id}-${index}`}
-                      attempt={attempt}
-                      index={index}
+                  <DetailBlock
+                    title={titleForLocale(locale, "用量计费", "Usage")}
+                  >
+                    <DetailRow
+                      label={titleForLocale(locale, "费用", "Cost")}
+                      value={formatMoney(record.total_cost_usd)}
+                    />
+                    {record.billing_mode === "non_tokens" ? (
+                      <DetailRow
+                        label={titleForLocale(locale, "图片数", "Images")}
+                        value={formatCount(record.billing_units)}
+                      />
+                    ) : (
+                      <>
+                        <DetailRow
+                          label={titleForLocale(
+                            locale,
+                            "总 Token",
+                            "Total tokens",
+                          )}
+                          value={formatCount(record.total_tokens)}
+                        />
+                        <DetailRow
+                          label={titleForLocale(locale, "输入", "Input")}
+                          value={formatCount(record.input_tokens)}
+                        />
+                        <DetailRow
+                          label={titleForLocale(
+                            locale,
+                            "图片输入",
+                            "Image input",
+                          )}
+                          value={formatCount(record.image_input_tokens)}
+                        />
+                        <DetailRow
+                          label={titleForLocale(locale, "输出", "Output")}
+                          value={formatCount(record.output_tokens)}
+                        />
+                        <DetailRow
+                          label={titleForLocale(
+                            locale,
+                            "缓存读取",
+                            "Cache read",
+                          )}
+                          value={formatCount(record.cache_read_input_tokens)}
+                        />
+                        <DetailRow
+                          label={titleForLocale(
+                            locale,
+                            "缓存写入",
+                            "Cache write",
+                          )}
+                          value={formatCount(record.cache_write_input_tokens)}
+                        />
+                        <DetailRow
+                          label={titleForLocale(
+                            locale,
+                            "缓存命中率",
+                            "Cache hit rate",
+                          )}
+                          value={formatCacheHitRate(record)}
+                        />
+                        <DetailRow
+                          label={titleForLocale(locale, "首字", "First token")}
+                          value={formatMs(record.first_token_latency_ms)}
+                        />
+                      </>
+                    )}
+                    <DetailRow
+                      label={titleForLocale(locale, "耗时", "Latency")}
+                      value={formatMs(record.latency_ms)}
+                    />
+                  </DetailBlock>
+                </TabsContent>
+
+                {record.lifecycle_status === "failed" &&
+                detail &&
+                detail.attempts.length > 0 ? (
+                  <TabsContent value="attempts" className="mt-0 space-y-4">
+                    <DetailBlock
+                      title={titleForLocale(locale, "尝试", "Attempts")}
+                    >
+                      {detail.attempts.map((attempt, index) => (
+                        <AttemptGroup
+                          key={`${attempt.channel_id}-${index}`}
+                          attempt={attempt}
+                          index={index}
+                          locale={locale}
+                        />
+                      ))}
+                    </DetailBlock>
+                  </TabsContent>
+                ) : null}
+
+                {relayLogBodyEnabled && (detail || (loading && !error)) ? (
+                  <TabsContent value="payloads" className="mt-0 space-y-4">
+                    <JsonSection
+                      title={titleForLocale(locale, "请求正文", "Request")}
+                      value={detail?.request_content ?? ""}
                       locale={locale}
+                      loading={loading && !detail}
                     />
-                  ))}
-                </DetailBlock>
-              ) : null}
-
-              {relayLogBodyEnabled && (detail || (loading && !error)) ? (
-                <>
-                  <JsonSection
-                    title={titleForLocale(locale, "请求正文", "Request")}
-                    value={detail?.request_content ?? ""}
-                    locale={locale}
-                    loading={loading && !detail}
-                  />
-                  <JsonSection
-                    title={titleForLocale(locale, "响应正文", "Response")}
-                    value={detail?.response_content ?? ""}
-                    locale={locale}
-                    loading={loading && !detail}
-                  />
-                </>
-              ) : null}
+                    <JsonSection
+                      title={titleForLocale(locale, "响应正文", "Response")}
+                      value={detail?.response_content ?? ""}
+                      locale={locale}
+                      loading={loading && !detail}
+                    />
+                  </TabsContent>
+                ) : null}
+              </Tabs>
             </>
           ) : null}
         </div>

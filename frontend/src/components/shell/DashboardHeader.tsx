@@ -47,12 +47,17 @@ export function DashboardHeader({
   const isChinese = locale === "zh-CN";
 
   return (
-    <header className="flex min-h-8 min-w-0 shrink-0 items-center justify-between gap-2 bg-background px-4 py-1 sm:px-6 lg:px-8">
-      <div className="flex min-w-0 items-center gap-2 md:hidden">
+    <header className="flex h-12 min-h-12 min-w-0 shrink-0 items-center justify-between gap-2 bg-background px-4 sm:px-6 lg:px-8">
+      <div className="flex min-w-0 items-center gap-2.5">
         <SidebarTrigger
-          aria-label={isChinese ? "打开导航" : "Open navigation"}
+          aria-label={isChinese ? "切换导航" : "Toggle navigation"}
+          className="size-7 text-muted-foreground hover:text-foreground [&_svg]:size-4"
         />
-        <span className="truncate text-sm font-medium text-foreground">
+        <span
+          aria-hidden="true"
+          className="hidden h-3.5 w-px bg-border/70 sm:inline-block"
+        />
+        <span className="truncate text-xs font-medium tracking-tight text-muted-foreground sm:text-[13px]">
           {labels.activeView}
         </span>
       </div>
@@ -62,7 +67,7 @@ export function DashboardHeader({
             {headerActions}
           </div>
         ) : null}
-        <div className="flex shrink-0 items-center justify-end gap-1.5">
+        <div className="flex shrink-0 items-center justify-end gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <a
@@ -72,9 +77,10 @@ export function DashboardHeader({
                 aria-label="GitHub"
                 className={cn(
                   buttonVariants({ variant: "ghost", size: "icon" }),
+                  "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <GitHubMark className="size-5" />
+                <GitHubMark className="size-4" />
               </a>
             </TooltipTrigger>
             <TooltipContent side="bottom" align="end">
@@ -88,7 +94,7 @@ export function DashboardHeader({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="[&_svg]:size-5"
+                className="text-muted-foreground hover:text-foreground [&_svg]:size-4"
                 aria-label={language.label}
                 onClick={language.onClick}
               >
