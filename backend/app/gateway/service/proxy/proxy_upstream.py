@@ -10,6 +10,8 @@ import anyio
 import httpx
 from fastapi import Response
 
+from app.core.privacy_rules import PrivacyError
+
 from ....core.context_windows import is_context_window_exceeded_error
 from ....models.channels import ChannelConfig
 from ....models.protocols import ProtocolKind
@@ -40,6 +42,7 @@ from ..payload_serialization import (
     dump_log_json,
     json_body_bytes,
 )
+from ..privacy_context import PrivacyContext
 from ..request_support import (
     elapsed_ms,
     gateway_timeout_scope,
@@ -53,6 +56,7 @@ from ..runtime_types import (
 )
 from ..streaming.capture import StreamCapture, record_stream_error
 from ..streaming.logging import safe_estimate_cost
+from ..streaming.privacy import restore_privacy_stream
 from ..streaming.restore import distill_stream_response_content
 from ..streaming.transport import (
     FinalizingStreamingResponse,
@@ -83,6 +87,7 @@ class UpstreamResponseContext:
     log_body_enabled: bool
     deadline: RequestDeadline
     tool_mapping: dict[str, ToolDefinition] = field(default_factory=dict)
+    privacy: PrivacyContext | None = None
 
 
 @dataclass(slots=True)
@@ -170,13 +175,17 @@ async def _sniff_stream_response(
     )
 
 
-def _describe_upstream_body(response: httpx.Response, content: bytes) -> str:
+def _describe_upstream_body(
+    response: httpx.Response, content: bytes, privacy: PrivacyContext | None
+) -> str:
     content_type = response.headers.get("content-type") or "unknown"
     label = (
         f"HTTP {response.status_code} "
         f"(content-type={content_type}, {len(content)} bytes)"
     )
     preview = (decode_content_bytes(content) or "").strip()
+    if privacy is not None:
+        preview = privacy.clean_log(preview) or ""
     if not preview:
         return label
     summary = summarize_html_error_detail(preview, content_type=content_type)
@@ -226,6 +235,13 @@ async def _json_upstream_result(
         image_count=image_count,
         rate_multiplier=context.rate_multiplier,
     )
+    if context.privacy is not None and context.privacy.config.enabled:
+        content = json_body_bytes(
+            context.privacy.restore(
+                json.loads(content), context.client_protocol or context.channel.protocol
+            )
+        )
+        headers.pop("content-length", None)
     return UpstreamResult(
         response=Response(
             content=content,
@@ -370,8 +386,18 @@ def _build_stream_result(
         converted_iter = raw_iter
         stream_media = response.headers.get("content-type")
 
+    ndjson = bool(stream_media and stream_media.split(";")[0] in _NDJSON_MEDIA_TYPES)
+    if context.privacy is not None and context.privacy.config.enabled:
+        converted_iter = restore_privacy_stream(
+            converted_iter,
+            context.privacy,
+            client_protocol or channel.protocol,
+            capture,
+            ndjson=ndjson,
+        )
+
     converted_iter = _stream_client_iterator(
-        converted_iter, capture, client_protocol, channel.protocol
+        converted_iter, capture, client_protocol, channel.protocol, ndjson=ndjson
     )
 
     return UpstreamResult(
@@ -398,6 +424,8 @@ async def _stream_client_iterator(
     capture: StreamCapture,
     client_protocol: ProtocolKind | None,
     upstream_protocol: ProtocolKind,
+    *,
+    ndjson: bool = False,
 ) -> AsyncIterator[bytes]:
     try:
         async for chunk in stream:
@@ -417,6 +445,10 @@ async def _stream_client_iterator(
             yield stream_error_frame(
                 protocol=client_protocol,
                 message=capture.errors[-1] if capture.errors else str(exc),
+                error_type="privacy_error"
+                if isinstance(exc, PrivacyError)
+                else "upstream_error",
+                ndjson=ndjson,
             )
         return
     except Exception as exc:
@@ -446,7 +478,7 @@ async def _build_json_result(
             status_code=502,
             detail=(
                 "Invalid upstream response body: "
-                f"{_describe_upstream_body(response, content)}"
+                f"{_describe_upstream_body(response, content, context.privacy)}"
             ),
             router_status_code=502,
         ) from exc
@@ -677,6 +709,16 @@ async def execute_upstream_request(
             app_state.router.cooldown_detection_rules,
             response.headers,
         )
+        if (
+            context.privacy is not None
+            and context.privacy.config.enabled
+            and response.is_stream_consumed
+        ):
+            detail = summarize_html_error_detail(
+                context.privacy.clean_log(response.text) or f"HTTP {status_code}",
+                status_code=status_code,
+                content_type=response.headers.get("content-type"),
+            )
         raise UpstreamRequestError(
             status_code=status_code,
             detail=f"{detail}{body_read_detail}",

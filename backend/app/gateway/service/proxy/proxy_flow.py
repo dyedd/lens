@@ -11,6 +11,8 @@ from typing import Any
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
+from app.core.config import settings
+from app.core.privacy_rules import PrivacyError
 from app.models.request_logs import RequestLogInput
 
 from ....core.errors import RequestCancelledError, RoutingError
@@ -27,6 +29,7 @@ from ..context_tokens import estimate_request_context_tokens
 from ..error_responses import protocol_error_response
 from ..multimodal import body_has_multimodal_content
 from ..payload_serialization import dump_log_json
+from ..privacy_context import PrivacyContext
 from ..request_logger import RequestLogger
 from ..runtime_types import (
     RequestDeadline,
@@ -73,6 +76,7 @@ async def _create_pending_proxy_log_context(
     requested_group_name: str | None,
     is_stream: bool,
     request_content: str | None,
+    privacy: PrivacyContext | None = None,
 ) -> RequestLogger:
     request_log = await app_state.request_log_store.commands.create_request_log(
         RequestLogInput(
@@ -86,10 +90,12 @@ async def _create_pending_proxy_log_context(
             gateway_key_id=gateway_key.id,
             is_stream=is_stream,
             request_content=request_content,
+            privacy_summary=privacy.summary() if privacy is not None else [],
         )
     )
     return RequestLogger(
         request_log_id=request_log.id,
+        privacy=privacy,
         protocol=protocol,
         gateway_key=gateway_key,
         started_at=started_at,
@@ -470,8 +476,16 @@ async def _prepare_proxy_context(
     *,
     body: dict[str, Any],
     inbound_user_agent: str | None,
+    gateway_key_id: str,
+    session_id: str | None,
 ) -> tuple[
-    list[ChannelConfig], RuntimeSettings, RequestDeadline, str, bool, str | None
+    list[ChannelConfig],
+    RuntimeSettings,
+    RequestDeadline,
+    str,
+    bool,
+    str | None,
+    PrivacyContext,
 ]:
     started_at = perf_counter()
     channels, runtime = await asyncio.gather(
@@ -485,7 +499,16 @@ async def _prepare_proxy_context(
     )
     app_state.apply_router_settings(runtime)
     log_body_enabled = bool(runtime["relay_log_body_enabled"])
-    request_content = dump_log_json(body) if log_body_enabled else None
+    privacy = PrivacyContext(
+        runtime["privacy_config"],
+        settings.auth_secret_key,
+        gateway_key_id=gateway_key_id,
+        history=app_state.privacy_history,
+        session_id=session_id,
+    )
+    request_content = (
+        dump_log_json(body) if log_body_enabled and not privacy.config.enabled else None
+    )
     inbound_ua = sanitize_user_agent(inbound_user_agent)
     upstream_user_agent = (
         inbound_ua
@@ -499,6 +522,7 @@ async def _prepare_proxy_context(
         upstream_user_agent,
         bool(body.get("stream")),
         request_content,
+        privacy,
     )
 
 
@@ -536,9 +560,12 @@ async def proxy_protocol(
         upstream_user_agent,
         is_stream_body,
         request_content,
+        privacy,
     ) = await _prepare_proxy_context(
         body=body,
         inbound_user_agent=inbound_user_agent,
+        gateway_key_id=gateway_key.id,
+        session_id=(inbound_headers or {}).get("x-lens-session-id"),
     )
     started_at = deadline.started_at
     requested_model = body.get("model")
@@ -572,6 +599,7 @@ async def proxy_protocol(
         started_at=started_at,
         body=body,
         requested_group_name=original_requested_model,
+        privacy=privacy,
         is_stream=is_stream_body,
         request_content=request_content,
     )
@@ -579,6 +607,10 @@ async def proxy_protocol(
     is_streaming = False
     app_state.active_requests[log_ctx.request_log_id] = log_ctx.cancellation
     try:
+        privacy.load_references(body)
+        if runtime["relay_log_body_enabled"]:
+            log_ctx.request_content = privacy.clean_log(dump_log_json(body))
+        body = privacy.prepare(body, protocol)
         access_error = await _check_gateway_model_access(
             protocol=protocol,
             gateway_key=gateway_key,
@@ -591,6 +623,7 @@ async def proxy_protocol(
             return access_error
         failures = FailureLedger()
         request = AttemptRequest(
+            privacy=privacy,
             protocol=protocol,
             body=body,
             runtime=runtime,
@@ -643,6 +676,16 @@ async def proxy_protocol(
             log_ctx=log_ctx,
             failures=failures,
             is_stream_body=is_stream_body,
+        )
+    except PrivacyError as exc:
+        await log_ctx.record_failure(
+            status_code=400, error_message=str(exc), is_stream=is_stream_body
+        )
+        return protocol_error_response(
+            protocol=protocol,
+            status_code=400,
+            error_type="privacy_error",
+            message=str(exc),
         )
     except RequestCancelledError as exc:
         await log_ctx.record_cancelled(str(exc), is_stream=is_stream_body)

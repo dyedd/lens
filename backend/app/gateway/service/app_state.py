@@ -33,6 +33,7 @@ from .app_context import app_state as app_state
 from .app_context import bind_app_state as bind_app_state
 from .app_context import get_current_app_state as get_current_app_state
 from .app_context import reset_app_state as reset_app_state
+from .privacy_context import PrivacyHistory
 from .request_cancellation import RequestCancellation
 from .tasks.credential_rate_tasks import sync_all_site_credential_rates
 from .tasks.litellm_sync_tasks import sync_litellm_metadata
@@ -94,6 +95,7 @@ class AppState:
         self._proxy_http_clients: dict[str, httpx.AsyncClient] = {}
         self.login_attempts_by_client: OrderedDict[str, deque[float]] = OrderedDict()
         self.login_attempts_lock = Lock()
+        self.privacy_history = PrivacyHistory()
         self.active_requests: dict[int, RequestCancellation] = {}
         self.engine = create_engine(settings.database_url)
         self.session_factory = create_session_factory(self.engine)

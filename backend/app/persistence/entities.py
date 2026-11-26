@@ -335,6 +335,9 @@ class RequestLogEntity(Base):
         String(32), nullable=False, default="tokens"
     )
     billing_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    privacy_summary_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
     request_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     response_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")

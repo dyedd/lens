@@ -8,6 +8,7 @@ from ...models.gateway_keys import GatewayApiKey
 from ...models.protocols import ProtocolKind, RequestLogLifecycleStatus
 from ...models.request_logs import RequestLogInput
 from .app_state import app_state
+from .privacy_context import PrivacyContext
 from .request_cancellation import RequestCancellation
 from .request_support import elapsed_ms
 from .runtime_types import (
@@ -35,6 +36,7 @@ class RequestLogger:
     request_content: str | None
     attempts: list[AttemptLog]
     user_agent: str
+    privacy: PrivacyContext | None = None
     requested_group_name: str | None = None
     resolved_group_name: str | None = None
     rate_multiplier: float | None = None
@@ -229,6 +231,19 @@ class RequestLogger:
             payload.total_cost_usd = result.total_cost_usd
             payload.billing_mode = result.billing_mode
             payload.billing_units = result.billing_units
+        self.clean_payload(payload)
         await app_state.request_log_store.commands.update_request_log(
             self.request_log_id, payload
         )
+
+    def clean_payload(self, payload: RequestLogInput) -> None:
+        if self.privacy is None:
+            return
+        payload.request_content = self.privacy.clean_log(payload.request_content)
+        payload.response_content = self.privacy.clean_log(payload.response_content)
+        payload.error_message = self.privacy.clean_log(payload.error_message)
+        payload.privacy_summary = self.privacy.summary()
+        for attempt in payload.attempts or []:
+            attempt["error_message"] = self.privacy.clean_log(
+                attempt.get("error_message")
+            )

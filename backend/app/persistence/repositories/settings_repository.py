@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.cooldown_rules import compile_detection_rules
 from app.core.time_zone import validate_time_zone_name
+from app.models.privacy import PrivacyConfig
 from app.models.settings import RuntimeSettings, SettingItem
 from app.persistence.entities import SettingEntity
 from app.persistence.settings_keys import (
@@ -37,6 +38,7 @@ from app.persistence.settings_keys import (
     SETTING_HEALTH_SCORING_ENABLED,
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_MAX_REQUEST_BODY_BYTES,
+    SETTING_PRIVACY_CONFIG,
     SETTING_PROXY_URL,
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
@@ -86,6 +88,7 @@ class SettingsRepository:
 
     def _clone_runtime_settings(self, runtime: RuntimeSettings) -> RuntimeSettings:
         cloned = runtime.copy()
+        cloned["privacy_config"] = runtime["privacy_config"].model_copy(deep=True)
         cloned["cors_allow_origins"] = list(runtime["cors_allow_origins"])
         cloned["upstream_headers_config"] = runtime[
             "upstream_headers_config"
@@ -125,6 +128,9 @@ class SettingsRepository:
         )
         time_zone = validate_time_zone_name(mapping.get(SETTING_TIME_ZONE))
         runtime: RuntimeSettings = {
+            "privacy_config": PrivacyConfig.model_validate_json(
+                mapping[SETTING_PRIVACY_CONFIG]
+            ),
             "proxy_url": mapping.get(SETTING_PROXY_URL, "").strip(),
             "auth_access_token_minutes": int(
                 mapping[SETTING_AUTH_ACCESS_TOKEN_MINUTES]

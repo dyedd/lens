@@ -51,6 +51,7 @@ from ..gateway.service.admin.request_logs import (
 from ..gateway.service.admin.routing import get_router_snapshot
 from ..gateway.service.admin.settings import (
     list_settings,
+    preview_privacy,
     update_settings,
 )
 from ..gateway.service.admin.sites import (
@@ -495,6 +496,9 @@ def register_backups(app: APIRouter) -> None:
 
 
 def register_settings(app: APIRouter) -> None:
+    app.add_api_route(
+        "/api/admin/settings/privacy/preview", preview_privacy, methods=["POST"]
+    )
     app.add_api_route(
         "/api/admin/settings",
         list_settings,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 SETTING_MODEL_PRICE_LAST_SYNC_AT = "model_price_last_sync_at"
 SETTING_AUTH_ACCESS_TOKEN_MINUTES = "auth_access_token_minutes"
+SETTING_PRIVACY_CONFIG = "privacy_config"
 SETTING_PROXY_URL = "proxy_url"
 SETTING_STATS_TIME_ZONE = "stats_time_zone"
 SETTING_CHANNEL_CONFIG_REVISION = "channel_config_revision"

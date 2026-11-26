@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import Field
 
+from .privacy import PrivacyHit
 from .protocols import ProtocolKind, RequestLogLifecycleStatus
 from .validation import StrictBaseModel
 
@@ -37,6 +38,7 @@ class RequestLogInput:
     billing_units: int = 0
     request_content: str | None = None
     response_content: str | None = None
+    privacy_summary: list[PrivacyHit] = field(default_factory=list)
     attempts: list[dict[str, Any]] | None = None
     error_message: str | None = None
 
@@ -98,6 +100,7 @@ class RequestLogAttempt(StrictBaseModel):
 
 
 class RequestLogDetail(RequestLogItem):
+    privacy_summary: list[PrivacyHit] = Field(default_factory=list)
     request_content: str | None = None
     response_content: str | None = None
     attempts: list[RequestLogAttempt] = Field(default_factory=list)

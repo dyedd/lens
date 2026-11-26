@@ -7,6 +7,7 @@ from .cronjobs import validate_cronjob_schedule, validate_weekday_list
 from .gateway_keys import GatewayApiKeyBase
 from .model_groups import ModelGroup
 from .model_prices import ModelPriceItem
+from .privacy import PrivacyHit
 from .protocols import CronjobScheduleType, ProtocolKind, RequestLogLifecycleStatus
 from .settings import SettingItem
 from .sites import SiteConfig
@@ -168,6 +169,7 @@ class ConfigBackupRequestLog(StrictBaseModel):
     created_at: str
     stats_archived: bool = False
     attribution_archived: bool = False
+    privacy_summary: list[PrivacyHit] = Field(default_factory=list)
     request_content: str | None = None
     response_content: str | None = None
     attempts: list[ConfigBackupRequestLogAttempt] = Field(default_factory=list)

@@ -1,3 +1,8 @@
+import {
+  defaultPrivacyConfig,
+  type PrivacyConfig,
+  parsePrivacyConfig,
+} from "@/lib/api/privacy";
 import type { SettingItem } from "@/lib/api/settings";
 import type {
   UpstreamHeadersDraft,
@@ -59,6 +64,7 @@ export const TIME_ZONE_OPTIONS = [
 ] as const;
 
 export interface SettingsDraft {
+  privacyConfig: PrivacyConfig;
   proxyUrl: string;
   corsAllowOrigins: string;
   authAccessTokenMinutes: string;
@@ -126,7 +132,7 @@ const SETTINGS_DEFAULTS = {
   timeZone: "Asia/Shanghai",
 } satisfies Omit<
   SettingsDraft,
-  "upstreamHeadersConfig" | "upstreamParamOverrideConfig"
+  "upstreamHeadersConfig" | "upstreamParamOverrideConfig" | "privacyConfig"
 >;
 
 function serializeCorsOrigins(rawValue: string) {
@@ -152,6 +158,7 @@ function serializeCorsOrigins(rawValue: string) {
 export function createEmptySettingsDraft(): SettingsDraft {
   return {
     ...SETTINGS_DEFAULTS,
+    privacyConfig: defaultPrivacyConfig(),
     upstreamHeadersConfig: createEmptyUpstreamHeadersDraft(),
     upstreamParamOverrideConfig: createEmptyUpstreamParamOverrideDraft(),
   };
@@ -177,6 +184,7 @@ export function createSettingsDraft(
   const mapping = new Map((items ?? []).map((item) => [item.key, item.value]));
   const value = (key: string, fallback: string) => mapping.get(key) ?? fallback;
   return {
+    privacyConfig: parsePrivacyConfig(mapping.get("privacy_config")),
     proxyUrl: value(PROXY_URL, SETTINGS_DEFAULTS.proxyUrl),
     corsAllowOrigins: value(
       CORS_ALLOW_ORIGINS,
@@ -303,6 +311,7 @@ export function createSettingsDraft(
 /** Convert an editable settings draft into API setting items. */
 export function createSettingItems(draft: SettingsDraft): SettingItem[] {
   return [
+    { key: "privacy_config", value: JSON.stringify(draft.privacyConfig) },
     { key: PROXY_URL, value: draft.proxyUrl.trim() },
     {
       key: CORS_ALLOW_ORIGINS,

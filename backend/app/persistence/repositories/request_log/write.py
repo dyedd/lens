@@ -251,6 +251,9 @@ def _apply_request_log_fields(
     )
     entity.billing_mode = payload.billing_mode
     entity.billing_units = max(payload.billing_units, 0)
+    entity.privacy_summary_json = json.dumps(
+        [hit.model_dump(mode="json") for hit in payload.privacy_summary]
+    )
     entity.request_content = payload.request_content
     entity.response_content = payload.response_content
     entity.attempts_json = json.dumps(payload.attempts or [], ensure_ascii=True)

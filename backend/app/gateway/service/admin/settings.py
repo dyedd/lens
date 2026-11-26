@@ -4,12 +4,17 @@ from typing import Any
 
 from fastapi import Depends
 
+from app.core.config import settings
+from app.core.privacy_rules import PrivacyError
+from app.models.privacy import PrivacyPreviewRequest, PrivacyPreviewResponse
+
 from ....core.time_zone import load_time_zone
 from ....models.settings import SettingItem, SettingsUpdate
 from ....persistence.editable_settings import canonicalize_editable_settings
 from ....persistence.settings_keys import SETTING_TIME_ZONE
 from ..app_state import app_state
 from ..auth import get_current_admin
+from ..privacy_context import PrivacyContext
 
 
 async def list_settings(_: Any = Depends(get_current_admin)) -> list[SettingItem]:
@@ -44,3 +49,20 @@ async def update_settings(
         if next_time_zone_value is not None:
             await app_state.cronjob_runner.reschedule_cronjobs(next_time_zone_value)
     return await app_state.settings_repo.list_editable_settings()
+
+
+async def preview_privacy(
+    payload: PrivacyPreviewRequest, _: Any = Depends(get_current_admin)
+) -> PrivacyPreviewResponse:
+    config = (
+        payload.config
+        or (await app_state.settings_repo.get_runtime_settings())["privacy_config"]
+    )
+    context = PrivacyContext(config, settings.auth_secret_key)
+    blocked = False
+    try:
+        text = context.mask_text(payload.text)
+    except PrivacyError:
+        blocked = True
+        text = context.clean_log(payload.text) or ""
+    return PrivacyPreviewResponse(text=text, hits=context.summary(), blocked=blocked)

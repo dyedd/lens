@@ -2,6 +2,7 @@ import { apiFetch, apiRequest } from "./client";
 import type { CronjobScheduleType } from "./cronjobs";
 import type { ModelGroup } from "./groups";
 import type { ModelPriceItem } from "./modelPrices";
+import type { PrivacyHit } from "./privacy";
 import type { ProtocolKind } from "./protocols";
 import type { RequestLogLifecycleStatus } from "./requests";
 import type { SettingItem } from "./settings";
@@ -112,6 +113,7 @@ export type ConfigBackupRequestLog = {
   created_at: string;
   stats_archived: boolean;
   attribution_archived?: boolean;
+  privacy_summary?: PrivacyHit[];
   request_content?: string | null;
   response_content?: string | null;
   attempts: ConfigBackupRequestLogAttempt[];

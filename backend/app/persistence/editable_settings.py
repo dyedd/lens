@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from math import isfinite
 from urllib.parse import urlsplit
 
+from app.models.privacy import PrivacyConfig
 from app.persistence.settings_keys import (
     SETTING_AUTH_ACCESS_TOKEN_MINUTES,
     SETTING_CIRCUIT_BREAKER_AUTH_COOLDOWN,
@@ -31,6 +32,7 @@ from app.persistence.settings_keys import (
     SETTING_HEALTH_SCORING_ENABLED,
     SETTING_HEALTH_WINDOW_SECONDS,
     SETTING_MAX_REQUEST_BODY_BYTES,
+    SETTING_PRIVACY_CONFIG,
     SETTING_PROXY_URL,
     SETTING_RELAY_LOG_BODY_ENABLED,
     SETTING_RELAY_LOG_KEEP_ENABLED,
@@ -55,6 +57,7 @@ from ..models.upstream_rules import (
 EDITABLE_SETTING_DEFAULTS: dict[str, str] = {
     SETTING_AUTH_ACCESS_TOKEN_MINUTES: "720",
     SETTING_PROXY_URL: "",
+    SETTING_PRIVACY_CONFIG: PrivacyConfig().model_dump_json(),
     SETTING_CORS_ALLOW_ORIGINS: "*",
     SETTING_RELAY_LOG_BODY_ENABLED: "false",
     SETTING_RELAY_LOG_KEEP_ENABLED: "true",
@@ -209,6 +212,11 @@ def canonicalize_editable_setting(key: str, raw_value: str) -> str:
             raise InvalidInputError(f"Setting must be at least one: {key}")
         _validate_maximum(key, parsed, _FLOAT_SETTING_MAXIMUMS)
         return str(parsed)
+    if key == SETTING_PRIVACY_CONFIG:
+        try:
+            return PrivacyConfig.model_validate_json(value).model_dump_json()
+        except ValueError as exc:
+            raise InvalidInputError("Invalid privacy config") from exc
     if key == SETTING_PROXY_URL:
         return validate_proxy_url(value)
     if key == SETTING_TIME_ZONE:
@@ -290,6 +298,8 @@ def resolve_effective_setting(key: str, raw_value: str, default: str) -> str:
     try:
         return canonicalize_editable_setting(key, raw_value)
     except ValueError:
+        if key == SETTING_PRIVACY_CONFIG:
+            raise InvalidInputError("Invalid persisted privacy config")
         logging.getLogger(__name__).warning(
             "Invalid persisted setting %s; using its default", key
         )

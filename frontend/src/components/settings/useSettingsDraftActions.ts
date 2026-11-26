@@ -87,8 +87,19 @@ export function useSettingsDraftActions(
     [updateUpstreamParamOverrideConfig],
   );
 
+  const updatePrivacyConfig = useCallback(
+    (patch: Partial<SettingsDraft["privacyConfig"]>) => {
+      setDraft((current) => ({
+        ...current,
+        privacyConfig: { ...current.privacyConfig, ...patch },
+      }));
+    },
+    [setDraft],
+  );
+
   return {
     setDraftValue,
+    updatePrivacyConfig,
     addGlobalHeader,
     updateGlobalHeader,
     removeGlobalHeader,
