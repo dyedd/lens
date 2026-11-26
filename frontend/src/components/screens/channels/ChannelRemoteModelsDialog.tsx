@@ -167,8 +167,10 @@ export function ChannelRemoteModelsDialog({
     onOpenChange(false);
   }
 
-  const filterLabel = (zh: string, en: string, count: number) =>
-    `${locale === "zh-CN" ? zh : en} ${count}`;
+  const filterLabel = (zh: string, en: string, count: number) => {
+    const label = locale === "zh-CN" ? zh : en;
+    return count > 0 ? `${label} (${count})` : label;
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,13 +178,8 @@ export function ChannelRemoteModelsDialog({
         className="sm:max-w-3xl"
         title={
           locale === "zh-CN"
-            ? `获取模型列表 - ${channelName}`
-            : `Fetch model list - ${channelName}`
-        }
-        description={
-          locale === "zh-CN"
-            ? "汇总所有地址和 API Key 的模型；选中后加入渠道并持续同步。"
-            : "Models from all URLs and keys; selected models join the channel and stay synced."
+            ? `获取模型列表 · ${channelName}`
+            : `Fetch model list · ${channelName}`
         }
         footer={
           <>
@@ -217,7 +214,7 @@ export function ChannelRemoteModelsDialog({
         }
       >
         <div className="grid gap-3">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <SegmentedControl
               value={filter}
               onValueChange={setFilter}
@@ -233,29 +230,33 @@ export function ChannelRemoteModelsDialog({
                 { value: "all", label: filterLabel("全部", "All", counts.all) },
               ]}
             />
-            <ToolbarSearchInput
-              value={query}
-              onChange={setQuery}
-              onClear={() => setQuery("")}
-              clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
-              placeholder={
-                locale === "zh-CN" ? "搜索模型名称..." : "Search model names..."
-              }
-              className="max-w-none min-w-40 flex-1"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8"
-              disabled={loading}
-              onClick={() => void loadCatalog()}
-            >
-              <RefreshCw
-                className={loading ? "size-3.5 animate-spin" : "size-3.5"}
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-initial">
+              <ToolbarSearchInput
+                value={query}
+                onChange={setQuery}
+                onClear={() => setQuery("")}
+                clearLabel={locale === "zh-CN" ? "清除搜索" : "Clear search"}
+                placeholder={
+                  locale === "zh-CN"
+                    ? "搜索模型名称..."
+                    : "Search model names..."
+                }
+                className="max-w-none min-w-40 flex-1 sm:w-56"
               />
-              {locale === "zh-CN" ? "重新获取" : "Reload"}
-            </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 shrink-0 text-muted-foreground hover:text-foreground"
+                disabled={loading}
+                onClick={() => void loadCatalog()}
+              >
+                <RefreshCw
+                  className={loading ? "size-3.5 animate-spin" : "size-3.5"}
+                />
+                {locale === "zh-CN" ? "重新获取" : "Reload"}
+              </Button>
+            </div>
           </div>
           <div className="max-h-[min(52vh,480px)] overflow-y-auto">
             <Table>
@@ -327,7 +328,7 @@ export function ChannelRemoteModelsDialog({
                           aria-label={row.name}
                         />
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono text-[13px]">
                         {row.name}
                       </TableCell>
                       <TableCell className="w-[150px] py-1.5">

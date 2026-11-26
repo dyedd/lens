@@ -20,7 +20,7 @@ export function ThemeToggle() {
           type="button"
           variant="ghost"
           size="icon"
-          className="[&_svg]:size-5"
+          className="text-muted-foreground hover:text-foreground [&_svg]:size-4"
           aria-label={label}
           onClick={toggleTheme}
         >

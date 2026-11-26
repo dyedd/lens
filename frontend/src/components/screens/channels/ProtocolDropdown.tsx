@@ -5,11 +5,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/Popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
+import { TruncatedTooltip } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import { cn } from "@/lib/classNames";
 import { PROTOCOL_LIST, protocolLabel } from "@/lib/protocols";
@@ -58,28 +54,24 @@ export function ProtocolDropdown({
             (locale === "zh-CN" ? "选择上游协议" : "Select upstream protocols")
           }
           className={cn(
-            "h-auto min-h-8 min-w-0 w-full max-w-72 justify-between gap-2 border-input/40 bg-transparent px-3 py-1 text-sm font-normal text-muted-foreground shadow-none hover:bg-transparent focus-visible:border-ring/60 focus-visible:ring-[1px] focus-visible:ring-ring/40 has-[>svg]:px-3",
+            "h-auto min-h-8 min-w-0 w-full max-w-72 justify-between gap-2 border-input/40 bg-transparent px-3 py-1 text-[13px] font-normal text-muted-foreground shadow-none hover:bg-transparent focus-visible:border-ring/60 focus-visible:ring-[1px] focus-visible:ring-ring/40 has-[>svg]:px-3",
             className,
           )}
         >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate text-left",
-                  selectedLabel && "text-foreground/75",
-                )}
-              >
-                {selectedLabel ||
-                  (locale === "zh-CN" ? "选择协议" : "Select protocols")}
-              </span>
-            </TooltipTrigger>
-            {selectedLabel ? (
-              <TooltipContent className="z-[110] max-w-sm break-words">
-                {selectedLabel}
-              </TooltipContent>
-            ) : null}
-          </Tooltip>
+          <TruncatedTooltip
+            content={selectedLabel}
+            contentClassName="z-[110] max-w-sm break-words"
+          >
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-left",
+                selectedLabel && "text-foreground/75",
+              )}
+            >
+              {selectedLabel ||
+                (locale === "zh-CN" ? "选择协议" : "Select protocols")}
+            </span>
+          </TruncatedTooltip>
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground opacity-50" />
         </Button>
       </PopoverTrigger>

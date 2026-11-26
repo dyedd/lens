@@ -89,7 +89,7 @@ function RoundRobinMemberList({
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
   return (
-    <ul className="flex flex-col gap-0.5">
+    <ul className="flex flex-col divide-y divide-border/50">
       {visibleFoldedMembers.map(({ member, index }) => (
         <SelectedMemberRow
           key={member.key}
@@ -147,7 +147,7 @@ function FailoverMemberList({
       {visibleChannelGroups.map((channelGroup, channelIndex) => (
         <li
           key={channelGroup.key}
-          className="overflow-hidden py-1"
+          className="overflow-hidden"
           onDragStart={
             canReorder ? () => setDraggingChannelIndex(channelIndex) : undefined
           }
@@ -174,7 +174,7 @@ function FailoverMemberList({
         >
           <div
             className={cn(
-              "flex min-h-8 min-w-0 items-center gap-1.5 rounded-md bg-muted/35 px-2 py-1",
+              "flex min-h-9 min-w-0 items-center gap-2 bg-muted/25 px-3 py-1.5",
               draggingChannelIndex === channelIndex && "opacity-60",
             )}
           >
@@ -188,36 +188,15 @@ function FailoverMemberList({
               </span>
             ) : null}
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="truncate text-xs font-medium text-foreground">
+              <span className="truncate text-[13px] font-medium text-card-foreground">
                 {channelGroup.channel_name ||
                   channelGroup.channel_id ||
                   (locale === "zh-CN" ? "未知渠道" : "Unknown channel")}
               </span>
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
                 {channelGroup.members.length}
               </span>
             </div>
-            <Switch
-              checked={channelGroup.members.some(
-                ({ member }) => member.ready_item_count > 0,
-              )}
-              disabled={
-                !channelGroup.members.some(
-                  ({ member }) => member.ready_item_count > 0,
-                ) &&
-                channelGroup.members.some(
-                  ({ member }) => member.enabled_item_count > 0,
-                )
-              }
-              aria-label={
-                locale === "zh-CN"
-                  ? `启停渠道 ${channelGroup.channel_name || channelGroup.channel_id}`
-                  : `Toggle channel ${channelGroup.channel_name || channelGroup.channel_id}`
-              }
-              onCheckedChange={(enabled) =>
-                toggleChannelMembers(channelGroup.key, enabled)
-              }
-            />
             <Badge
               variant="secondary"
               aria-label={`${locale === "zh-CN" ? "优先级" : "Priority"} ${channelGroup.priority}`}
@@ -225,8 +204,33 @@ function FailoverMemberList({
               {locale === "zh-CN" ? "优先级" : "Priority"}{" "}
               {channelGroup.priority}
             </Badge>
+            <div className="flex shrink-0 items-center justify-center">
+              <Switch
+                size="sm"
+                checked={channelGroup.members.some(
+                  ({ member }) => member.ready_item_count > 0,
+                )}
+                disabled={
+                  !channelGroup.members.some(
+                    ({ member }) => member.ready_item_count > 0,
+                  ) &&
+                  channelGroup.members.some(
+                    ({ member }) => member.enabled_item_count > 0,
+                  )
+                }
+                aria-label={
+                  locale === "zh-CN"
+                    ? `启停渠道 ${channelGroup.channel_name || channelGroup.channel_id}`
+                    : `Toggle channel ${channelGroup.channel_name || channelGroup.channel_id}`
+                }
+                onCheckedChange={(enabled) =>
+                  toggleChannelMembers(channelGroup.key, enabled)
+                }
+              />
+            </div>
+            <span className="size-6 shrink-0" aria-hidden="true" />
           </div>
-          <ul className="flex flex-col">
+          <ul className="flex flex-col divide-y divide-border/40">
             {channelGroup.members.map(({ member }, memberIndex) => (
               <SelectedMemberRow
                 key={member.key}

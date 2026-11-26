@@ -1,19 +1,8 @@
 import { useId, useState } from "react";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/Field";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/Select";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/Field";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   SettingsFieldList,
   SettingsFieldRow,
@@ -45,7 +34,7 @@ export function privacyCategoryLabel(
 function PrivacyRuleField({
   name,
   label,
-  description,
+  placeholder,
   values,
   maxLength,
   onCommit,
@@ -53,7 +42,7 @@ function PrivacyRuleField({
 }: {
   name: string;
   label: string;
-  description: string;
+  placeholder: string;
   values: string[];
   maxLength: number;
   onCommit: (values: string[]) => Promise<void>;
@@ -62,10 +51,10 @@ function PrivacyRuleField({
   const id = useId();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+
   return (
     <Field data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <FieldDescription id={`${id}-hint`}>{description}</FieldDescription>
       <Textarea
         key={JSON.stringify(values)}
         id={id}
@@ -73,11 +62,13 @@ function PrivacyRuleField({
         defaultValue={values.join("\n")}
         rows={3}
         maxLength={maxLength}
+        placeholder={placeholder}
         spellCheck={false}
         autoCapitalize="none"
         autoCorrect="off"
+        className="font-mono placeholder:font-sans"
         aria-invalid={Boolean(error)}
-        aria-describedby={`${id}-hint${error ? ` ${id}-error` : ""}`}
+        aria-describedby={error ? `${id}-error` : undefined}
         readOnly={pending}
         onChange={() => setError("")}
         onBlur={async (event) => {
@@ -101,13 +92,20 @@ function PrivacyRuleField({
           }
         }}
       />
-      <p id={`${id}-error`} role="status" className="text-xs text-destructive">
-        {error}
-      </p>
+      {error ? (
+        <p
+          id={`${id}-error`}
+          role="status"
+          className="text-xs text-destructive"
+        >
+          {error}
+        </p>
+      ) : null}
     </Field>
   );
 }
 
+/** Render the privacy redaction, action, custom rules, and live preview tab. */
 export function PrivacySettingsSection({
   locale,
   settings,
@@ -121,250 +119,243 @@ export function PrivacySettingsSection({
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const update = settings.updatePrivacyConfig;
-  const actionLabels = {
-    mask: titleForLocale(locale, "替换并恢复", "Mask and restore"),
-    warn: titleForLocale(locale, "仅记录命中", "Warn only"),
-    block: titleForLocale(locale, "阻止请求", "Block request"),
-  };
 
   return (
     <TabsContent value="privacy" className="mt-0">
-      <SettingsSectionCard
-        title={titleForLocale(locale, "规则隐私", "Rule privacy")}
-      >
-        <form
-          className="flex flex-col gap-6"
-          aria-label={titleForLocale(locale, "规则隐私", "Rule privacy")}
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const fields = new FormData(event.currentTarget);
-            const entries = (name: string) =>
-              String(fields.get(name) ?? "")
-                .split("\n")
-                .filter((line) => line.trim());
-            const previewConfig = {
-              ...config,
-              words: entries("words"),
-              regex_rules: entries("regex_rules").map((pattern) => ({
-                pattern,
-              })),
-              exceptions: entries("exceptions"),
-            };
-            setPending(true);
-            setError("");
-            try {
-              setPreview(await previewPrivacy(text, previewConfig));
-            } catch {
-              setError(
-                titleForLocale(
-                  locale,
-                  "预览失败，请检查规则。",
-                  "Preview failed. Check the rules.",
-                ),
-              );
-            } finally {
-              setPending(false);
-            }
-          }}
-        >
-          <p className="text-xs text-muted-foreground">
-            {titleForLocale(
-              locale,
-              "处理对话正文、工具参数与结果、Embeddings、Rerank 和图片提示词。图片、二进制及附件内容不扫描。",
-              "Processes conversation text, tool arguments and results, embeddings, rerank text, and image prompts. Images, binary data, and attachments are not scanned.",
-            )}
-          </p>
-          <SettingsFieldList>
-            <SettingsFieldRow
-              title={titleForLocale(
+      <form
+        className="space-y-8"
+        aria-label={titleForLocale(locale, "规则隐私", "Rule privacy")}
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const fields = new FormData(event.currentTarget);
+          const entries = (name: string) =>
+            String(fields.get(name) ?? "")
+              .split("\n")
+              .filter((line) => line.trim());
+          const previewConfig = {
+            ...config,
+            words: entries("words"),
+            regex_rules: entries("regex_rules").map((pattern) => ({
+              pattern,
+            })),
+            exceptions: entries("exceptions"),
+          };
+          setPending(true);
+          setError("");
+          try {
+            setPreview(await previewPrivacy(text, previewConfig));
+          } catch {
+            setError(
+              titleForLocale(
                 locale,
-                "启用隐私规则",
-                "Enable privacy rules",
-              )}
-              htmlFor="privacy-enabled"
-            >
-              <Switch
-                id="privacy-enabled"
-                checked={config.enabled}
-                onCheckedChange={(enabled) => update({ enabled })}
-                disabled={!settings.isSettingsReady}
-              />
-            </SettingsFieldRow>
-            {(["secrets", "personal"] as const).map((category) => (
+                "预览失败，请检查规则。",
+                "Preview failed. Check the rules.",
+              ),
+            );
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        <SettingsSectionCard
+          title={titleForLocale(locale, "规则与检测", "Rules & detection")}
+        >
+          <div className="space-y-8">
+            <SettingsFieldList>
               <SettingsFieldRow
-                key={category}
-                htmlFor={`privacy-${category}`}
-                title={privacyCategoryLabel(locale, category)}
+                title={titleForLocale(
+                  locale,
+                  "启用隐私规则",
+                  "Enable privacy rules",
+                )}
+                htmlFor="privacy-enabled"
               >
                 <Switch
-                  id={`privacy-${category}`}
-                  checked={config.categories.includes(category)}
-                  onCheckedChange={(enabled) =>
-                    update({
-                      categories: enabled
-                        ? [...config.categories, category]
-                        : config.categories.filter(
-                            (entry) => entry !== category,
-                          ),
-                    })
-                  }
+                  id="privacy-enabled"
+                  checked={config.enabled}
+                  onCheckedChange={(enabled) => update({ enabled })}
                   disabled={!settings.isSettingsReady}
                 />
               </SettingsFieldRow>
-            ))}
-            <SettingsFieldRow
-              title={titleForLocale(locale, "命中动作", "Action on match")}
-              htmlFor="privacy-action"
-            >
-              <Select
-                value={config.action}
-                onValueChange={(action) => {
-                  if (isPrivacyAction(action)) update({ action });
-                }}
-                disabled={!settings.isSettingsReady}
+
+              <SettingsFieldRow
+                title={titleForLocale(locale, "命中动作", "Action on match")}
+                controlClassName="md:w-auto xl:w-auto"
               >
-                <SelectTrigger id="privacy-action">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {(["mask", "warn", "block"] as const).map((action) => (
-                      <SelectItem key={action} value={action}>
-                        {actionLabels[action]}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </SettingsFieldRow>
-          </SettingsFieldList>
-          {config.action === "warn" && (
-            <p className="text-xs text-muted-foreground">
-              {titleForLocale(
-                locale,
-                "仅记录命中会把原文发送到上游，日志仍会脱敏。",
-                "Warn only sends the original text upstream. Logs are still redacted.",
-              )}
-            </p>
-          )}
-          <FieldGroup>
-            {(["words", "regex_rules", "exceptions"] as const).map((field) => (
+                <SegmentedControl
+                  value={config.action}
+                  onValueChange={(action) => {
+                    if (settings.isSettingsReady && isPrivacyAction(action)) {
+                      update({ action });
+                    }
+                  }}
+                  options={[
+                    {
+                      value: "mask",
+                      label: titleForLocale(
+                        locale,
+                        "替换并恢复",
+                        "Mask & restore",
+                      ),
+                    },
+                    {
+                      value: "warn",
+                      label: titleForLocale(locale, "仅记录", "Warn only"),
+                    },
+                    {
+                      value: "block",
+                      label: titleForLocale(locale, "阻止请求", "Block"),
+                    },
+                  ]}
+                />
+              </SettingsFieldRow>
+
+              {(["secrets", "personal"] as const).map((category) => (
+                <SettingsFieldRow
+                  key={category}
+                  htmlFor={`privacy-${category}`}
+                  title={privacyCategoryLabel(locale, category)}
+                >
+                  <Switch
+                    id={`privacy-${category}`}
+                    checked={config.categories.includes(category)}
+                    onCheckedChange={(enabled) =>
+                      update({
+                        categories: enabled
+                          ? [...config.categories, category]
+                          : config.categories.filter(
+                              (entry) => entry !== category,
+                            ),
+                      })
+                    }
+                    disabled={!settings.isSettingsReady}
+                  />
+                </SettingsFieldRow>
+              ))}
+            </SettingsFieldList>
+
+            <FieldGroup className="gap-5">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <PrivacyRuleField
+                  name="words"
+                  locale={locale}
+                  label={titleForLocale(locale, "自定义词语", "Custom words")}
+                  placeholder="internal-project"
+                  values={config.words}
+                  maxLength={25700}
+                  onCommit={async (values) => {
+                    const next = { ...config, words: values };
+                    await previewPrivacy("", next);
+                    update({ words: next.words });
+                  }}
+                />
+                <PrivacyRuleField
+                  name="exceptions"
+                  locale={locale}
+                  label={titleForLocale(locale, "例外词语", "Exceptions")}
+                  placeholder="example@company.com"
+                  values={config.exceptions}
+                  maxLength={25700}
+                  onCommit={async (values) => {
+                    const next = { ...config, exceptions: values };
+                    await previewPrivacy("", next);
+                    update({ exceptions: next.exceptions });
+                  }}
+                />
+              </div>
+
               <PrivacyRuleField
-                name={field}
-                key={field}
+                name="regex_rules"
                 locale={locale}
-                label={
-                  {
-                    words: titleForLocale(locale, "自定义词语", "Custom words"),
-                    regex_rules: titleForLocale(
-                      locale,
-                      "自定义正则",
-                      "Custom regex",
-                    ),
-                    exceptions: titleForLocale(
-                      locale,
-                      "例外词语",
-                      "Exceptions",
-                    ),
-                  }[field]
-                }
-                description={
-                  field === "regex_rules"
-                    ? titleForLocale(
-                        locale,
-                        "每行一条，最多 20 条，每条 512 个字符。不允许空匹配。",
-                        "One per line, up to 20 patterns of 512 characters. Empty matches are rejected.",
-                      )
-                    : titleForLocale(
-                        locale,
-                        "每行一项，最多 100 项，每项 256 个字符。",
-                        "One per line, up to 100 entries of 256 characters.",
-                      )
-                }
-                values={
-                  field === "regex_rules"
-                    ? config.regex_rules.map((rule) => rule.pattern)
-                    : config[field]
-                }
-                maxLength={field === "regex_rules" ? 10260 : 25700}
+                label={titleForLocale(locale, "自定义正则", "Custom regex")}
+                placeholder="^proj_[a-zA-Z0-9]{16,}$"
+                values={config.regex_rules.map((rule) => rule.pattern)}
+                maxLength={10260}
                 onCommit={async (values) => {
                   const next = {
                     ...config,
-                    [field]:
-                      field === "regex_rules"
-                        ? values.map((pattern) => ({ pattern }))
-                        : values,
+                    regex_rules: values.map((pattern) => ({ pattern })),
                   };
                   await previewPrivacy("", next);
-                  update({ [field]: next[field] });
+                  update({ regex_rules: next.regex_rules });
                 }}
               />
-            ))}
-          </FieldGroup>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="privacy-preview-text">
-                {titleForLocale(locale, "规则预览", "Rule preview")}
-              </FieldLabel>
-              <FieldDescription id="privacy-preview-hint">
-                {titleForLocale(
-                  locale,
-                  "在 Lens 服务端运行规则，不调用上游，也不保存预览文本。",
-                  "Runs rules on the Lens server without upstream calls or saving preview text.",
-                )}
-              </FieldDescription>
-              <Textarea
-                id="privacy-preview-text"
-                name="text"
-                rows={4}
-                value={text}
-                maxLength={100000}
-                aria-describedby="privacy-preview-hint"
-                onChange={(event) => {
-                  setText(event.target.value);
-                  setPreview(null);
-                }}
-              />
-            </Field>
+            </FieldGroup>
+          </div>
+        </SettingsSectionCard>
+
+        <SettingsSectionCard
+          title={titleForLocale(locale, "规则预览", "Rule preview")}
+          actions={
             <Button
               type="submit"
               variant="outline"
+              size="sm"
               disabled={pending}
-              className="self-start"
             >
-              {titleForLocale(locale, "预览", "Preview")}
+              {pending
+                ? titleForLocale(locale, "测试中...", "Testing...")
+                : titleForLocale(locale, "运行预览", "Run preview")}
             </Button>
-            <div role="status" className="text-xs">
-              {error ||
-                (preview &&
-                  (preview.blocked
-                    ? titleForLocale(
+          }
+        >
+          <div className="space-y-4">
+            <Textarea
+              id="privacy-preview-text"
+              name="text"
+              rows={4}
+              value={text}
+              maxLength={100000}
+              placeholder={titleForLocale(
+                locale,
+                "输入包含密钥、邮箱或自定义敏感词的示例文本...",
+                "Paste sample text containing secrets, emails, or custom words...",
+              )}
+              aria-label={titleForLocale(locale, "规则预览", "Rule preview")}
+              onChange={(event) => {
+                setText(event.target.value);
+                setPreview(null);
+              }}
+            />
+
+            {error || preview ? (
+              <div className="space-y-2.5">
+                <div
+                  role="status"
+                  className="flex flex-wrap items-center gap-2"
+                >
+                  {error ? (
+                    <span className="text-xs text-destructive">{error}</span>
+                  ) : preview?.blocked ? (
+                    <Badge variant="destructive">
+                      {titleForLocale(
                         locale,
                         "请求将被阻止",
                         "Request will be blocked",
-                      )
-                    : preview.hits
-                        .map(
-                          (hit) =>
-                            `${privacyCategoryLabel(locale, hit.category)} ${hit.count}`,
-                        )
-                        .join(" · ")))}
-            </div>
-            {preview && (
-              <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/35 p-3 text-xs">
-                {preview.text}
-              </pre>
-            )}
-          </FieldGroup>
-          <p className="text-xs text-muted-foreground">
-            {titleForLocale(
-              locale,
-              "规则检测可能遗漏信息。替换文本会影响模型理解、向量与排序结果。已有日志保持原样，备份中的日志按隐私设置清理。",
-              "Rules can miss sensitive data. Masking changes model interpretation, embeddings, and ranking. Existing logs remain unchanged; backup logs are cleaned using privacy settings.",
-            )}
-          </p>
-        </form>
-      </SettingsSectionCard>
+                      )}
+                    </Badge>
+                  ) : preview?.hits.length ? (
+                    preview.hits.map((hit) => (
+                      <Badge key={hit.category} variant="secondary">
+                        {privacyCategoryLabel(locale, hit.category)} {hit.count}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {titleForLocale(locale, "未命中规则", "No rule hits")}
+                    </span>
+                  )}
+                </div>
+                {preview ? (
+                  <pre className="whitespace-pre-wrap break-words border-l-2 border-border pl-3.5 py-1 font-mono text-[13px] leading-relaxed text-foreground">
+                    {preview.text}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </SettingsSectionCard>
+      </form>
     </TabsContent>
   );
 }

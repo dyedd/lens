@@ -24,11 +24,7 @@ import {
 import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/ToggleGroup";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
+import { TruncatedTooltip } from "@/components/ui/Tooltip";
 import type { ProtocolKind } from "@/lib/api/protocols";
 import type { ModelTestMode, SiteModelTestResult } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
@@ -64,16 +60,9 @@ function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-3 text-xs leading-5">
       <span className="text-muted-foreground">{label}</span>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="min-w-0 truncate">{value || "-"}</span>
-        </TooltipTrigger>
-        {value ? (
-          <TooltipContent className="max-w-sm break-all">
-            {value}
-          </TooltipContent>
-        ) : null}
-      </Tooltip>
+      <TruncatedTooltip content={value} contentClassName="max-w-sm break-all">
+        <span className="min-w-0 truncate">{value || "-"}</span>
+      </TruncatedTooltip>
     </div>
   );
 }
@@ -158,17 +147,45 @@ export function ModelTestDialog({
         open
         onOpenChange={(open) => !open && !confirmDeleteOpen && onClose()}
       >
-        <DialogContent className="flex max-h-[min(88vh,720px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]">
+        <DialogContent className="flex max-h-[min(88vh,740px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[640px]">
           <DialogHeader className="shrink-0 px-5 pb-4 pt-5 pr-12">
-            <DialogTitle>{isChinese ? "测试模型" : "Test model"}</DialogTitle>
-            <DialogDescription className="truncate">
-              {[targetName, target?.modelName].filter(Boolean).join(" · ") ||
-                "-"}
-            </DialogDescription>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0 space-y-0.5">
+                <DialogTitle>
+                  {isChinese ? "测试模型" : "Test model"}
+                </DialogTitle>
+                <DialogDescription className="truncate font-mono text-xs">
+                  {(target?.modelName && target?.modelName === targetName
+                    ? targetName
+                    : [targetName, target?.modelName]
+                        .filter(Boolean)
+                        .join(" · ")) || "-"}
+                </DialogDescription>
+              </div>
+              {result ? (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-medium tabular-nums",
+                    result.success
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "border-destructive/30 bg-destructive/10 text-destructive",
+                  )}
+                >
+                  {result.success
+                    ? isChinese
+                      ? "通过"
+                      : "Passed"
+                    : isChinese
+                      ? "失败"
+                      : "Failed"}{" "}
+                  · {(result.latency_ms / 1000).toFixed(2)}s
+                </span>
+              ) : null}
+            </div>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5">
-            <FieldGroup className="gap-3 border-b border-border/60 pb-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <FieldGroup className="gap-3.5">
               <div className="flex flex-wrap items-center gap-3">
                 <ToggleGroup
                   type="single"
@@ -277,31 +294,29 @@ export function ModelTestDialog({
                 </div>
               ) : null}
               {items.length > 1 ? (
-                <div className="max-h-36 overflow-y-auto rounded-md bg-muted/35 p-1">
+                <div className="max-h-48 divide-y divide-border/45 overflow-y-auto border-t border-border/50 pt-1">
                   {testItems.map((item, index) => (
                     <div
                       key={`${item.target.modelName}-${index}`}
-                      className="flex min-w-0 items-center gap-2 px-2 py-1 text-xs"
+                      className="flex min-w-0 items-center gap-2 px-1 py-1.5 text-[13px]"
                     >
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className={cn(
-                              "min-w-0 flex-1 truncate text-left",
-                              index === activeIndex
-                                ? "font-medium text-foreground"
-                                : "text-muted-foreground",
-                            )}
-                            onClick={() => setActiveIndex(index)}
-                          >
-                            {item.target.modelName} · {item.target.upstreamName}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-sm break-all">
+                      <TruncatedTooltip
+                        content={`${item.target.modelName} · ${item.target.upstreamName}`}
+                        contentClassName="max-w-sm break-all"
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "min-w-0 flex-1 truncate text-left",
+                            index === activeIndex
+                              ? "font-medium text-foreground"
+                              : "text-muted-foreground",
+                          )}
+                          onClick={() => setActiveIndex(index)}
+                        >
                           {item.target.modelName} · {item.target.upstreamName}
-                        </TooltipContent>
-                      </Tooltip>
+                        </button>
+                      </TruncatedTooltip>
                       <span
                         className={
                           item.result?.success
@@ -512,10 +527,16 @@ export function ModelTestDialog({
                   </TabsContent>
                 </Tabs>
               </div>
+            ) : items.length === 1 && !testing ? (
+              <p className="pt-3 text-xs text-muted-foreground">
+                {isChinese
+                  ? "选择请求方式后点击开始测试，检查当前模型连通性与延迟。"
+                  : "Choose a test mode and run the test to check connectivity and latency."}
+              </p>
             ) : null}
           </div>
 
-          <DialogFooter className="shrink-0 px-5 py-3">
+          <DialogFooter className="shrink-0 border-t border-border/50 px-5 py-3">
             {testing ? (
               <span
                 className="mr-auto self-center text-xs tabular-nums text-muted-foreground"
@@ -563,7 +584,7 @@ export function ModelTestDialog({
             <DialogTitle>{isChinese ? "删除模型" : "Delete model"}</DialogTitle>
             <DialogDescription>
               {isChinese
-                ? `从当前渠道移除「${target?.modelName || "-"}」；保存后生效。`
+                ? `确定从当前渠道移除模型 ${target?.modelName || "-"}？保存后生效。`
                 : `Remove "${target?.modelName || "-"}"; changes apply on save.`}
             </DialogDescription>
           </DialogHeader>

@@ -92,11 +92,6 @@ export function GatewayGeneralSettings({
           "首个 Token 超时（秒）",
           "First token timeout (seconds)",
         )}
-        description={titleForLocale(
-          locale,
-          "首个有效数据块的最长等待时间；0 不限。",
-          "Max wait for the first response; 0 is unlimited.",
-        )}
         invalid={Boolean(firstTokenTimeoutSecondsError)}
       >
         <Input
@@ -124,11 +119,6 @@ export function GatewayGeneralSettings({
           "流式响应空闲超时（秒）",
           "Stream idle timeout (seconds)",
         )}
-        description={titleForLocale(
-          locale,
-          "首字后数据块之间的最长间隔；0 不限。",
-          "Max gap between stream chunks; 0 is unlimited.",
-        )}
         invalid={Boolean(streamIdleTimeoutSecondsError)}
       >
         <Input
@@ -155,11 +145,6 @@ export function GatewayGeneralSettings({
           locale,
           "请求体大小上限（字节）",
           "Request body limit (bytes)",
-        )}
-        description={titleForLocale(
-          locale,
-          "单次请求体上限；0 不限。",
-          "Max request body size; 0 is unlimited.",
         )}
         invalid={Boolean(maxRequestBodyBytesError)}
       >

@@ -18,7 +18,10 @@ import type { ActivityTrendCard } from "./overview/ActivityTrendCard";
 
 vi.mock("./overview/ActivityTrendCard", () => ({
   ActivityTrendCard: (props: ComponentProps<typeof ActivityTrendCard>) => (
-    <output data-testid="activity-points">
+    <output
+      data-testid="activity-points"
+      data-show-heatmap={String(Boolean(props.showHeatmapOption))}
+    >
       {JSON.stringify(props.points)}
     </output>
   ),
@@ -112,6 +115,46 @@ it("uses completed requests for success rate and shares daily data with chart na
         dailyRequests.push(url.searchParams);
         return Response.json(url.searchParams.has("granularity") ? [] : daily);
       }
+      if (url.pathname === "/api/admin/sites") {
+        return Response.json([
+          {
+            id: "site-1",
+            name: "Primary",
+            enabled: true,
+            supports_model_listing: true,
+            tags: [],
+            proxy_mode: "inherit",
+            channel_proxy: "",
+            headers: [],
+            param_override: [],
+            base_urls: [],
+            credentials: [],
+            protocols: [
+              {
+                id: "pc-1",
+                base_url_id: "b-1",
+                protocols: ["openai_chat"],
+                credential_ids: [],
+                models: [
+                  {
+                    id: "m-1",
+                    credential_id: "c-1",
+                    credential_name: "k1",
+                    model_name: "gpt-4o",
+                    enabled: true,
+                    sort_order: 0,
+                    context_window: null,
+                    upstream_context_window: null,
+                  },
+                ],
+              },
+            ],
+          },
+        ]);
+      }
+      if (url.pathname === "/api/admin/groups") {
+        return Response.json([{ id: "g-1", name: "gpt-4o" }]);
+      }
       throw new Error(`Unexpected request ${path}`);
     }),
   );
@@ -171,6 +214,18 @@ it("uses completed requests for success rate and shares daily data with chart na
       dailyRequests.filter((params) => params.get("days") === "7"),
     ).toHaveLength(1);
     expect(
+      container
+        .querySelector('[data-testid="activity-points"]')
+        ?.getAttribute("data-show-heatmap"),
+    ).toBe("false");
+    const channelsLabel = Array.from(container.querySelectorAll("span")).find(
+      (node) => node.textContent === "Channels",
+    );
+    expect(
+      channelsLabel?.parentElement?.parentElement?.querySelector("p")
+        ?.textContent,
+    ).toBe("1");
+    expect(
       container.querySelector('[data-testid="activity-points"]')?.textContent,
     ).toContain('"requests":25');
     expect(
@@ -213,6 +268,25 @@ it("uses completed requests for success rate and shares daily data with chart na
         "hourly",
       ])?.isInvalidated,
     ).toBe(true);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Select time range"]',
+        )
+        ?.click();
+    });
+    const allTimeButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "All time",
+    );
+    expect(allTimeButton).toBeDefined();
+    await act(async () => allTimeButton?.click());
+    await flush();
+    expect(
+      container
+        .querySelector('[data-testid="activity-points"]')
+        ?.getAttribute("data-show-heatmap"),
+    ).toBe("true");
   } finally {
     await act(async () => root.unmount());
     container.remove();

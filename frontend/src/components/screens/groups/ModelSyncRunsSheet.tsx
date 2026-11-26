@@ -152,11 +152,11 @@ export function ModelSyncRunsSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex flex-col gap-0 sm:max-w-[560px]">
-        <SheetHeader className="shrink-0 px-4 py-4 pr-14">
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[480px]">
+        <SheetHeader>
           <SheetTitle>{isZh ? "同步记录" : "Sync history"}</SheetTitle>
         </SheetHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {runsQuery.isLoading ? (
             <div className="flex justify-center py-10">
               <Spinner />
@@ -166,18 +166,18 @@ export function ModelSyncRunsSheet({
               {isZh ? "同步记录加载失败" : "Failed to load sync history"}
             </p>
           ) : !runs.length ? (
-            <p className="rounded-md bg-muted/35 px-3 py-6 text-center text-xs text-muted-foreground">
+            <p className="rounded-xl bg-muted/45 px-3 py-6 text-center text-xs text-muted-foreground">
               {isZh
                 ? "渠道保存或定时同步后会记录。"
                 : "Recorded after channel saves or scheduled syncs."}
             </p>
           ) : (
-            <Accordion type="multiple" className="border-y border-border/60">
+            <Accordion type="multiple" className="divide-y divide-border/50">
               {runs.map((run) => {
                 const sections = buildRunSections(run, locale);
                 return (
                   <AccordionItem key={run.id} value={run.id}>
-                    <AccordionTrigger className="items-center py-3 text-xs hover:no-underline">
+                    <AccordionTrigger className="items-center py-3 text-[13px] hover:no-underline">
                       <span className="flex min-w-0 flex-1 items-center justify-between gap-3 pr-2">
                         <span className="font-medium tabular-nums">
                           {run.started_at

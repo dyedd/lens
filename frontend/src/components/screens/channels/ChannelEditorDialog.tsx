@@ -10,6 +10,7 @@ import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
@@ -94,16 +95,21 @@ export function ChannelEditorDialog({
 
   return (
     <Sheet open={isDialogOpen} onOpenChange={handleOpenChange}>
-      <SheetContent className="flex min-w-0 max-w-full flex-col gap-0 sm:max-w-[520px]">
-        <SheetHeader className="px-4 pb-4">
+      <SheetContent className="flex min-w-0 max-w-full flex-col gap-0 sm:max-w-[480px]">
+        <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
+          {editingSiteId && form.name.trim() ? (
+            <SheetDescription className="truncate">
+              {form.name.trim()}
+            </SheetDescription>
+          ) : null}
         </SheetHeader>
         <form
           onSubmit={submit}
           className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col"
         >
           <fieldset className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col border-0 p-0">
-            <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-4 py-2">
+            <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-6 py-5">
               <ChannelBasicInfoSection
                 form={form}
                 locale={locale}
@@ -121,7 +127,7 @@ export function ChannelEditorDialog({
                 setForm={setForm}
               />
             </div>
-            <SheetFooter className="flex flex-row justify-end gap-2 px-4 py-3">
+            <SheetFooter>
               <Button
                 type="button"
                 variant="ghost"

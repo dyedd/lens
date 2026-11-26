@@ -17,6 +17,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TruncatedTooltip,
 } from "@/components/ui/Tooltip";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
 import type { ProtocolKind } from "@/lib/api/protocols";
@@ -147,28 +148,24 @@ export function ChannelModelsTable({
                   />
                 </div>
               </TableCell>
-              <TableCell className="max-w-[220px] py-1.5 font-mono text-xs text-muted-foreground">
+              <TableCell className="max-w-[220px] py-1.5 font-mono text-[13px] font-medium text-foreground">
                 <div className="flex min-h-7 min-w-0 items-center gap-1.5">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="truncate">{model.modelName}</span>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-sm break-all">
-                      {model.modelName}
-                    </TooltipContent>
-                  </Tooltip>
+                  <TruncatedTooltip
+                    content={model.modelName}
+                    contentClassName="max-w-sm break-all"
+                  >
+                    <span className="truncate">{model.modelName}</span>
+                  </TruncatedTooltip>
                 </div>
                 {hasMultipleBaseUrls ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <p className="truncate text-xs leading-4">
-                        {model.baseUrls.map(formatBaseUrlLabel).join(" · ")}
-                      </p>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-sm break-all">
-                      {model.baseUrls.join(" · ")}
-                    </TooltipContent>
-                  </Tooltip>
+                  <TruncatedTooltip
+                    content={model.baseUrls.join(" · ")}
+                    contentClassName="max-w-sm break-all"
+                  >
+                    <p className="truncate text-xs leading-4">
+                      {model.baseUrls.map(formatBaseUrlLabel).join(" · ")}
+                    </p>
+                  </TruncatedTooltip>
                 ) : null}
               </TableCell>
               <TableCell className="w-[150px] py-1.5">
@@ -184,7 +181,7 @@ export function ChannelModelsTable({
                     value={model.protocols}
                     locale={locale}
                     disabled={detecting}
-                    className="h-7 min-h-7 min-w-0 max-w-[110px] flex-1 gap-1 px-1.5 py-0 text-xs leading-4 has-[>svg]:px-1.5"
+                    className="h-7 min-h-7 min-w-0 max-w-[116px] flex-1 gap-1 px-2 py-0 text-[13px] leading-4 has-[>svg]:px-2"
                     onChange={(protocols) =>
                       onUpdateProtocols(model.key, protocols)
                     }
@@ -358,7 +355,7 @@ function ContextWindowInput({
                 ? `${model.modelName} 上下文窗口`
                 : `${model.modelName} context window`
             }
-            className="h-7 px-2 font-mono text-xs placeholder:font-sans"
+            className="h-7 px-2 font-mono text-[13px] placeholder:font-sans"
             onChange={(event) => setDraft(event.target.value)}
             onBlur={commit}
             onKeyDown={(event) => {

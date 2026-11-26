@@ -1,4 +1,3 @@
-import { SettingsSectionSeparator } from "@/components/ui/SettingsLayout";
 import { TabsContent } from "@/components/ui/Tabs";
 import { type Locale, titleForLocale } from "@/lib/I18nContext";
 import { GatewayGeneralSettings } from "./gateway-settings/GatewayGeneralSettings";
@@ -22,7 +21,7 @@ export function GatewaySettingsSection({
   return (
     <TabsContent value="gateway" className="mt-0">
       <SettingsSectionCard title={titleForLocale(locale, "网关", "Gateway")}>
-        <div className="space-y-6">
+        <div className="space-y-8">
           <GatewayGeneralSettings
             locale={locale}
             proxyUrl={draft.proxyUrl}
@@ -66,7 +65,6 @@ export function GatewaySettingsSection({
               settings.setDraftValue("isRelayLogBodyEnabled", isEnabled)
             }
           />
-          <SettingsSectionSeparator />
           <UpstreamHeaderSettings
             locale={locale}
             config={draft.upstreamHeadersConfig}
@@ -74,7 +72,6 @@ export function GatewaySettingsSection({
             onUpdateGlobalHeader={settings.updateGlobalHeader}
             onRemoveGlobalHeader={settings.removeGlobalHeader}
           />
-          <SettingsSectionSeparator />
           <ParamOverrideSettings
             locale={locale}
             config={draft.upstreamParamOverrideConfig}

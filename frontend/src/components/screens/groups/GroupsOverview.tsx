@@ -1,7 +1,6 @@
 import {
   ArrowDownUp,
   Check,
-  Funnel,
   History,
   Plus,
   RefreshCw,
@@ -9,10 +8,7 @@ import {
   Shuffle,
 } from "lucide-react";
 import { useState } from "react";
-import {
-  BulkActionButton,
-  BulkActionsPopover,
-} from "@/components/ui/BulkActionsPopover";
+import { PageHeader } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { AppDialogContent, Dialog } from "@/components/ui/Dialog";
@@ -22,13 +18,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
+import { FilterPillGroup } from "@/components/ui/FilterPillGroup";
 import { Input } from "@/components/ui/Input";
 import { TablePagination } from "@/components/ui/Pagination";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/Popover";
 import {
   Select,
   SelectContent,
@@ -36,12 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { ToolbarButton } from "@/components/ui/ToolbarButton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
+import { SelectionActionBar } from "@/components/ui/SelectionActionBar";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import { useRowSelection } from "@/hooks/useRowSelection";
 import type {
@@ -179,16 +166,42 @@ export function GroupsOverview({
       : "Search groups, channels, or models...";
 
   return (
-    <div className="space-y-5 pb-10">
-      <div className="flex min-h-10 items-center justify-between gap-3 px-1">
-        <h3 className="page-title min-w-0">
-          {locale === "zh-CN" ? "模型组" : "Model Groups"}
-        </h3>
-        <ToolbarButton onClick={onOpenSyncRuns}>
-          <History className="size-3.5" />
-          {locale === "zh-CN" ? "同步记录" : "Sync history"}
-        </ToolbarButton>
-      </div>
+    <div className="space-y-4 pb-10">
+      <PageHeader
+        title={locale === "zh-CN" ? "模型组" : "Model Groups"}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onRefresh}
+              disabled={isLoading}
+              aria-label={locale === "zh-CN" ? "刷新" : "Refresh"}
+            >
+              <RefreshCw
+                className={cn("size-3.5", isLoading && "animate-spin")}
+              />
+              {locale === "zh-CN" ? "刷新" : "Refresh"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onOpenSyncRuns}
+            >
+              <History className="size-3.5" />
+              {locale === "zh-CN" ? "同步记录" : "Sync history"}
+            </Button>
+            <Button type="button" size="sm" onClick={onCreate}>
+              <Plus className="size-3.5" />
+              {locale === "zh-CN" ? "新建模型组" : "New Model Group"}
+            </Button>
+          </>
+        }
+      />
 
       {unplacedModels.length ? (
         <UnplacedModelsPanel
@@ -205,129 +218,76 @@ export function GroupsOverview({
         />
       ) : null}
 
-      <section className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 [scrollbar-width:none] md:gap-3 [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-w-max flex-nowrap items-center gap-1.5 md:min-w-0 md:flex-1">
-          <div className="relative min-w-[160px] flex-1 md:max-w-[320px]">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              onChange={(event) => {
-                onSearchChange(event.target.value);
+      <section className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterPillGroup
+            value={strategyFilter}
+            ariaLabel={locale === "zh-CN" ? "分发策略筛选" : "Strategy filter"}
+            onValueChange={(value) => {
+              onStrategyChange(value);
+              resetPage();
+            }}
+            options={[
+              {
+                value: "all",
+                label: locale === "zh-CN" ? "全部" : "All",
+              },
+              {
+                value: "failover",
+                label: locale === "zh-CN" ? "故障切换" : "Failover",
+              },
+              {
+                value: "round_robin",
+                label: locale === "zh-CN" ? "平滑轮询" : "Round robin",
+              },
+            ]}
+          />
+
+          {familyOptions.length ? (
+            <Select
+              value={familyFilter}
+              onValueChange={(value) => {
+                onFamilyChange(value);
                 resetPage();
               }}
-              className="pl-8"
-            />
-          </div>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <ToolbarButton
-                aria-label={locale === "zh-CN" ? "筛选" : "Filter"}
-              >
-                <Funnel className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "筛选" : "Filter"}
-                </span>
-                {activeFilterCount ? (
-                  <span className="text-xs tabular-nums">
-                    {activeFilterCount}
-                  </span>
-                ) : null}
-              </ToolbarButton>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[240px] p-2">
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <p className="px-1 text-xs text-muted-foreground">
-                    {locale === "zh-CN" ? "策略" : "Strategy"}
-                  </p>
-                  <Select
-                    value={strategyFilter}
-                    onValueChange={(value) => {
-                      onStrategyChange(value as "all" | RoutingStrategy);
-                      resetPage();
-                    }}
-                  >
-                    <SelectTrigger className="h-7 px-2 text-muted-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        {locale === "zh-CN" ? "全部策略" : "All strategies"}
-                      </SelectItem>
-                      <SelectItem value="round_robin">
-                        {locale === "zh-CN" ? "平滑轮询" : "Round robin"}
-                      </SelectItem>
-                      <SelectItem value="failover">
-                        {locale === "zh-CN" ? "故障切换" : "Failover"}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {familyOptions.length ? (
-                  <div className="space-y-1">
-                    <p className="px-1 text-xs text-muted-foreground">
-                      {locale === "zh-CN" ? "厂商" : "Family"}
-                    </p>
-                    <Select
-                      value={familyFilter}
-                      onValueChange={(value) => {
-                        onFamilyChange(value);
-                        resetPage();
-                      }}
-                    >
-                      <SelectTrigger className="h-7 px-2 text-muted-foreground">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {locale === "zh-CN" ? "全部厂商" : "All families"}
-                        </SelectItem>
-                        {familyOptions.map((option) => (
-                          <SelectItem key={option.key} value={option.key}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : null}
-                {activeFilterCount ? (
-                  <div className="flex justify-end border-t border-border/60 pt-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs shadow-none"
-                      onClick={() => {
-                        onReset();
-                        resetPage();
-                      }}
-                    >
-                      {locale === "zh-CN" ? "清空" : "Clear"}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </PopoverContent>
-          </Popover>
+            >
+              <SelectTrigger className="h-8 w-auto min-w-[104px] border-0 bg-transparent px-2 text-[13px] text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {locale === "zh-CN" ? "全部厂商" : "All families"}
+                </SelectItem>
+                {familyOptions.map((option) => (
+                  <SelectItem key={option.key} value={option.key}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <ToolbarButton aria-label={locale === "zh-CN" ? "排序" : "Sort"}>
-                <ArrowDownUp className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {locale === "zh-CN" ? "排序" : "Sort"}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-label={locale === "zh-CN" ? "排序" : "Sort"}
+                className="h-8 rounded-xl border-border/70 px-2.5 text-[13px] font-medium"
+              >
+                <ArrowDownUp className="size-3.5 text-muted-foreground" />
+                <span>
+                  {sortOptions.find((o) => o.value === sortBy)?.label ??
+                    (locale === "zh-CN" ? "排序" : "Sort")}
                 </span>
-              </ToolbarButton>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-40 p-1.5">
               {sortOptions.map((option) => (
                 <DropdownMenuItem
                   key={option.value}
-                  className="h-6 gap-2 px-2 py-0 text-xs"
+                  className="h-7 gap-2 px-2 py-0 text-xs"
                   onSelect={() => onSortChange(option.value)}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
@@ -339,63 +299,92 @@ export function GroupsOverview({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <BulkActionsPopover
-            locale={locale}
-            count={selectedGroups.length}
-            isBusy={Boolean(busyId)}
-            onSetEnabled={(enabled) => {
-              void onBulkEnabled(selectedGroups, enabled);
-              selection.clear();
-            }}
-            onDelete={() => setBulkDeleteOpen(true)}
-          >
-            {STRATEGY_OPTIONS.map((option) => (
-              <BulkActionButton
-                key={option.value}
-                icon={<Shuffle className="size-3.5" />}
-                label={
-                  locale === "zh-CN"
-                    ? `设为${option.zh}`
-                    : `Set to ${option.en}`
-                }
-                isBusy={Boolean(busyId)}
-                onClick={() => {
-                  void onBulkStrategy(selectedGroups, option.value);
-                  selection.clear();
-                }}
-              />
-            ))}
-          </BulkActionsPopover>
+          {activeFilterCount > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-xs text-muted-foreground"
+              onClick={() => {
+                onReset();
+                resetPage();
+              }}
+            >
+              {locale === "zh-CN" ? "重置" : "Reset"}
+            </Button>
+          ) : null}
         </div>
 
-        <div className="ml-auto flex min-h-8 shrink-0 items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <ToolbarButton
-                onClick={onRefresh}
-                disabled={isLoading}
-                aria-label={locale === "zh-CN" ? "刷新" : "Refresh"}
-              >
-                <RefreshCw
-                  className={cn("size-3.5", isLoading && "animate-spin")}
-                />
-              </ToolbarButton>
-            </TooltipTrigger>
-            <TooltipContent>
-              {locale === "zh-CN" ? "刷新" : "Refresh"}
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            type="button"
-            size="sm"
-            className="gap-1 text-sm"
-            onClick={onCreate}
-          >
-            <Plus className="size-3.5" />
-            {locale === "zh-CN" ? "新建模型组" : "New Model Group"}
-          </Button>
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            onChange={(event) => {
+              onSearchChange(event.target.value);
+              resetPage();
+            }}
+            className="pl-8"
+          />
         </div>
       </section>
+
+      <SelectionActionBar
+        locale={locale}
+        count={selectedGroups.length}
+        onClear={selection.clear}
+      >
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={Boolean(busyId)}
+          onClick={() => {
+            void onBulkEnabled(selectedGroups, true);
+            selection.clear();
+          }}
+        >
+          {locale === "zh-CN" ? "启动" : "Enable"}
+        </Button>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={Boolean(busyId)}
+          onClick={() => {
+            void onBulkEnabled(selectedGroups, false);
+            selection.clear();
+          }}
+        >
+          {locale === "zh-CN" ? "停止" : "Disable"}
+        </Button>
+        {STRATEGY_OPTIONS.map((option) => (
+          <Button
+            key={option.value}
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={Boolean(busyId)}
+            onClick={() => {
+              void onBulkStrategy(selectedGroups, option.value);
+              selection.clear();
+            }}
+          >
+            <Shuffle className="size-3" />
+            {locale === "zh-CN" ? option.zh : option.en}
+          </Button>
+        ))}
+        <Button
+          type="button"
+          size="xs"
+          variant="destructive"
+          disabled={Boolean(busyId)}
+          onClick={() => setBulkDeleteOpen(true)}
+        >
+          {locale === "zh-CN" ? "删除选中" : "Delete"}
+        </Button>
+      </SelectionActionBar>
 
       <GroupsTable
         locale={locale}
@@ -428,7 +417,7 @@ export function GroupsOverview({
           title={locale === "zh-CN" ? "合并模型组" : "Merge groups"}
           description={
             locale === "zh-CN"
-              ? `将「${mergeRequest?.source.name ?? ""}」的成员和引用并入「${mergeRequest?.target.name ?? ""}」，然后删除源组。`
+              ? `将 ${mergeRequest?.source.name ?? ""} 的成员与引用合并至 ${mergeRequest?.target.name ?? ""}，并删除源模型组。`
               : `Move members and references from "${mergeRequest?.source.name ?? ""}" to "${mergeRequest?.target.name ?? ""}", then delete the source group.`
           }
           footer={

@@ -16,12 +16,6 @@ import { useRequestsScreen } from "./requests/useRequestsScreen";
 export function RequestsScreen() {
   const screen = useRequestsScreen();
   const detailTrigger = useRef<HTMLButtonElement | null>(null);
-  const agentLabels: Record<string, string> = {
-    codex: "Codex",
-    claude_code: "Claude Code",
-    other: titleForLocale(screen.locale, "其他", "Other"),
-    unknown: titleForLocale(screen.locale, "未知", "Unknown"),
-  };
   const selectedItem =
     screen.logsQuery.data?.items.find((item) => item.id === screen.detailId) ??
     screen.detailQuery.data ??
@@ -29,27 +23,6 @@ export function RequestsScreen() {
   return (
     <TooltipProvider>
       <RequestsOverview
-        scopeLabel={[
-          screen.period !== "0"
-            ? titleForLocale(
-                screen.locale,
-                screen.period === "-1" ? "今天" : `近 ${screen.period} 天`,
-                screen.period === "-1" ? "Today" : `Last ${screen.period} days`,
-              )
-            : null,
-          screen.model !== null
-            ? titleForLocale(
-                screen.locale,
-                `实际上游模型：${screen.model || "未知模型"}`,
-                `Upstream model: ${screen.model || "Unknown model"}`,
-              )
-            : null,
-          screen.agent !== null
-            ? `Agent: ${agentLabels[screen.agent] ?? screen.agent}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
         locale={screen.locale}
         items={screen.logsQuery.data?.items ?? []}
         loading={screen.logsQuery.isLoading}

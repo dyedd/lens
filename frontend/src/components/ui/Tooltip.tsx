@@ -1,12 +1,17 @@
 import { Tooltip as TooltipPrimitive } from "radix-ui";
-import type * as React from "react";
+import {
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+  useState,
+} from "react";
 
 import { cn } from "@/lib/classNames";
 
 function TooltipProvider({
-  delayDuration = 0,
+  delayDuration = 350,
   ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+}: ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
     <TooltipPrimitive.Provider
       data-slot="tooltip-provider"
@@ -16,15 +21,13 @@ function TooltipProvider({
   );
 }
 
-function Tooltip({
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+function Tooltip({ ...props }: ComponentProps<typeof TooltipPrimitive.Root>) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
 function TooltipTrigger({
   ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+}: ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
@@ -33,7 +36,7 @@ function TooltipContent({
   sideOffset = 0,
   children,
   ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+}: ComponentProps<typeof TooltipPrimitive.Content>) {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
@@ -52,4 +55,59 @@ function TooltipContent({
   );
 }
 
-export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
+function measureElementOverflow(element: HTMLElement) {
+  const measured = element.classList.contains("truncate")
+    ? element
+    : (element.querySelector<HTMLElement>(".truncate") ?? element);
+  return measured.scrollWidth > measured.clientWidth + 1;
+}
+
+/** Shows tooltip only when the child or its truncated text descendant actually overflows. */
+function TruncatedTooltip({
+  content,
+  contentClassName,
+  side,
+  children,
+}: {
+  content: ReactNode;
+  contentClassName?: string;
+  side?: ComponentProps<typeof TooltipContent>["side"];
+  children: ReactElement;
+}) {
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  if (!content) return children;
+
+  return (
+    <Tooltip
+      onOpenChange={(open) => {
+        if (!open) setIsOverflowing(false);
+      }}
+    >
+      <TooltipTrigger
+        asChild
+        onPointerEnter={(event) => {
+          setIsOverflowing(measureElementOverflow(event.currentTarget));
+        }}
+        onFocus={(event) => {
+          setIsOverflowing(measureElementOverflow(event.currentTarget));
+        }}
+      >
+        {children}
+      </TooltipTrigger>
+      {isOverflowing ? (
+        <TooltipContent side={side} className={contentClassName}>
+          {content}
+        </TooltipContent>
+      ) : null}
+    </Tooltip>
+  );
+}
+
+export {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  TruncatedTooltip,
+};

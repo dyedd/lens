@@ -26,8 +26,11 @@ def test_overview_rejects_days_below_supported_range(
 def test_overview_attribution_groups_agents_and_keeps_history(
     client, admin_headers, app_state
 ):
+    seed_request_log(app_state, user_agent="opencode/0.4.2")
     seed_request_log(app_state, user_agent="codex-tui/0.1")
     seed_request_log(app_state, user_agent="claude-cli/1.0")
+    seed_request_log(app_state, user_agent="Cursor/0.48.0")
+    seed_request_log(app_state, user_agent="python-httpx/0.28.1")
     params = {"days": -1, "dimension": "agent", "metric": "requests"}
 
     response = client.get(
@@ -35,10 +38,16 @@ def test_overview_attribution_groups_agents_and_keeps_history(
     )
     assert response.status_code == 200, response.text
     before = {row["key"]: row for row in response.json()["items"]}
+    assert before["opencode"]["label"] == "OpenCode"
+    assert before["opencode"]["requests"] == 1
     assert before["codex"]["label"] == "Codex"
     assert before["codex"]["requests"] == 1
     assert before["claude_code"]["label"] == "Claude Code"
     assert before["claude_code"]["requests"] == 1
+    assert before["cursor"]["label"] == "Cursor"
+    assert before["cursor"]["requests"] == 1
+    assert before["python_httpx"]["label"] == "Python HTTPX"
+    assert before["python_httpx"]["requests"] == 1
 
     assert (
         client.delete("/api/admin/request-logs", headers=admin_headers).status_code

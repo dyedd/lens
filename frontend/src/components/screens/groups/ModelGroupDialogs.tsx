@@ -1,22 +1,17 @@
-import { SlidersHorizontal } from "lucide-react";
 import type { Dispatch, FormEventHandler, SetStateAction } from "react";
 import { HeaderRows } from "@/components/ruleEditors/HeaderRows";
 import { ParamRuleRows } from "@/components/ruleEditors/ParamRuleRows";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/Accordion";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/Sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import type { ModelGroup } from "@/lib/api/groups";
 import type { FormState, MemberStatusFilter } from "./groupTypes";
 import { ModelGroupCandidateList } from "./ModelGroupCandidateList";
@@ -67,127 +62,136 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
   return (
     <>
       <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
-        <SheetContent className="flex flex-col gap-0 sm:max-w-[520px]">
-          <SheetHeader className="shrink-0 px-5 py-4 pr-14">
-            <div className="flex items-center gap-3">
-              <div className="min-w-0">
-                <SheetTitle>
-                  {editingId
-                    ? locale === "zh-CN"
-                      ? "编辑模型组"
-                      : "Edit model group"
-                    : locale === "zh-CN"
-                      ? "新建模型组"
-                      : "Create model group"}
-                </SheetTitle>
-              </div>
-            </div>
+        <SheetContent className="flex flex-col gap-0 sm:max-w-[480px]">
+          <SheetHeader>
+            <SheetTitle>
+              {editingId
+                ? locale === "zh-CN"
+                  ? "编辑模型组"
+                  : "Edit model group"
+                : locale === "zh-CN"
+                  ? "新建模型组"
+                  : "Create model group"}
+            </SheetTitle>
+            {editingId && form.name.trim() ? (
+              <SheetDescription className="truncate font-mono">
+                {form.name.trim()}
+              </SheetDescription>
+            ) : null}
           </SheetHeader>
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5">
-              <ModelGroupSettings
-                locale={locale}
-                form={form}
-                setForm={setForm}
-                routeTargetOptions={props.routeTargetOptions}
-              />
-              {!form.route_group_id ? (
-                <ModelGroupSelectedMembers
-                  onAddSources={() => candidates.setSheetOpen(true)}
-                  locale={locale}
-                  strategy={form.strategy}
-                  members={props.members}
-                  memberStatusFilter={props.memberStatusFilter}
-                  setMemberStatusFilter={props.setMemberStatusFilter}
-                />
-              ) : null}
-              {!form.route_group_id ? (
-                <ModelGroupExcludedMembers
-                  locale={locale}
-                  excludedMembers={props.members.excludedMembers}
-                  restoreExcludedMember={props.members.restoreExcludedMember}
-                />
-              ) : null}
-              <Accordion
-                type="single"
-                collapsible
-                className="border-y border-border/60"
-              >
-                <AccordionItem value="advanced">
-                  <AccordionTrigger className="items-center py-3 text-sm font-normal text-muted-foreground hover:no-underline">
-                    <span className="flex items-center gap-2">
-                      <SlidersHorizontal className="size-3.5" />
-                      {locale === "zh-CN" ? "高级设置" : "Advanced settings"}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="flex flex-col gap-5">
-                    <HeaderRows
-                      title={locale === "zh-CN" ? "请求头" : "Request headers"}
-                      headers={form.headers}
+            <Tabs
+              defaultValue="routing"
+              className="flex min-h-0 flex-1 flex-col gap-0"
+            >
+              <div className="shrink-0 border-b border-border/50 px-6">
+                <TabsList className="h-auto w-full justify-start gap-4 rounded-none bg-transparent p-0">
+                  <TabsTrigger
+                    value="routing"
+                    className="h-9 rounded-none border-b-2 border-transparent px-0 text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                  >
+                    {locale === "zh-CN" ? "路由与成员" : "Routing & members"}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="advanced"
+                    className="h-9 rounded-none border-b-2 border-transparent px-0 text-[13px] font-medium text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                  >
+                    {locale === "zh-CN" ? "高级规则" : "Advanced rules"}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                <TabsContent value="routing" className="mt-0 space-y-5">
+                  <ModelGroupSettings
+                    locale={locale}
+                    form={form}
+                    setForm={setForm}
+                    routeTargetOptions={props.routeTargetOptions}
+                  />
+                  {!form.route_group_id ? (
+                    <ModelGroupSelectedMembers
+                      onAddSources={() => candidates.setSheetOpen(true)}
                       locale={locale}
-                      onAdd={() =>
-                        setForm((current) => ({
-                          ...current,
-                          headers: [
-                            ...current.headers,
-                            { key: "", value: "", action: "override" },
-                          ],
-                        }))
+                      strategy={form.strategy}
+                      members={props.members}
+                      memberStatusFilter={props.memberStatusFilter}
+                      setMemberStatusFilter={props.setMemberStatusFilter}
+                    />
+                  ) : null}
+                  {!form.route_group_id ? (
+                    <ModelGroupExcludedMembers
+                      locale={locale}
+                      excludedMembers={props.members.excludedMembers}
+                      restoreExcludedMember={
+                        props.members.restoreExcludedMember
                       }
-                      onUpdate={(index, patch) =>
+                    />
+                  ) : null}
+                </TabsContent>
+                <TabsContent value="advanced" className="mt-0 space-y-5">
+                  <HeaderRows
+                    title={locale === "zh-CN" ? "请求头" : "Request headers"}
+                    headers={form.headers}
+                    locale={locale}
+                    onAdd={() =>
+                      setForm((current) => ({
+                        ...current,
+                        headers: [
+                          ...current.headers,
+                          { key: "", value: "", action: "override" },
+                        ],
+                      }))
+                    }
+                    onUpdate={(index, patch) =>
+                      setForm((current) => ({
+                        ...current,
+                        headers: current.headers.map((header, currentIndex) =>
+                          currentIndex === index
+                            ? { ...header, ...patch }
+                            : header,
+                        ),
+                      }))
+                    }
+                    onRemove={(index) =>
+                      setForm((current) => ({
+                        ...current,
+                        headers:
+                          current.headers.length > 1
+                            ? current.headers.filter(
+                                (_, currentIndex) => currentIndex !== index,
+                              )
+                            : current.headers,
+                      }))
+                    }
+                  />
+                  <ParamRuleRows
+                    title={locale === "zh-CN" ? "参数规则" : "Parameter rules"}
+                    locale={locale}
+                    rules={form.param_override}
+                    onChange={(rules) =>
+                      setForm((current) => ({
+                        ...current,
+                        param_override: rules,
+                      }))
+                    }
+                  />
+                  {!form.route_group_id ? (
+                    <MultimodalFallbackGroups
+                      locale={locale}
+                      options={props.routeTargetOptions}
+                      selectedIds={form.fallback_group_ids}
+                      onChange={(ids) =>
                         setForm((current) => ({
                           ...current,
-                          headers: current.headers.map(
-                            (header, currentIndex) =>
-                              currentIndex === index
-                                ? { ...header, ...patch }
-                                : header,
-                          ),
-                        }))
-                      }
-                      onRemove={(index) =>
-                        setForm((current) => ({
-                          ...current,
-                          headers:
-                            current.headers.length > 1
-                              ? current.headers.filter(
-                                  (_, currentIndex) => currentIndex !== index,
-                                )
-                              : current.headers,
+                          fallback_group_ids: ids,
                         }))
                       }
                     />
-                    <ParamRuleRows
-                      title={
-                        locale === "zh-CN" ? "参数规则" : "Parameter rules"
-                      }
-                      locale={locale}
-                      rules={form.param_override}
-                      onChange={(rules) =>
-                        setForm((current) => ({
-                          ...current,
-                          param_override: rules,
-                        }))
-                      }
-                    />
-                    {!form.route_group_id ? (
-                      <MultimodalFallbackGroups
-                        locale={locale}
-                        options={props.routeTargetOptions}
-                        selectedIds={form.fallback_group_ids}
-                        onChange={(ids) =>
-                          setForm((current) => ({
-                            ...current,
-                            fallback_group_ids: ids,
-                          }))
-                        }
-                      />
-                    ) : null}
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
-            <SheetFooter className="shrink-0 flex-row items-center justify-between gap-3 px-5 py-4">
+                  ) : null}
+                </TabsContent>
+              </div>
+            </Tabs>
+            <SheetFooter className="justify-between gap-3">
               <span className="text-xs text-muted-foreground">
                 {form.route_group_id
                   ? locale === "zh-CN"
@@ -224,16 +228,16 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
         <SheetContent
           side="right"
           showOverlay={false}
-          className="flex flex-col gap-0 sm:right-[calc(520px+1.5rem)] sm:max-w-[520px]"
+          className="flex flex-col gap-0 sm:right-[480px] sm:max-w-[480px]"
         >
-          <SheetHeader className="shrink-0 px-5 py-4 pr-14">
+          <SheetHeader>
             <SheetTitle>
               {locale === "zh-CN" ? "添加渠道成员" : "Add channel members"}
             </SheetTitle>
           </SheetHeader>
           <section
             aria-label={locale === "zh-CN" ? "可选模型" : "Available models"}
-            className="mx-5 mb-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg"
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
           >
             <ModelGroupCandidateToolbar
               locale={locale}
@@ -257,7 +261,7 @@ export function GroupEditorDialog(props: GroupEditorDialogProps) {
               candidateListError={candidates.error}
             />
           </section>
-          <SheetFooter className="shrink-0 px-5 py-4">
+          <SheetFooter>
             <Button
               type="button"
               size="sm"
@@ -287,7 +291,7 @@ export function DeleteGroupDialog({
       title={locale === "zh-CN" ? "删除模型组" : "Delete model group"}
       description={
         locale === "zh-CN"
-          ? `删除模型组「${deleteTarget?.name ?? ""}」？渠道仍提供的模型可能被同步回来；要停用请先停用渠道模型。`
+          ? `确定删除模型组 ${deleteTarget?.name ?? ""}？仍存在于渠道中的模型可能会在下次同步时重新加入；若仅需停用，请关闭对应渠道模型。`
           : `Delete model group "${deleteTarget?.name ?? ""}"? Channels may sync its models back; disable them in the channel to stop calls.`
       }
       isBusy={Boolean(deleteTarget) && busyId === deleteTarget?.id}

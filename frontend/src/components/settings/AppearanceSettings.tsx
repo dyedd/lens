@@ -71,8 +71,8 @@ export function AppearanceSettings({
           placeholder="https://example.com/logo.svg"
         />
       </SettingsFieldRow>
-      <div className="flex items-center gap-3 rounded-md bg-muted/35 px-3 py-2.5">
-        <span className="flex size-10 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-background">
+      <div className="flex items-center gap-3 pt-1">
+        <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-background">
           {siteLogoUrl.trim() ? (
             <img
               src={siteLogoUrl.trim()}
@@ -85,14 +85,8 @@ export function AppearanceSettings({
             <ImageIcon className="size-4 text-muted-foreground" />
           )}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground">
-            {siteName.trim() || "Lens"}
-          </div>
-          <div className="truncate text-xs text-muted-foreground">
-            {siteLogoUrl.trim() ||
-              titleForLocale(locale, "未设置 Logo", "No logo configured")}
-          </div>
+        <div className="truncate text-sm font-medium text-foreground">
+          {siteName.trim() || "Lens"}
         </div>
       </div>
     </SettingsFieldList>

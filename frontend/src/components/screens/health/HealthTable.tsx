@@ -13,6 +13,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TruncatedTooltip,
 } from "@/components/ui/Tooltip";
 import type { HealthItem } from "@/lib/api/sites";
 import { cn } from "@/lib/classNames";
@@ -60,7 +61,7 @@ function HealthTimeline({
           `Time: ${startAt} - ${endAt}, requests: ${bucket.total_count}, failures: ${failureCount}`,
         );
         return (
-          <Tooltip key={bucket.started_at}>
+          <Tooltip key={bucket.started_at} delayDuration={0}>
             <TooltipTrigger asChild>
               <span
                 role="img"
@@ -135,20 +136,7 @@ export function HealthTable({
             {titleForLocale(locale, "状态", "Status")}
           </TableHead>
           <TableHead className="min-w-[88px]">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  {titleForLocale(locale, "剩余冷却", "Cooldown left")}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {titleForLocale(
-                  locale,
-                  "当前行内最长的剩余冷却时间。",
-                  "The longest remaining cooldown in this row.",
-                )}
-              </TooltipContent>
-            </Tooltip>
+            {titleForLocale(locale, "剩余冷却", "Cooldown left")}
           </TableHead>
           <TableHead className="min-w-[88px]">
             {titleForLocale(locale, "成功率", "Success")}
@@ -185,16 +173,13 @@ export function HealthTable({
         {items.map((item) => (
           <TableRow key={item.id} className="hover:bg-transparent">
             <TableCell className="w-[16rem] max-w-[16rem]">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="block truncate font-medium">
-                    {item.name}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-sm break-all">
-                  {item.name}
-                </TooltipContent>
-              </Tooltip>
+              <TruncatedTooltip
+                content={item.name}
+                side="top"
+                contentClassName="max-w-sm break-all"
+              >
+                <span className="block truncate font-medium">{item.name}</span>
+              </TruncatedTooltip>
             </TableCell>
             <TableCell>
               <Badge
@@ -214,33 +199,20 @@ export function HealthTable({
                       `${item.cooldown_remaining_seconds}s`,
                     )}
                   </span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          disabled={isResettingCooldown}
-                          onClick={() => onResetCooldown(item.id)}
-                          aria-label={titleForLocale(
-                            locale,
-                            `重置 ${item.name} 的冷却`,
-                            `Reset cooldown for ${item.name}`,
-                          )}
-                        >
-                          {titleForLocale(locale, "重置冷却", "Reset cooldown")}
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {titleForLocale(
-                        locale,
-                        "共享 Key 或渠道的模型也会解除对应冷却。",
-                        "Also clears the same cooldown for models sharing a key or channel.",
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    disabled={isResettingCooldown}
+                    onClick={() => onResetCooldown(item.id)}
+                    aria-label={titleForLocale(
+                      locale,
+                      `重置 ${item.name} 的冷却`,
+                      `Reset cooldown for ${item.name}`,
+                    )}
+                  >
+                    {titleForLocale(locale, "重置冷却", "Reset cooldown")}
+                  </Button>
                 </div>
               ) : (
                 <span className="text-muted-foreground">-</span>

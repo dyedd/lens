@@ -34,7 +34,7 @@ export function LoginScreen() {
   const siteName = branding?.site_name?.trim() || "Lens";
   const logoUrl = branding?.logo_url?.trim() || "/logo.svg";
   const loginInputClassName =
-    "h-9 rounded-md border-input/40 px-3 shadow-none transition-[color,box-shadow] focus-visible:border-primary/60 focus-visible:ring-[1px] focus-visible:ring-primary/40";
+    "h-9 rounded-lg border-border/80 bg-pure/70 px-3 shadow-none transition-[color,box-shadow,border-color] focus-visible:border-primary/50 focus-visible:ring-[1px] focus-visible:ring-primary/30 dark:bg-card/70";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,24 +63,24 @@ export function LoginScreen() {
 
   return (
     <main className="relative flex min-h-svh items-center justify-center bg-background px-4 py-8 text-foreground">
-      <div className="w-full max-w-[360px]">
+      <div className="w-full max-w-[348px]">
         <img
           src={logoUrl}
           alt=""
-          width={32}
-          height={32}
+          width={44}
+          height={44}
           loading="eager"
           fetchPriority="high"
-          className="mx-auto h-12 w-auto object-contain"
+          className="mx-auto size-11 rounded-xl object-contain"
         />
-        <h1 className="mt-3 text-center text-base font-semibold leading-6">
+        <h1 className="mt-3 text-center text-base font-semibold tracking-tight text-card-foreground">
           {siteName}
         </h1>
 
-        <form className="mt-4 space-y-4 px-2" onSubmit={submit}>
-          <div className="space-y-2">
+        <form className="mt-5 space-y-4 px-1" onSubmit={submit}>
+          <div className="space-y-1.5">
             <label
-              className="text-sm font-medium leading-none text-foreground"
+              className="block text-[13px] font-medium leading-5 text-foreground/85"
               htmlFor="login-username"
             >
               {titleForLocale(locale, "账号", "Account")} *
@@ -97,9 +97,9 @@ export function LoginScreen() {
               autoFocus
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <label
-              className="text-sm font-medium leading-none text-foreground"
+              className="block text-[13px] font-medium leading-5 text-foreground/85"
               htmlFor="login-password"
             >
               {t.password} *
@@ -118,7 +118,7 @@ export function LoginScreen() {
           </div>
           <Button
             type="submit"
-            className="mt-2 h-9 w-full text-sm shadow-none hover:bg-primary/90"
+            className="mt-2 h-9 w-full rounded-lg text-[13px] shadow-none hover:bg-primary/90"
             disabled={submitting}
           >
             {submitting ? t.signingIn : t.signIn}
@@ -130,7 +130,7 @@ export function LoginScreen() {
         href="https://github.com/dyedd/lens"
         target="_blank"
         rel="noreferrer"
-        className="absolute bottom-4 text-center text-xs font-medium text-foreground hover:underline"
+        className="absolute bottom-5 text-center font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         powered by lens
       </a>

@@ -158,7 +158,7 @@ export function CronjobsTable({
                     <span className="truncate">
                       {cronjobScheduleLabel(locale, task)}
                     </span>
-                    <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
+                    <Pencil className="intent-reveal size-3.5 shrink-0 text-muted-foreground" />
                   </button>
                 </TableCell>
                 <TableCell>
@@ -205,6 +205,7 @@ export function CronjobsTable({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
+                        className="intent-reveal"
                         aria-label={titleForLocale(
                           locale,
                           "执行任务",

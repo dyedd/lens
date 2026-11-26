@@ -120,7 +120,7 @@ function Combobox({
             autoFocus={autoFocus}
             disabled={disabled}
             className={cn(
-              "w-full min-w-0 justify-between text-sm font-normal",
+              "w-full min-w-0 justify-between text-[13px] font-normal",
               !selectedOption && !currentValue && "text-muted-foreground",
             )}
           >

@@ -3,7 +3,6 @@ import { Input } from "@/components/ui/Input";
 import {
   SettingsFieldList,
   SettingsFieldRow,
-  SettingsSectionSeparator,
 } from "@/components/ui/SettingsLayout";
 import { Switch } from "@/components/ui/Switch";
 import { TabsContent } from "@/components/ui/Tabs";
@@ -410,8 +409,10 @@ export function CircuitBreakerSettingsSection({
         title={titleForLocale(locale, "故障转移", "Failover")}
       >
         {_getCircuitBreakerFieldGroups(locale).map((group, groupIndex) => (
-          <div key={group.title}>
-            {groupIndex > 0 ? <SettingsSectionSeparator /> : null}
+          <div
+            key={group.title}
+            className={groupIndex > 0 ? "mt-8" : undefined}
+          >
             <h4 className="mb-4 text-sm font-semibold">{group.title}</h4>
             <SettingsFieldList>
               {group.showHealthToggle ? (
@@ -421,11 +422,6 @@ export function CircuitBreakerSettingsSection({
                     locale,
                     "按健康度排序",
                     "Sort by health",
-                  )}
-                  description={titleForLocale(
-                    locale,
-                    "关闭后按原始顺序或轮询。",
-                    "Off: use configured order or round robin.",
                   )}
                 >
                   <Switch
@@ -442,7 +438,6 @@ export function CircuitBreakerSettingsSection({
                   key={field.key}
                   id={field.id}
                   label={field.label}
-                  description={field.description}
                   min={field.min}
                   max={field.max}
                   step={field.step}

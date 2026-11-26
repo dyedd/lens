@@ -250,8 +250,8 @@ export function GatewayApiKeyDialog({
         }
       }}
     >
-      <SheetContent className="flex flex-col gap-0 sm:max-w-[520px]">
-        <SheetHeader className="px-4 pb-4">
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[480px]">
+        <SheetHeader>
           <SheetTitle>
             {titleForLocale(
               locale,
@@ -267,20 +267,24 @@ export function GatewayApiKeyDialog({
             void submit();
           }}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
-            <FieldGroup>
-              <GatewayApiKeyBasicFields
-                locale={locale}
-                remark={form.remark}
-                apiKey={form.apiKey}
-                showApiKey={!editingKeyId}
-                enabled={form.enabled}
-                maxCostUsd={form.maxCostUsd}
-                onRemarkChange={(value) => updateForm("remark", value)}
-                onApiKeyChange={(value) => updateForm("apiKey", value)}
-                onEnabledChange={(value) => updateForm("enabled", value)}
-                onMaxCostUsdChange={(value) => updateForm("maxCostUsd", value)}
-              />
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <FieldGroup className="gap-5">
+              <div className="space-y-4 rounded-xl bg-muted/50 p-4">
+                <GatewayApiKeyBasicFields
+                  locale={locale}
+                  remark={form.remark}
+                  apiKey={form.apiKey}
+                  showApiKey={!editingKeyId}
+                  enabled={form.enabled}
+                  maxCostUsd={form.maxCostUsd}
+                  onRemarkChange={(value) => updateForm("remark", value)}
+                  onApiKeyChange={(value) => updateForm("apiKey", value)}
+                  onEnabledChange={(value) => updateForm("enabled", value)}
+                  onMaxCostUsdChange={(value) =>
+                    updateForm("maxCostUsd", value)
+                  }
+                />
+              </div>
               <GatewayApiKeyModelPermissions
                 locale={locale}
                 isRestrictionEnabled={form.isModelRestrictionEnabled}
@@ -303,7 +307,7 @@ export function GatewayApiKeyDialog({
             </FieldGroup>
           </div>
 
-          <SheetFooter className="flex flex-row justify-end gap-2 px-4 py-3">
+          <SheetFooter>
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
               {titleForLocale(locale, "取消", "Cancel")}
             </Button>

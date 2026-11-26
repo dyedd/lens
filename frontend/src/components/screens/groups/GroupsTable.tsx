@@ -2,7 +2,6 @@ import {
   Check,
   ChevronDown,
   Combine,
-  MoreHorizontal,
   Settings2,
   TestTube2,
   Trash2,
@@ -15,7 +14,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
 import {
@@ -32,6 +30,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/Tooltip";
 import type { ModelGroup, RoutingStrategy } from "@/lib/api/groups";
 import { getModelGroupAvatar } from "@/lib/ModelIcons";
 import type {
@@ -196,7 +199,9 @@ export function GroupsTable({
           <TableHead className="text-center">
             {locale === "zh-CN" ? "状态" : "Status"}
           </TableHead>
-          <TableHead className="w-[56px]" />
+          <TableHead className="w-[108px] text-right">
+            {locale === "zh-CN" ? "操作" : "Actions"}
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -349,41 +354,66 @@ export function GroupsTable({
                   )}
                 </div>
               </TableCell>
-              <TableCell className="w-[56px] py-1.5">
-                <div className="flex h-7 items-center justify-end">
-                  <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
+              <TableCell className="w-[108px] py-1.5">
+                <div className="intent-reveal flex h-7 items-center justify-end gap-0.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        className="text-muted-foreground shadow-none"
-                      >
-                        <MoreHorizontal className="size-3.5 stroke-1" />
-                        <span className="sr-only">
-                          {locale === "zh-CN" ? "操作" : "Actions"}
-                        </span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => onEdit(group)}>
-                        <Settings2 className="size-3.5 stroke-1" />
-                        {locale === "zh-CN" ? "编辑模型组" : "Edit group"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
                         disabled={!canTest || testingModel}
-                        onSelect={() => onTest(group)}
+                        aria-label={
+                          locale === "zh-CN" ? "测试模型" : "Test models"
+                        }
+                        className="text-muted-foreground shadow-none hover:text-foreground"
+                        onClick={() => onTest(group)}
                       >
-                        <TestTube2 className="size-3.5 stroke-1" />
-                        {locale === "zh-CN" ? "测试模型" : "Test models"}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => onDelete(group)}>
-                        <Trash2 className="size-3.5 stroke-1" />
-                        {locale === "zh-CN" ? "删除模型组" : "Delete group"}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <TestTube2 className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {locale === "zh-CN" ? "测试模型" : "Test models"}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={
+                          locale === "zh-CN" ? "编辑模型组" : "Edit group"
+                        }
+                        className="text-muted-foreground shadow-none hover:text-foreground"
+                        onClick={() => onEdit(group)}
+                      >
+                        <Settings2 className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {locale === "zh-CN" ? "编辑模型组" : "Edit group"}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={
+                          locale === "zh-CN" ? "删除模型组" : "Delete group"
+                        }
+                        className="text-muted-foreground shadow-none hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => onDelete(group)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {locale === "zh-CN" ? "删除模型组" : "Delete group"}
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               </TableCell>
             </TableRow>

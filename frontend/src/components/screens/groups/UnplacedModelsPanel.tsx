@@ -79,7 +79,7 @@ function removalDescription(target: RemoveRequest | null, isZh: boolean) {
   if (names.length <= 1) {
     const name = names[0] ?? "";
     return isZh
-      ? `从 ${providerCount} 个渠道的 API Key 中移除「${name}」。`
+      ? `确定从 ${providerCount} 个渠道的 API Key 中移除模型 ${name}？`
       : `Remove "${name}" from ${providerCount} channel API keys.`;
   }
   return isZh
@@ -214,7 +214,7 @@ export function UnplacedModelsPanel({
 
   return (
     <section
-      className="space-y-2 rounded-md bg-muted/35 p-3"
+      className="space-y-2 pt-1"
       aria-label={isZh ? "待分配模型" : "Models to assign"}
     >
       <div className="flex items-start justify-between gap-3">
@@ -330,7 +330,7 @@ export function UnplacedModelsPanel({
             return (
               <li
                 key={cluster.matchKey}
-                className="flex flex-wrap items-center gap-2 py-1.5"
+                className="group/item flex flex-wrap items-center gap-2 py-1.5"
               >
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                   <Checkbox
@@ -359,7 +359,7 @@ export function UnplacedModelsPanel({
                     />
                   ))}
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-1">
+                <div className="intent-reveal flex shrink-0 flex-wrap items-center gap-1">
                   {cluster.models.length > 1 ? (
                     <DropdownMenu modal={false}>
                       <DropdownMenuTrigger asChild>

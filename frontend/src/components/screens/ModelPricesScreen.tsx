@@ -30,11 +30,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/Table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/Tooltip";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import { useModelGroupsQuery } from "@/hooks/useModelGroupsQuery";
 import { apiRequest, getApiErrorMessage } from "@/lib/api/client";
@@ -193,7 +188,7 @@ function PriceEditor({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent className="flex max-h-[min(86dvh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[620px]">
+      <DialogContent className="flex max-h-[min(86dvh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]">
         <DialogHeader className="shrink-0 space-y-1.5 gap-0 px-4 py-4 pr-12">
           <DialogTitle>{isChinese ? "模型价格" : "Model prices"}</DialogTitle>
         </DialogHeader>
@@ -364,58 +359,89 @@ export function ModelPricesScreen() {
     }
   }
 
+  const [priceTab, setPriceTab] = useState<
+    "all" | "tokens" | "non_tokens" | "free"
+  >("all");
+  const visibleModes =
+    priceTab === "all"
+      ? (["tokens", "non_tokens", "free"] as const)
+      : ([priceTab] as const);
+
   return (
-    <section className="space-y-5 pb-10">
-      <div className="flex h-10 items-center px-1">
+    <section className="space-y-4 pb-10">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="page-title">{isChinese ? "价格" : "Pricing"}</h1>
-      </div>
-      <div className="flex min-h-10 flex-nowrap items-center gap-1.5 overflow-x-auto px-0.5 py-1">
-        <div className="flex min-w-0 flex-1 items-center">
-          <div className="relative min-w-[220px] flex-1 md:max-w-[320px]">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              value={search}
-              aria-label={searchPlaceholder}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                resetPage();
-              }}
-              placeholder={searchPlaceholder}
-            />
-          </div>
-        </div>
-        <div className="ml-auto flex shrink-0 items-center">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground hover:text-foreground"
+          disabled={groups.isFetching || syncing}
+          onClick={() => void syncPrices()}
+          aria-label={isChinese ? "同步价格" : "Sync prices"}
+        >
+          <RefreshCw
+            className={
+              groups.isFetching || syncing ? "animate-spin" : undefined
+            }
+          />
+          {isChinese ? "同步价格" : "Sync prices"}
+        </Button>
+      </header>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          role="tablist"
+          aria-label={isChinese ? "计费模式筛选" : "Billing mode filter"}
+          className="inline-flex flex-wrap items-center gap-1"
+        >
+          {(
+            [
+              ["all", isChinese ? "全部" : "All"],
+              ["tokens", isChinese ? "按 Token" : "Token"],
+              ["non_tokens", isChinese ? "按张" : "Per image"],
+              ["free", isChinese ? "免费" : "Free"],
+            ] as const
+          ).map(([value, label]) => {
+            const active = priceTab === value;
+            return (
+              <button
+                key={value}
                 type="button"
-                size="icon-sm"
-                variant="ghost"
-                disabled={groups.isFetching || syncing}
-                onClick={() => void syncPrices()}
-                aria-label={isChinese ? "同步价格" : "Sync prices"}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setPriceTab(value)}
+                className={
+                  active
+                    ? "inline-flex h-7 items-center rounded-lg bg-muted px-2.5 text-[13px] font-medium text-foreground"
+                    : "inline-flex h-7 items-center rounded-lg px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                }
               >
-                <RefreshCw
-                  className={
-                    groups.isFetching || syncing ? "animate-spin" : undefined
-                  }
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isChinese ? "同步价格" : "Sync prices"}
-            </TooltipContent>
-          </Tooltip>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-8"
+            value={search}
+            aria-label={searchPlaceholder}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              resetPage();
+            }}
+            placeholder={searchPlaceholder}
+          />
         </div>
       </div>
-      {(["free", "tokens", "non_tokens"] as const).map((mode) => {
+      {visibleModes.map((mode) => {
         const modeRows = rowsByMode(mode);
         if (!modeRows.length) return null;
         const fields = fieldsForMode(mode);
         return (
           <div key={mode} className="space-y-1.5">
-            <h2 className="px-1 text-sm font-medium text-muted-foreground">
+            <h2 className="px-1 text-xs font-medium text-muted-foreground">
               {mode === "free"
                 ? isChinese
                   ? "免费"

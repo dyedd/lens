@@ -24,10 +24,10 @@ export function DeleteChannelDialog({
     <ConfirmDeleteDialog
       open={Boolean(deleteTarget)}
       locale={locale}
-      title={locale === "zh-CN" ? "确认删除渠道" : "Delete channel"}
+      title={locale === "zh-CN" ? "删除渠道" : "Delete channel"}
       description={
         locale === "zh-CN"
-          ? `删除渠道「${name}」及其协议配置、模型和模型组成员。`
+          ? `确定删除渠道 ${name}？其协议配置、模型目录及模型组关联成员将一并移除。`
           : `Delete channel "${name}" and its protocol configs, models, and group members.`
       }
       isBusy={Boolean(deleteTarget) && busyId === deleteTarget?.id}
